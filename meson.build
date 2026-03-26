@@ -12,8 +12,6 @@ project('prism', 'cpp',
 
 prism_inc = include_directories('include')
 
-sdl3_dep = dependency('sdl3', fallback : ['sdl3', 'sdl3_dep'])
-
 subdir('src')
 subdir('tests')
 subdir('examples')

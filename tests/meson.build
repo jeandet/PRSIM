@@ -1,16 +1,28 @@
 doctest_dep = dependency('doctest', fallback : ['doctest', 'doctest_dep'])
 
-test_sources = {
+# Headless tests — no SDL, no backend
+headless_tests = {
   'mpsc_queue' : files('test_mpsc_queue.cpp'),
   'atomic_cell' : files('test_atomic_cell.cpp'),
   'draw_list' : files('test_draw_list.cpp'),
   'input_event' : files('test_input_event.cpp'),
   'pixel_buffer' : files('test_pixel_buffer.cpp'),
   'software_renderer' : files('test_software_renderer.cpp'),
+}
+
+foreach name, src : headless_tests
+  exe = executable('test_' + name, src,
+    dependencies : [prism_core_dep, doctest_dep],
+  )
+  test(name, exe)
+endforeach
+
+# Tests that need a backend (SDL)
+backend_tests = {
   'app' : files('test_app.cpp'),
 }
 
-foreach name, src : test_sources
+foreach name, src : backend_tests
   exe = executable('test_' + name, src,
     dependencies : [prism_dep, doctest_dep],
   )
