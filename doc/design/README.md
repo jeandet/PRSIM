@@ -10,7 +10,8 @@ Each document details the design, rationale, and constraints for one subsystem. 
 | [render-backend.md](render-backend.md) | RenderBackend concept, software backend, GPU backend path | Draft |
 | [layout-engine.md](layout-engine.md) | Constraint regions, parallel solving, pure functional layout | Planned |
 | [reactivity.md](reactivity.md) | Signals, observable properties, bindings, std::execution | Planned |
-| [widget-model.md](widget-model.md) | Value-type widgets, declarative composition, handle system | Planned |
+| [widget-model.md](widget-model.md) | Value-type widgets, DrawList as user drawing API, composition | Draft |
+| [styling.md](styling.md) | Theme as data, Context propagation, per-instance overrides, state variants | Draft |
 | [python-bindings.md](python-bindings.md) | nanobind wrapping, GIL-free Python 3.14+, callback threading | Planned |
 | [testing-strategy.md](testing-strategy.md) | doctest, synchronous scheduler for tests, headless rendering, visual regression | Planned |
 | [tracing-profiling.md](tracing-profiling.md) | Tracy behind generic macros, trace points at pipeline boundaries | Planned |
