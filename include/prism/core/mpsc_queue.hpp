@@ -5,6 +5,15 @@
 
 namespace prism {
 
+// Apple Silicon (aarch64 with 128-byte L1 lines) and POWER use 128, everything else 64.
+// There's no reliable compile-time way to distinguish Apple Silicon from other AArch64,
+// so we default to 128 on all AArch64 — over-aligning on 64-byte ARM is harmless.
+#if defined(__aarch64__) || defined(_M_ARM64) || defined(__ppc64__)
+inline constexpr std::size_t cache_line_size = 128;
+#else
+inline constexpr std::size_t cache_line_size = 64;
+#endif
+
 // Lock-free multi-producer single-consumer queue.
 // Intrusive Michael-Scott variant with pooled nodes.
 template <typename T>
@@ -14,9 +23,8 @@ class mpsc_queue {
         std::atomic<node*> next{nullptr};
     };
 
-    // Aligned to avoid false sharing between producers and consumer.
-    alignas(64) std::atomic<node*> tail_;
-    alignas(64) node* head_;
+    alignas(cache_line_size) std::atomic<node*> tail_;
+    alignas(cache_line_size) node* head_;
 
 public:
     mpsc_queue()
