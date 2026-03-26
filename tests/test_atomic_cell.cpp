@@ -1,22 +1,24 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest.h>
+
 #include <prism/core/atomic_cell.hpp>
 
-#include <cassert>
 #include <string>
 #include <thread>
 
-void test_store_load()
+TEST_CASE("atomic_cell store and load")
 {
     prism::atomic_cell<int> cell;
-    assert(cell.load() == nullptr);
+    CHECK(cell.load() == nullptr);
 
     cell.store(42);
-    assert(*cell.load() == 42);
+    CHECK(*cell.load() == 42);
 
     cell.store(99);
-    assert(*cell.load() == 99);
+    CHECK(*cell.load() == 99);
 }
 
-void test_concurrent_access()
+TEST_CASE("atomic_cell concurrent access never tears")
 {
     prism::atomic_cell<std::string> cell(std::string{"initial"});
 
@@ -27,16 +29,9 @@ void test_concurrent_access()
             cell.store("value_" + std::to_string(i));
     });
 
-    // Reader should never see a torn value.
     for (int i = 0; i < iterations; ++i) {
         auto snap = cell.load();
         if (snap)
-            assert(snap->starts_with("value_") || *snap == "initial");
+            CHECK((snap->starts_with("value_") || *snap == "initial"));
     }
-}
-
-int main()
-{
-    test_store_load();
-    test_concurrent_access();
 }

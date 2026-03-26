@@ -1,10 +1,12 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest.h>
+
 #include <prism/core/mpsc_queue.hpp>
 
-#include <cassert>
 #include <thread>
 #include <vector>
 
-void test_single_thread()
+TEST_CASE("mpsc_queue single-thread push/pop")
 {
     prism::mpsc_queue<int> q;
 
@@ -12,13 +14,13 @@ void test_single_thread()
     q.push(2);
     q.push(3);
 
-    assert(q.pop() == 1);
-    assert(q.pop() == 2);
-    assert(q.pop() == 3);
-    assert(!q.pop().has_value());
+    CHECK(q.pop() == 1);
+    CHECK(q.pop() == 2);
+    CHECK(q.pop() == 3);
+    CHECK_FALSE(q.pop().has_value());
 }
 
-void test_multi_producer()
+TEST_CASE("mpsc_queue multi-producer")
 {
     prism::mpsc_queue<int> q;
     constexpr int per_thread = 1000;
@@ -38,11 +40,5 @@ void test_multi_producer()
     while (q.pop())
         ++count;
 
-    assert(count == num_threads * per_thread);
-}
-
-int main()
-{
-    test_single_thread();
-    test_multi_producer();
+    CHECK(count == num_threads * per_thread);
 }

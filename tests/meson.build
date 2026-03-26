@@ -1,3 +1,5 @@
+doctest_dep = dependency('doctest', fallback : ['doctest', 'doctest_dep'])
+
 test_sources = {
   'mpsc_queue' : files('test_mpsc_queue.cpp'),
   'atomic_cell' : files('test_atomic_cell.cpp'),
@@ -6,7 +8,7 @@ test_sources = {
 
 foreach name, src : test_sources
   exe = executable('test_' + name, src,
-    dependencies : prism_dep,
+    dependencies : [prism_dep, doctest_dep],
   )
   test(name, exe)
 endforeach
