@@ -24,21 +24,30 @@ A split interface (`Rasteriser` + `Presenter` with a `PixelBuffer` in between) f
 - A **Vulkan backend** goes GPU-native end-to-end: upload draw list → shaders → swapchain present.
 - They share no intermediate types except `SceneSnapshot` and `DrawList`.
 
-## Software Backend (Phase 1)
+## Software Backend (Implemented — POC)
 
+**Architecture:**
 ```
 SceneSnapshot
-  → tile split (spatial partitioning of widget rects)
-  → per-tile CPU rasterisation (parallel via thread pool)
-  → composite tiles into framebuffer (PixelBuffer)
-  → SDL3 blit to window
+  → iterate z_order back-to-front
+  → rasterise each DrawList command (FilledRect only in POC)
+  → write to PixelBuffer (std::vector<uint32_t>, ARGB8888)
 ```
 
-Internal types:
-- `PixelBuffer` — `std::vector<uint32_t>`, RGBA8, width × height.
-- `Tile` — region rect + local pixel buffer.
+**Implemented types:**
+- `PixelBuffer` — `std::vector<uint32_t>`, ARGB8888, width × height. Provides `fill_rect(Rect, Color)` with bounds clipping, `clear()`, `resize()`, `pixel(x,y)` accessor.
+- `SoftwareRenderer` — headless, no SDL dependency. `render_frame(snap)` clears buffer then rasterises. Testable by inspecting `buffer()`.
 
-Testable headless: skip SDL3 presenter, inspect pixel buffer directly.
+**POC limitations:**
+- Only `FilledRect` commands are rasterised. `RectOutline`, `TextCmd`, `ClipPush/Pop` are no-ops.
+- No tile splitting or parallel rasterisation — sequential full-buffer pass.
+- No text rendering.
+
+**Presentation** is handled by `RenderLoop`, not the renderer itself. `RenderLoop` copies the `PixelBuffer` to the SDL window surface via `SDL_GetWindowSurface` / `SDL_LockSurface` / `memcpy` / `SDL_UpdateWindowSurface`.
+
+## Window Ownership
+
+The render thread creates the SDL window (via `RenderLoop`) and owns the event pump. `SDL_Init(SDL_INIT_VIDEO)` is called on the render thread (SDL3 requires event pumping on the init thread). The software renderer is headless and never touches SDL — it just writes to a `PixelBuffer`.
 
 ## GPU Backend (Phase 5)
 
@@ -52,26 +61,9 @@ SceneSnapshot
 
 Tile strategy differs: CPU wants spatial tiles for parallelism, GPU wants draw-call batching for throughput.
 
-## Pipeline Integration
-
-```cpp
-template <RenderBackend Backend>
-class RenderPipeline {
-    Backend backend_;
-    atomic_cell<SceneSnapshot> snapshot_cell_;
-    mpsc_queue<SceneDiff> diff_queue_;
-
-    void frame_loop() {
-        auto snap = snapshot_cell_.load();
-        if (!snap) return;
-        // drain diffs, patch snapshot
-        backend_.render_frame(*snap);
-    }
-};
-```
-
 ## Open Questions
 
 - Should `render_frame` return frame timing / stats for profiling?
-- Backend discovery — compile-time selection is fine, but should there be a runtime fallback chain (Vulkan → OpenGL → software)?
-- Multi-monitor / multi-window — one backend per window, or one backend managing multiple surfaces?
+- Backend discovery — compile-time selection is fine for now. Runtime fallback chain (Vulkan → software) deferred.
+- Multi-window — deferred. One App = one window for now.
+- Tile splitting for parallel CPU rasterisation — deferred until profiling shows need.
