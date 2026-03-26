@@ -47,6 +47,26 @@ PRISM decouples the application from the renderer through a versioned, immutable
 
 **The frame contract:** the renderer guarantees a frame every N ms regardless of what the application threads are doing. The application never blocks the renderer. The renderer never calls into application code.
 
+## Render Backend
+
+Each backend is a single concept implementation — one type, one function: `render_frame(snapshot)`. The backend owns the entire path from scene snapshot to pixels on screen.
+
+```
+SceneSnapshot (immutable plain data)
+       │
+       ▼
+┌──────────────────────────────────────────────────┐
+│ RenderBackend::render_frame(snapshot)             │
+│                                                   │
+│  Software:              Vulkan (future):          │
+│    tile split             upload draw list        │
+│    CPU rasterise          GPU shaders             │
+│    SDL3 present           swapchain present       │
+└──────────────────────────────────────────────────┘
+```
+
+No abstract base class with dozens of virtual methods. The draw list *is* the abstraction — the backend just interprets it. Adding a backend = implement one function in one file.
+
 ## Key Design Choices
 
 | | Qt | Flutter | SwiftUI | **PRISM** |
