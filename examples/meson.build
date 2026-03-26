@@ -1,1 +1,3 @@
-# Example targets — added as they are created.
+executable('hello_rect', 'hello_rect.cpp',
+  dependencies : [prism_dep],
+)
