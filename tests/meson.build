@@ -7,6 +7,7 @@ test_sources = {
   'input_event' : files('test_input_event.cpp'),
   'pixel_buffer' : files('test_pixel_buffer.cpp'),
   'software_renderer' : files('test_software_renderer.cpp'),
+  'app' : files('test_app.cpp'),
 }
 
 foreach name, src : test_sources

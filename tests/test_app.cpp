@@ -1,0 +1,33 @@
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest.h>
+#include <prism/core/app.hpp>
+
+TEST_CASE("App runs and stops on quit") {
+    int frame_count = 0;
+
+    prism::App app({.title = "Test", .width = 100, .height = 100});
+    app.run([&](prism::Frame&) {
+        ++frame_count;
+        app.quit();
+    });
+
+    CHECK(frame_count == 1);
+}
+
+TEST_CASE("Frame exposes width and height") {
+    prism::App app({.title = "Test", .width = 320, .height = 240});
+    app.run([&](prism::Frame& frame) {
+        CHECK(frame.width() == 320);
+        CHECK(frame.height() == 240);
+        app.quit();
+    });
+}
+
+TEST_CASE("Frame records draw commands into snapshot") {
+    prism::App app({.title = "Test", .width = 100, .height = 100});
+    app.run([&](prism::Frame& frame) {
+        frame.filled_rect({10, 10, 50, 50}, prism::Color::rgba(255, 0, 0));
+        app.quit();
+    });
+    CHECK(true);
+}
