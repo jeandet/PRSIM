@@ -1,6 +1,6 @@
 # PRISM — Parallel Rendering & Immediate Scene Model
 
-A next-generation 2D UI toolkit in C++26, built from scratch on modern language features with no legacy constraints.
+**This is an R&D experiment** — exploring what a 2D UI toolkit could look like if built from scratch in C++26 with no legacy constraints. Nothing here is production-ready.
 
 > Take Qt's reactive topology, ImGui's draw-list simplicity, Flutter's pipeline stages, WebRender's tile compositing, SwiftUI's declarative ergonomics, and game engine threading discipline — and put it all together.
 
@@ -137,6 +137,15 @@ meson test -C builddir
 - **Phase 3** — Reactivity & bindings (`observable<T>`, `bind()`, `std::execution`-based signals)
 - **Phase 4** — Widget library (Label, Button, TextField, VStack/HStack/Grid, Plot, VirtualList)
 - **Phase 5** — GPU backend & compositing (Vulkan/Metal, SDF text, tile compositing, 10M-point benchmark)
+
+## Design Documents
+
+Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design/):
+
+- [Threading Model](doc/design/threading-model.md) — lock-free snapshot handoff, MPSC diff queue, thread roles
+- [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, diffing strategy
+- [Draw List](doc/design/draw-list.md) — command set, extensibility, serialisation
+- [Render Backend](doc/design/render-backend.md) — concept interface, software vs GPU path
 
 ## License
 
