@@ -5,6 +5,7 @@ test_sources = {
   'atomic_cell' : files('test_atomic_cell.cpp'),
   'draw_list' : files('test_draw_list.cpp'),
   'input_event' : files('test_input_event.cpp'),
+  'pixel_buffer' : files('test_pixel_buffer.cpp'),
 }
 
 foreach name, src : test_sources
