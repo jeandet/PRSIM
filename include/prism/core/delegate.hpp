@@ -9,6 +9,19 @@
 
 namespace prism {
 
+template <typename T>
+concept StringLike = requires(const T& t) {
+    { t.data() } -> std::convertible_to<const char*>;
+    { t.size() } -> std::convertible_to<std::size_t>;
+};
+
+// Sentinel: read-only label
+template <StringLike T = std::string>
+struct Label {
+    T value{};
+    bool operator==(const Label&) const = default;
+};
+
 // Primary template: default delegate for any Field<T>.
 // Renders a label-only widget, ignores input.
 template <typename T>
@@ -38,6 +51,17 @@ struct Delegate<bool> {
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
             field.set(!field.get());
     }
+};
+
+template <StringLike T>
+struct Delegate<Label<T>> {
+    static void record(DrawList& dl, const Field<Label<T>>& field) {
+        dl.filled_rect({0, 0, 200, 24}, Color::rgba(40, 40, 48));
+        dl.text(std::string(field.get().value.data(), field.get().value.size()),
+                {4, 4}, 14, Color::rgba(180, 180, 190));
+    }
+
+    static void handle_input(Field<Label<T>>&, const InputEvent&) {}
 };
 
 } // namespace prism

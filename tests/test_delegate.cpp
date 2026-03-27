@@ -55,3 +55,24 @@ TEST_CASE("Default Delegate handle_input is a no-op for int") {
     prism::Delegate<int>::handle_input(field, prism::MouseButton{{0, 0}, 1, true});
     CHECK(field.get() == 42);
 }
+
+TEST_CASE("Label sentinel renders as read-only text") {
+    prism::Field<prism::Label<>> field{"Status", {"All systems go"}};
+    prism::DrawList dl;
+    prism::Delegate<prism::Label<>>::record(dl, field);
+    CHECK(dl.size() >= 1);
+    // Should contain a TextCmd with the label's value
+    bool has_text = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "All systems go") has_text = true;
+        }
+    }
+    CHECK(has_text);
+}
+
+TEST_CASE("Label sentinel ignores input") {
+    prism::Field<prism::Label<>> field{"Status", {"OK"}};
+    prism::Delegate<prism::Label<>>::handle_input(field, prism::MouseButton{{0, 0}, 1, true});
+    CHECK(field.get().value == "OK");  // unchanged
+}
