@@ -17,6 +17,18 @@ foreach name, src : headless_tests
   test(name, exe)
 endforeach
 
+# Tests that need BackendBase vtable but not SDL
+backend_base_tests = {
+  'null_backend' : files('test_null_backend.cpp'),
+}
+
+foreach name, src : backend_base_tests
+  exe = executable('test_' + name, src,
+    dependencies : [prism_software_backend_dep, doctest_dep],
+  )
+  test(name, exe)
+endforeach
+
 # Tests that need a backend (SDL)
 backend_tests = {
   'app' : files('test_app.cpp'),
