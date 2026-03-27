@@ -12,6 +12,7 @@ headless_tests = {
   'hit_test' : files('test_hit_test.cpp'),
   'connection' : files('test_connection.cpp'),
   'field' : files('test_field.cpp'),
+  'reflect' : files('test_reflect.cpp'),
 }
 
 foreach name, src : headless_tests
