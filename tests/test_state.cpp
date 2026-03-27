@@ -32,6 +32,16 @@ TEST_CASE("State set with equal value does not emit") {
     CHECK(call_count == 0);
 }
 
+TEST_CASE("State::observe callback lives as long as state") {
+    prism::State<int> s{0};
+    int received = 0;
+    s.observe([&](const int& v) { received = v; });
+    s.set(42);
+    CHECK(received == 42);
+    s.set(99);
+    CHECK(received == 99);
+}
+
 TEST_CASE("State implicit conversion to const T&") {
     prism::State<int> s{10};
     const int& ref = s;

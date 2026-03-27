@@ -43,7 +43,7 @@ class SenderHub {
 public:
     using Callback = std::function<void(Args...)>;
 
-    Connection connect(Callback cb) {
+    [[nodiscard]] Connection connect(Callback cb) {
         auto id = next_id_++;
         receivers_.push_back({id, std::move(cb)});
         auto detach = std::make_shared<std::function<void()>>(

@@ -19,11 +19,11 @@ struct Dashboard {
 int main() {
     Dashboard dashboard;
 
-    auto c1 = dashboard.settings.dark_mode.on_change().connect([](const bool& v) {
+    dashboard.settings.dark_mode.observe([](const bool& v) {
         std::cout << "Dark mode: " << (v ? "ON" : "OFF") << "\n";
     });
 
-    auto c2 = dashboard.settings.volume.on_change().connect([](const prism::Slider<>& s) {
+    dashboard.settings.volume.observe([](const prism::Slider<>& s) {
         std::cout << "Volume: " << s.value << "\n";
     });
 

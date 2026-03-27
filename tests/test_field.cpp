@@ -68,6 +68,26 @@ TEST_CASE("Field default-constructed value") {
     CHECK(f.get() == 0);
 }
 
+TEST_CASE("Field::observe callback lives as long as field") {
+    prism::Field<int> f{"X", 0};
+    int received = 0;
+    f.observe([&](const int& v) { received = v; });
+    f.set(42);
+    CHECK(received == 42);
+    f.set(99);
+    CHECK(received == 99);
+}
+
+TEST_CASE("Field::observe multiple observers") {
+    prism::Field<int> f{"X", 0};
+    int r1 = 0, r2 = 0;
+    f.observe([&](const int& v) { r1 = v; });
+    f.observe([&](const int& v) { r2 = v; });
+    f.set(5);
+    CHECK(r1 == 5);
+    CHECK(r2 == 5);
+}
+
 TEST_CASE("Field with bool") {
     prism::Field<bool> f{"Done", false};
     bool toggled = false;

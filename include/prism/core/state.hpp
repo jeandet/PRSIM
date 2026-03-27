@@ -2,6 +2,9 @@
 
 #include <prism/core/connection.hpp>
 
+#include <functional>
+#include <vector>
+
 namespace prism {
 
 template <typename T>
@@ -20,10 +23,15 @@ struct State {
         changed_.emit(value);
     }
 
+    void observe(std::function<void(const T&)> cb) {
+        observers_.push_back(changed_.connect(std::move(cb)));
+    }
+
     SenderHub<const T&>& on_change() { return changed_; }
 
 private:
     SenderHub<const T&> changed_;
+    std::vector<Connection> observers_;
 };
 
 } // namespace prism
