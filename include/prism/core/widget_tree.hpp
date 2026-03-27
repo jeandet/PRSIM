@@ -27,6 +27,8 @@ struct WidgetNode {
     std::function<void(WidgetNode&)> wire;
 };
 
+// index_ stores raw pointers into the tree — valid only because the tree
+// is fully built before build_index runs and never mutated after construction.
 class WidgetTree {
 public:
     template <typename Model>
@@ -35,6 +37,9 @@ public:
         build_index(root_);
         clear_dirty();
     }
+
+    WidgetTree(const WidgetTree&) = delete;
+    WidgetTree& operator=(const WidgetTree&) = delete;
 
     [[nodiscard]] size_t leaf_count() const { return count_leaves(root_); }
     [[nodiscard]] bool any_dirty() const { return check_dirty(root_); }
@@ -52,7 +57,7 @@ public:
             it->second->on_input.emit(ev);
     }
 
-    Connection connect_input(WidgetId id, std::function<void(const InputEvent&)> cb) {
+    [[nodiscard]] Connection connect_input(WidgetId id, std::function<void(const InputEvent&)> cb) {
         if (auto it = index_.find(id); it != index_.end())
             return it->second->on_input.connect(std::move(cb));
         return {};
