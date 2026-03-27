@@ -8,6 +8,7 @@ headless_tests = {
   'input_event' : files('test_input_event.cpp'),
   'pixel_buffer' : files('test_pixel_buffer.cpp'),
   'software_renderer' : files('test_software_renderer.cpp'),
+  'layout' : files('test_layout.cpp'),
 }
 
 foreach name, src : headless_tests
