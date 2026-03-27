@@ -27,6 +27,7 @@ public:
 
 private:
     friend class App;
+    friend struct AppAccess;
     DrawList dl_;
     int width_ = 0;
     int height_ = 0;
@@ -47,6 +48,13 @@ private:
         }
         dl_.clear();
         return snap;
+    }
+};
+
+struct AppAccess {
+    static void reset(Frame& f, int w, int h) { f.reset(w, h); }
+    static std::shared_ptr<const SceneSnapshot> take_snapshot(Frame& f, uint64_t v) {
+        return f.take_snapshot(v);
     }
 };
 
