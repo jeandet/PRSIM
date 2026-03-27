@@ -5,7 +5,9 @@
 #include <prism/core/backend.hpp>
 #include <prism/core/context.hpp>
 #include <prism/core/draw_list.hpp>
+#include <prism/core/hit_test.hpp>
 #include <prism/core/input_event.hpp>
+#include <prism/core/layout.hpp>
 #include <prism/core/mpsc_queue.hpp>
 #include <prism/core/null_backend.hpp>
 #include <prism/core/pixel_buffer.hpp>
