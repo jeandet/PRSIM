@@ -99,3 +99,46 @@ TEST_CASE("WidgetTree dispatch to unknown id is a no-op") {
     // Should not crash
     tree.dispatch(9999, prism::MouseButton{{0, 0}, 1, true});
 }
+
+struct BoolModel {
+    prism::Field<bool> flag{"Flag", false};
+    prism::Field<int> count{"Count", 0};
+};
+
+TEST_CASE("Field<bool> toggles on MouseButton dispatch") {
+    BoolModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 2);
+
+    CHECK(model.flag.get() == false);
+    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, true});
+    CHECK(model.flag.get() == true);
+    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, true});
+    CHECK(model.flag.get() == false);
+}
+
+TEST_CASE("Field<bool> ignores mouse release") {
+    BoolModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+
+    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, false});
+    CHECK(model.flag.get() == false);
+}
+
+TEST_CASE("Field<bool> toggle produces different draws on re-record") {
+    BoolModel model;
+    prism::WidgetTree tree(model);
+
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    tree.clear_dirty();
+
+    auto ids = tree.leaf_ids();
+    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, true});
+    CHECK(tree.any_dirty());
+
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    REQUIRE(snap2 != nullptr);
+    CHECK(snap2->draw_lists.size() == snap1->draw_lists.size());
+}

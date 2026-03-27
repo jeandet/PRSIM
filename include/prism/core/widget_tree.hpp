@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -162,6 +163,17 @@ private:
         };
         node.record(node);
 
+        if constexpr (std::is_same_v<T, bool>) {
+            node.wire = [&field](WidgetNode& n) {
+                n.connections.push_back(
+                    n.on_input.connect([&field](const InputEvent& ev) {
+                        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
+                            field.set(!field.get());
+                    })
+                );
+            };
+        }
+
         auto id = node.id;
         node.connections.push_back(
             field.on_change().connect([this, id](const T&) {
@@ -170,6 +182,16 @@ private:
         );
 
         return node;
+    }
+
+    static void record_field_widget(WidgetNode& node, const Field<bool>& field) {
+        node.draws.clear();
+        auto label_text = std::string(field.label);
+        auto bg = field.get()
+            ? Color::rgba(0, 120, 80)
+            : Color::rgba(50, 50, 60);
+        node.draws.filled_rect({0, 0, 200, 30}, bg);
+        node.draws.text(std::move(label_text), {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
     template <typename T>
