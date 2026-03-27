@@ -82,4 +82,38 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     }
 }
 
+inline void layout_arrange(LayoutNode& node, Rect available) {
+    node.allocated = available;
+
+    if (node.children.empty()) return;
+
+    bool horizontal = (node.kind == LayoutNode::Kind::Row);
+
+    // Count expanders and sum preferred sizes
+    float total_preferred = 0;
+    int expand_count = 0;
+    for (auto& child : node.children) {
+        if (child.hint.expand)
+            ++expand_count;
+        else
+            total_preferred += child.hint.preferred;
+    }
+
+    float remaining = (horizontal ? available.w : available.h) - total_preferred;
+    float expand_share = (expand_count > 0) ? std::max(0.f, remaining) / expand_count : 0;
+
+    float offset = 0;
+    for (auto& child : node.children) {
+        float main_size = child.hint.expand ? expand_share : child.hint.preferred;
+        Rect child_rect;
+        if (horizontal) {
+            child_rect = {available.x + offset, available.y, main_size, available.h};
+        } else {
+            child_rect = {available.x, available.y + offset, available.w, main_size};
+        }
+        layout_arrange(child, child_rect);
+        offset += main_size;
+    }
+}
+
 } // namespace prism
