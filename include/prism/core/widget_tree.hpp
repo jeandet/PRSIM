@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/connection.hpp>
+#include <prism/core/delegate.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/field.hpp>
 #include <prism/core/input_event.hpp>
@@ -160,20 +161,18 @@ private:
         node.is_container = false;
 
         node.record = [&field](WidgetNode& n) {
-            record_field_widget(n, field);
+            n.draws.clear();
+            Delegate<T>::record(n.draws, field);
         };
         node.record(node);
 
-        if constexpr (std::is_same_v<T, bool>) {
-            node.wire = [&field](WidgetNode& n) {
-                n.connections.push_back(
-                    n.on_input.connect([&field](const InputEvent& ev) {
-                        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
-                            field.set(!field.get());
-                    })
-                );
-            };
-        }
+        node.wire = [&field](WidgetNode& n) {
+            n.connections.push_back(
+                n.on_input.connect([&field](const InputEvent& ev) {
+                    Delegate<T>::handle_input(field, ev);
+                })
+            );
+        };
 
         auto id = node.id;
         node.connections.push_back(
@@ -183,24 +182,6 @@ private:
         );
 
         return node;
-    }
-
-    static void record_field_widget(WidgetNode& node, const Field<bool>& field) {
-        node.draws.clear();
-        auto label_text = std::string(field.label);
-        auto bg = field.get()
-            ? Color::rgba(0, 120, 80)
-            : Color::rgba(50, 50, 60);
-        node.draws.filled_rect({0, 0, 200, 30}, bg);
-        node.draws.text(std::move(label_text), {4, 4}, 14, Color::rgba(220, 220, 220));
-    }
-
-    template <typename T>
-    static void record_field_widget(WidgetNode& node, const Field<T>& field) {
-        node.draws.clear();
-        auto label_text = std::string(field.label);
-        node.draws.filled_rect({0, 0, 200, 30}, Color::rgba(50, 50, 60));
-        node.draws.text(std::move(label_text), {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
     template <typename Model>
