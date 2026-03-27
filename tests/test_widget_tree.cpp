@@ -164,3 +164,38 @@ TEST_CASE("State<T> change does not dirty the widget tree") {
     model.hidden.set(999);
     CHECK_FALSE(tree.any_dirty());
 }
+
+struct SentinelModel {
+    prism::Field<prism::Label<>> status{"Status", {"OK"}};
+    prism::Field<prism::Slider<>> volume{"Volume", {.value = 0.5}};
+    prism::Field<bool> enabled{"Enabled", true};
+};
+
+TEST_CASE("WidgetTree with sentinel types creates correct leaf count") {
+    SentinelModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 3);
+}
+
+TEST_CASE("WidgetTree builds snapshot with sentinel types") {
+    SentinelModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap != nullptr);
+    CHECK(snap->geometry.size() == 3);
+}
+
+TEST_CASE("Slider click through WidgetTree dispatch updates value") {
+    SentinelModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 3);
+
+    // ids[1] is the slider. Click at x=100 (middle of 200px track) → value ≈ 0.5
+    tree.dispatch(ids[1], prism::MouseButton{{100, 15}, 1, true});
+    CHECK(model.volume.get().value == doctest::Approx(0.5).epsilon(0.05));
+
+    // Click at x=0 → value ≈ 0.0
+    tree.dispatch(ids[1], prism::MouseButton{{0, 15}, 1, true});
+    CHECK(model.volume.get().value == doctest::Approx(0.0).epsilon(0.05));
+}
