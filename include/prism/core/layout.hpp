@@ -116,4 +116,38 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
     }
 }
 
+namespace detail {
+
+inline void translate_draw_list(DrawList& dl, float dx, float dy) {
+    for (auto& cmd : dl.commands) {
+        std::visit([dx, dy](auto& c) {
+            if constexpr (requires { c.rect; }) {
+                c.rect.x += dx;
+                c.rect.y += dy;
+            } else if constexpr (requires { c.origin; }) {
+                c.origin.x += dx;
+                c.origin.y += dy;
+            }
+        }, cmd);
+    }
+}
+
+} // namespace detail
+
+inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
+    if (node.kind == LayoutNode::Kind::Spacer) return;
+
+    if (!node.draws.empty()) {
+        detail::translate_draw_list(node.draws, node.allocated.x, node.allocated.y);
+        auto idx = static_cast<uint16_t>(snap.geometry.size());
+        snap.geometry.push_back({node.id, node.allocated});
+        snap.draw_lists.push_back(std::move(node.draws));
+        snap.z_order.push_back(idx);
+    }
+
+    for (auto& child : node.children) {
+        layout_flatten(child, snap);
+    }
+}
+
 } // namespace prism

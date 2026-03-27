@@ -199,3 +199,103 @@ TEST_CASE("arrange nested: column inside row") {
     CHECK(row.children[2].children[1].allocated.y == 40);
     CHECK(row.children[2].children[1].allocated.h == 40);
 }
+
+TEST_CASE("flatten produces per-widget geometry and draw lists") {
+    prism::LayoutNode row;
+    row.kind = prism::LayoutNode::Kind::Row;
+    row.id = 0;
+
+    prism::LayoutNode a;
+    a.kind = prism::LayoutNode::Kind::Leaf;
+    a.id = 1;
+    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+
+    prism::LayoutNode b;
+    b.kind = prism::LayoutNode::Kind::Leaf;
+    b.id = 2;
+    b.draws.filled_rect({0, 0, 60, 80}, prism::Color::rgba(0, 255, 0));
+
+    row.children.push_back(std::move(a));
+    row.children.push_back(std::move(b));
+
+    prism::layout_measure(row, prism::LayoutAxis::Horizontal);
+    prism::layout_arrange(row, {0, 0, 400, 300});
+
+    prism::SceneSnapshot snap;
+    snap.version = 1;
+    prism::layout_flatten(row, snap);
+
+    // Two leaf nodes with draw commands
+    CHECK(snap.geometry.size() == 2);
+    CHECK(snap.draw_lists.size() == 2);
+    CHECK(snap.z_order.size() == 2);
+
+    CHECK(snap.geometry[0].first == 1);
+    CHECK(snap.geometry[0].second.x == 0);
+    CHECK(snap.geometry[0].second.w == 100);
+
+    CHECK(snap.geometry[1].first == 2);
+    CHECK(snap.geometry[1].second.x == 100);
+    CHECK(snap.geometry[1].second.w == 60);
+}
+
+TEST_CASE("flatten translates draw commands to absolute coordinates") {
+    prism::LayoutNode row;
+    row.kind = prism::LayoutNode::Kind::Row;
+    row.id = 0;
+
+    prism::LayoutNode a;
+    a.kind = prism::LayoutNode::Kind::Leaf;
+    a.id = 1;
+    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+
+    row.children.push_back(std::move(a));
+
+    prism::layout_measure(row, prism::LayoutAxis::Horizontal);
+    prism::layout_arrange(row, {30, 40, 400, 300});
+
+    prism::SceneSnapshot snap;
+    snap.version = 1;
+    prism::layout_flatten(row, snap);
+
+    CHECK(snap.geometry.size() == 1);
+    CHECK(snap.geometry[0].second.x == 30);
+    CHECK(snap.geometry[0].second.y == 40);
+
+    // The draw command should be translated
+    auto& dl = snap.draw_lists[0];
+    CHECK(dl.commands.size() == 1);
+    auto* fr = std::get_if<prism::FilledRect>(&dl.commands[0]);
+    REQUIRE(fr != nullptr);
+    CHECK(fr->rect.x == 30);
+    CHECK(fr->rect.y == 40);
+}
+
+TEST_CASE("flatten skips spacers and empty containers") {
+    prism::LayoutNode row;
+    row.kind = prism::LayoutNode::Kind::Row;
+    row.id = 0;
+
+    prism::LayoutNode a;
+    a.kind = prism::LayoutNode::Kind::Leaf;
+    a.id = 1;
+    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+
+    prism::LayoutNode sp;
+    sp.kind = prism::LayoutNode::Kind::Spacer;
+    sp.id = 2;
+
+    row.children.push_back(std::move(a));
+    row.children.push_back(std::move(sp));
+
+    prism::layout_measure(row, prism::LayoutAxis::Horizontal);
+    prism::layout_arrange(row, {0, 0, 400, 300});
+
+    prism::SceneSnapshot snap;
+    snap.version = 1;
+    prism::layout_flatten(row, snap);
+
+    // Only the leaf with draw commands, not the spacer
+    CHECK(snap.geometry.size() == 1);
+    CHECK(snap.geometry[0].first == 1);
+}
