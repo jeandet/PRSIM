@@ -142,3 +142,25 @@ TEST_CASE("Field<bool> toggle produces different draws on re-record") {
     REQUIRE(snap2 != nullptr);
     CHECK(snap2->draw_lists.size() == snap1->draw_lists.size());
 }
+
+#include <prism/core/state.hpp>
+
+struct ModelWithState {
+    prism::Field<int> visible{"Vis", 0};
+    prism::State<int> hidden{0};
+    prism::Field<bool> flag{"Flag", false};
+};
+
+TEST_CASE("WidgetTree skips State<T> members") {
+    ModelWithState model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+}
+
+TEST_CASE("State<T> change does not dirty the widget tree") {
+    ModelWithState model;
+    prism::WidgetTree tree(model);
+    tree.clear_dirty();
+    model.hidden.set(999);
+    CHECK_FALSE(tree.any_dirty());
+}

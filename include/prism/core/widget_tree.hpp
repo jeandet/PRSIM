@@ -7,6 +7,7 @@
 #include <prism/core/layout.hpp>
 #include <prism/core/reflect.hpp>
 #include <prism/core/scene_snapshot.hpp>
+#include <prism/core/state.hpp>
 
 #include <functional>
 #include <memory>
@@ -216,7 +217,9 @@ private:
             auto& member = model.[:m:];
             using M = std::remove_cvref_t<decltype(member)>;
 
-            if constexpr (is_field_v<M>) {
+            if constexpr (is_state_v<M>) {
+                // invisible observable — no widget
+            } else if constexpr (is_field_v<M>) {
                 container.children.push_back(build_leaf(member));
             } else if constexpr (is_component_v<M>) {
                 container.children.push_back(build_container(member));
