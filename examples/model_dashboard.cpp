@@ -1,5 +1,6 @@
 #include <prism/prism.hpp>
 
+#include <iostream>
 #include <string>
 
 struct Settings {
@@ -15,13 +16,9 @@ struct Dashboard {
 int main() {
     Dashboard dashboard;
 
-    // Cross-component signal: log when dark_mode changes
-    auto conn = dashboard.settings.dark_mode.on_change().connect(
-        [](const bool& dark) {
-            // In a real app this would retheme — for now just a signal test
-            (void)dark;
-        }
-    );
+    dashboard.settings.dark_mode.on_change().connect([](const bool& v) {
+        std::cout << "Dark mode: " << (v ? "ON" : "OFF") << "\n";
+    });
 
     prism::model_app("PRISM Model Dashboard", dashboard);
 }
