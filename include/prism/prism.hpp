@@ -15,3 +15,9 @@
 #include <prism/core/software_renderer.hpp>
 #include <prism/core/test_backend.hpp>
 #include <prism/core/ui.hpp>
+#include <prism/core/connection.hpp>
+#include <prism/core/field.hpp>
+#include <prism/core/list.hpp>
+#include <prism/core/model_app.hpp>
+#include <prism/core/reflect.hpp>
+#include <prism/core/widget_tree.hpp>
