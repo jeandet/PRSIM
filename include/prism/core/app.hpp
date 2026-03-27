@@ -28,6 +28,7 @@ public:
 private:
     friend class App;
     friend struct AppAccess;
+    template <typename> friend class Ui;
     DrawList dl_;
     int width_ = 0;
     int height_ = 0;

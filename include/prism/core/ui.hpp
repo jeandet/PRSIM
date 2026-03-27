@@ -3,6 +3,7 @@
 #include <prism/core/app.hpp>
 #include <prism/core/backend.hpp>
 #include <prism/core/input_event.hpp>
+#include <prism/core/layout.hpp>
 #include <prism/core/mpsc_queue.hpp>
 #include <prism/core/scene_snapshot.hpp>
 
@@ -10,7 +11,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <thread>
+#include <vector>
 
 namespace prism {
 
@@ -22,13 +25,100 @@ class Ui {
 public:
     const State* operator->() const { return state_; }
     const State& state() const { return *state_; }
-    Frame& frame() { return *frame_; }
+
+    Frame& frame() {
+        if (node_stack_.empty())
+            return *frame_;
+        flush_leaf();
+        return node_frame_;
+    }
+
+    template <typename F>
+    void row(F&& children) {
+        begin_container(LayoutNode::Kind::Row);
+        children();
+        end_container();
+    }
+
+    template <typename F>
+    void column(F&& children) {
+        begin_container(LayoutNode::Kind::Column);
+        children();
+        end_container();
+    }
+
+    void spacer() {
+        flush_leaf();
+        LayoutNode sp;
+        sp.kind = LayoutNode::Kind::Spacer;
+        sp.id = next_id_++;
+        current_children().push_back(std::move(sp));
+    }
+
+    std::shared_ptr<const SceneSnapshot> take_snapshot(int w, int h, uint64_t version) {
+        if (root_.has_value()) {
+            flush_leaf();
+            auto& root = *root_;
+            LayoutAxis axis = (root.kind == LayoutNode::Kind::Row)
+                ? LayoutAxis::Horizontal : LayoutAxis::Vertical;
+            layout_measure(root, axis);
+            layout_arrange(root, {0, 0, static_cast<float>(w), static_cast<float>(h)});
+
+            auto snap = std::make_shared<SceneSnapshot>();
+            snap->version = version;
+            layout_flatten(root, *snap);
+            return snap;
+        }
+        return AppAccess::take_snapshot(*frame_, version);
+    }
 
 private:
     const State* state_;
     Frame* frame_;
+    Frame node_frame_;
+    std::optional<LayoutNode> root_;
+    std::vector<LayoutNode*> node_stack_;
+    WidgetId next_id_ = 0;
 
     Ui(const State& s, Frame& f) : state_(&s), frame_(&f) {}
+
+    void begin_container(LayoutNode::Kind kind) {
+        flush_leaf();
+        if (!root_) {
+            root_ = LayoutNode{};
+            root_->kind = kind;
+            root_->id = next_id_++;
+            node_stack_.push_back(&*root_);
+        } else {
+            auto& parent = current_children();
+            parent.push_back(LayoutNode{});
+            auto& node = parent.back();
+            node.kind = kind;
+            node.id = next_id_++;
+            node_stack_.push_back(&node);
+        }
+    }
+
+    void end_container() {
+        flush_leaf();
+        node_stack_.pop_back();
+    }
+
+    void flush_leaf() {
+        if (node_stack_.empty()) return;
+        DrawList& dl = node_frame_.dl_;
+        if (dl.empty()) return;
+        LayoutNode leaf;
+        leaf.kind = LayoutNode::Kind::Leaf;
+        leaf.id = next_id_++;
+        leaf.draws = std::move(dl);
+        dl.clear();
+        current_children().push_back(std::move(leaf));
+    }
+
+    std::vector<LayoutNode>& current_children() {
+        return node_stack_.back()->children;
+    }
 
     template <typename S>
     friend void app(Backend, BackendConfig, S,
@@ -69,7 +159,7 @@ void app(Backend backend, BackendConfig cfg, State initial,
     AppAccess::reset(frame, w, h);
     Ui<State> ui(state, frame);
     view(ui);
-    backend.submit(AppAccess::take_snapshot(frame, ++version));
+    backend.submit(ui.take_snapshot(w, h, ++version));
     backend.wake();
 
     while (running.load(std::memory_order_relaxed)) {
@@ -94,7 +184,7 @@ void app(Backend backend, BackendConfig cfg, State initial,
 
         if (!running.load(std::memory_order_relaxed)) break;
 
-        backend.submit(AppAccess::take_snapshot(frame, ++version));
+        backend.submit(ui2.take_snapshot(w, h, ++version));
         backend.wake();
     }
 

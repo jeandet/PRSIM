@@ -191,3 +191,122 @@ TEST_CASE("WindowResize is forwarded to update callback") {
 
     CHECK(last_w == 1024);
 }
+
+TEST_CASE("ui.row() produces per-widget geometry in snapshot") {
+    struct S {};
+    std::shared_ptr<const prism::SceneSnapshot> captured_snap;
+
+    struct CapturingBackend final : public prism::BackendBase {
+        std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
+            : snap_ref(s) {}
+        void run(std::function<void(const prism::InputEvent&)> cb) override {
+            cb(prism::WindowClose{});
+        }
+        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+            snap_ref = std::move(s);
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    prism::app<S>(
+        prism::Backend{std::make_unique<CapturingBackend>(captured_snap)},
+        prism::BackendConfig{.width = 800, .height = 600},
+        S{},
+        [](prism::Ui<S>& ui) {
+            ui.row([&] {
+                ui.frame().filled_rect({0, 0, 200, 100},
+                    prism::Color::rgba(255, 0, 0));
+                ui.spacer();
+                ui.frame().filled_rect({0, 0, 100, 50},
+                    prism::Color::rgba(0, 255, 0));
+            });
+        }
+    );
+
+    REQUIRE(captured_snap != nullptr);
+    // Two leaf widgets (spacer has no draw commands, skipped)
+    CHECK(captured_snap->geometry.size() == 2);
+    // First widget at x=0, width=200
+    CHECK(captured_snap->geometry[0].second.x == 0);
+    CHECK(captured_snap->geometry[0].second.w == 200);
+    // Second widget at x=700 (800-100), width=100
+    CHECK(captured_snap->geometry[1].second.x == doctest::Approx(700));
+    CHECK(captured_snap->geometry[1].second.w == 100);
+}
+
+TEST_CASE("ui.column() stacks children vertically") {
+    struct S {};
+    std::shared_ptr<const prism::SceneSnapshot> captured_snap;
+
+    struct CapturingBackend final : public prism::BackendBase {
+        std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
+            : snap_ref(s) {}
+        void run(std::function<void(const prism::InputEvent&)> cb) override {
+            cb(prism::WindowClose{});
+        }
+        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+            snap_ref = std::move(s);
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    prism::app<S>(
+        prism::Backend{std::make_unique<CapturingBackend>(captured_snap)},
+        prism::BackendConfig{.width = 400, .height = 300},
+        S{},
+        [](prism::Ui<S>& ui) {
+            ui.column([&] {
+                ui.frame().filled_rect({0, 0, 100, 80},
+                    prism::Color::rgba(255, 0, 0));
+                ui.frame().filled_rect({0, 0, 100, 60},
+                    prism::Color::rgba(0, 255, 0));
+            });
+        }
+    );
+
+    REQUIRE(captured_snap != nullptr);
+    CHECK(captured_snap->geometry.size() == 2);
+    CHECK(captured_snap->geometry[0].second.y == 0);
+    CHECK(captured_snap->geometry[0].second.h == 80);
+    CHECK(captured_snap->geometry[1].second.y == 80);
+    CHECK(captured_snap->geometry[1].second.h == 60);
+}
+
+TEST_CASE("ui.frame() without layout works as before (backward compat)") {
+    struct S {};
+    std::shared_ptr<const prism::SceneSnapshot> captured_snap;
+
+    struct CapturingBackend final : public prism::BackendBase {
+        std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
+            : snap_ref(s) {}
+        void run(std::function<void(const prism::InputEvent&)> cb) override {
+            cb(prism::WindowClose{});
+        }
+        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+            snap_ref = std::move(s);
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    prism::app<S>(
+        prism::Backend{std::make_unique<CapturingBackend>(captured_snap)},
+        prism::BackendConfig{.width = 800, .height = 600},
+        S{},
+        [](prism::Ui<S>& ui) {
+            ui.frame().filled_rect({10, 10, 50, 50},
+                prism::Color::rgba(255, 0, 0));
+        }
+    );
+
+    REQUIRE(captured_snap != nullptr);
+    // Single full-viewport entry, same as before
+    CHECK(captured_snap->geometry.size() == 1);
+    CHECK(captured_snap->geometry[0].second.w == 800);
+    CHECK(captured_snap->geometry[0].second.h == 600);
+}
