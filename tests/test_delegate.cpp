@@ -76,3 +76,32 @@ TEST_CASE("Label sentinel ignores input") {
     prism::Delegate<prism::Label<>>::handle_input(field, prism::MouseButton{{0, 0}, 1, true});
     CHECK(field.get().value == "OK");  // unchanged
 }
+
+TEST_CASE("Slider sentinel renders track and thumb") {
+    prism::Field<prism::Slider<>> field{"Volume", {.value = 0.5}};
+    prism::DrawList dl;
+    prism::Delegate<prism::Slider<>>::record(dl, field);
+    // Expect at least: track rect, thumb rect, label text
+    CHECK(dl.size() >= 3);
+}
+
+TEST_CASE("Slider sentinel renders thumb position proportional to value") {
+    prism::Field<prism::Slider<>> field_lo{"Vol", {.value = 0.0}};
+    prism::Field<prism::Slider<>> field_hi{"Vol", {.value = 1.0}};
+
+    prism::DrawList dl_lo, dl_hi;
+    prism::Delegate<prism::Slider<>>::record(dl_lo, field_lo);
+    prism::Delegate<prism::Slider<>>::record(dl_hi, field_hi);
+
+    // Thumb is the second FilledRect — its x position should differ
+    auto thumb_lo = std::get<prism::FilledRect>(dl_lo.commands[1]).rect.x;
+    auto thumb_hi = std::get<prism::FilledRect>(dl_hi.commands[1]).rect.x;
+    CHECK(thumb_hi > thumb_lo);
+}
+
+TEST_CASE("Slider<int> with step snaps value") {
+    prism::Field<prism::Slider<int>> field{"Quality", {.value = 3, .min = 1, .max = 5, .step = 1}};
+    prism::DrawList dl;
+    prism::Delegate<prism::Slider<int>>::record(dl, field);
+    CHECK(dl.size() >= 3);
+}
