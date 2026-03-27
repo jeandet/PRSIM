@@ -1,143 +1,169 @@
-# PRISM — Parallel Rendering & Immediate Scene Model
+# PRISM — Persistent Rendering & Interactive Scene Model
 
 **This is an R&D experiment** — exploring what a 2D UI toolkit could look like if built from scratch in C++26 with no legacy constraints. Nothing here is production-ready.
 
-> Take Qt's reactive topology, ImGui's draw-list simplicity, Flutter's pipeline stages, WebRender's tile compositing, SwiftUI's declarative ergonomics, and game engine threading discipline — and put it all together.
+> Take Qt's persistent widget tree, strip away moc and QObject, replace signal/slot strings with C++26 senders, and let P2996 reflection generate the UI from plain structs.
 
 ## The Problem
 
-Every major UI toolkit — Qt, GTK, wxWidgets, WinForms — couples the application and the renderer on a single thread. Rendering competes with business logic for CPU time, and if any step exceeds the frame budget, the UI freezes.
+Every major UI toolkit — Qt, GTK, wxWidgets — couples the application and the renderer on a single thread. Rendering competes with business logic for CPU time, and if any step exceeds the frame budget, the UI freezes.
 
-```
-Main Thread (event loop)
-├── Process input events
-├── Fire signal/slot callbacks         ← your model logic runs here
-├── Execute layout pass                ← sequential, blocks frame
-├── Call paintEvent() on each widget   ← rendering happens here
-└── Present frame
-     ↑
-     If ANY of these steps takes > 16ms → frame drop, frozen UI
+```mermaid
+graph TD
+    subgraph "Traditional single-thread event loop"
+        A[Process input events] --> B[Fire signal/slot callbacks<br/><i>your model logic runs here</i>]
+        B --> C[Execute layout pass<br/><i>sequential, blocks frame</i>]
+        C --> D["Call paintEvent() on each widget<br/><i>rendering happens here</i>"]
+        D --> E[Present frame]
+        E -->|"If ANY step > 16ms"| F["Frame drop / frozen UI"]
+    end
 ```
 
 This is an **architectural problem**, not a tuning problem.
 
 ## Architecture
 
-PRISM decouples the application from the renderer through a versioned, immutable scene snapshot exchanged via lock-free primitives.
+PRISM decouples the application from the renderer through a versioned, immutable scene snapshot exchanged via atomic pointer swap. Both threads sleep at OS level when idle — zero CPU when nothing changes.
 
-```
-╔═══════════════════════════════════════════════════════════════╗
-║  APPLICATION LAYER — backend thread(s), any number, any cadence  ║
-║  [ Model A ]  [ Model B ]  [ Time-series ]  [ Network ]         ║
-╚═════════════════╤═════════════════════════════════════════════╝
-                  │  publish via lock-free MPSC queue
-                  │  (versioned immutable snapshot or diff)
-                  ▼
-╔═══════════════════════════════════════════════════════════════╗
-║  SCENE DESCRIPTION — versioned, immutable, plain data            ║
-║  { widget_id → DrawList, rect, clip, z_order, opacity, ... }     ║
-╚═════════════════╤═════════════════════════════════════════════╝
-                  │  atomic pointer swap at vsync
-                  ▼
-╔═══════════════════════════════════════════════════════════════╗
-║  RENDER GRAPH → tile rasterisation (thread pool) → compositor    ║
-║  Guaranteed frame delivery independent of application state      ║
-╚═══════════════════════════════════════════════════════════════╝
-```
+```mermaid
+graph TB
+    subgraph app["Application Thread"]
+        Model["Model structs<br/>(Field&lt;T&gt; observables)"]
+        WT["Persistent WidgetTree<br/>(dirty tracking)"]
+        Model -->|"Field::set() triggers sender"| WT
+    end
 
-**The frame contract:** the renderer guarantees a frame every N ms regardless of what the application threads are doing. The application never blocks the renderer. The renderer never calls into application code.
+    subgraph snap["Scene Description"]
+        SS["SceneSnapshot<br/>(immutable, versioned, plain data)<br/>{widget_id → DrawList, rect, z_order, ...}"]
+    end
 
-## Render Backend
+    subgraph render["Backend Thread"]
+        SDL["SDL event wait"]
+        Raster["Rasterise + present"]
+        SDL --> Raster
+    end
 
-Each backend is a single concept implementation — one type, one function: `render_frame(snapshot)`. The backend owns the entire path from scene snapshot to pixels on screen.
-
-```
-SceneSnapshot (immutable plain data)
-       │
-       ▼
-┌──────────────────────────────────────────────────┐
-│ RenderBackend::render_frame(snapshot)             │
-│                                                   │
-│  Software:              Vulkan (future):          │
-│    tile split             upload draw list        │
-│    CPU rasterise          GPU shaders             │
-│    SDL3 present           swapchain present       │
-└──────────────────────────────────────────────────┘
+    WT -->|"atomic pointer swap"| SS
+    SS -->|"load latest"| Raster
+    SDL -->|"InputEvent callback"| Model
 ```
 
-No abstract base class with dozens of virtual methods. The draw list *is* the abstraction — the backend just interprets it. Adding a backend = implement one function in one file.
+**The frame contract:** the renderer guarantees frame delivery independent of application state. The application never blocks the renderer. The renderer never calls into application code.
 
-## Key Design Choices
+## Core Abstraction: `Field<T>`
 
-| | Qt | Flutter | SwiftUI | **PRISM** |
-|---|---|---|---|---|
-| Multi-threaded rendering | — | Partial | — | Yes |
-| Frame contract independent of app | — | Partial | — | Yes |
-| Declarative value-based UI | — | Yes | Yes | Yes |
-| RAII / no raw pointers | — | n/a | n/a | Yes |
-| Parallel layout | — | — | — | Yes |
-| No preprocessor / moc | — | n/a | n/a | Yes |
-| Cross-platform C++ | Yes | — | — | Yes |
-
-## API Taste
-
-### Minimal — open a window, draw a rectangle
+`Field<T>` is the triple-duty building block — simultaneously **data**, **observable**, and **widget spec**:
 
 ```cpp
-#include <prism/prism.hpp>
-
-int main() {
-    prism::App app({.title = "Hello", .width = 800, .height = 600});
-
-    app.run([](prism::Frame& frame) {
-        frame.filled_rect({10, 10, 200, 100}, prism::Color::rgba(0, 120, 215));
-    });
-}
-```
-
-### Declarative composition (future)
-
-```cpp
-auto login_form = VStack {
-    .gap      = 16,
-    .padding  = Insets::all(24),
-    .children = {
-        Label { .text = "Sign in", .style = TextStyle::Heading1 },
-        TextField {
-            .value       = bind(model.username),
-            .placeholder = "Username",
-        },
-        TextField {
-            .value       = bind(model.password),
-            .placeholder = "Password",
-            .secure      = true,
-        },
-        HStack {
-            .gap = 8,
-            .children = {
-                Button { .label = "Cancel",  .on_click = [&] { nav.pop(); } },
-                Button { .label = "Sign in", .on_click = [&] { model.submit(); } },
-            }
-        }
-    }
+struct Settings {
+    prism::Field<std::string> username{"Username", "jeandet"};
+    prism::Field<bool>        dark_mode{"Dark Mode", true};
 };
 ```
+
+- **Data** — `field.get()` / `field.set(v)` with equality guard (no spurious notifications)
+- **Observable** — `field.on_change().connect(callback)` with RAII `Connection` lifetime
+- **Widget spec** — P2996 reflection maps `Field<bool>` to checkbox, `Field<string>` to text field, etc.
+
+## Component Model
+
+Components are plain model structs. Compose by nesting — no inheritance, no macros:
+
+```cpp
+struct Settings {
+    prism::Field<std::string> username{"Username", "jeandet"};
+    prism::Field<bool>        dark_mode{"Dark Mode", true};
+};
+
+struct Dashboard {
+    Settings settings;                        // nested component
+    prism::Field<int> counter{"Counter", 0};
+};
+```
+
+```mermaid
+graph TD
+    D["Dashboard"] --> S["Settings"]
+    D --> C["counter : Field&lt;int&gt;"]
+    S --> U["username : Field&lt;string&gt;"]
+    S --> DM["dark_mode : Field&lt;bool&gt;"]
+```
+
+C++26 reflection (`P2996`) walks the struct members at compile time — no registration, no moc, no string-based identity.
+
+## Three Entry Points
+
+```mermaid
+graph LR
+    subgraph "Entry Points"
+        MA["model_app(title, model)<br/><b>Model-driven</b><br/>Reflection generates UI"]
+        MVU["app&lt;State&gt;(title, view, update)<br/><b>Retained MVU</b><br/>Manual layout"]
+        RAW["App + Frame<br/><b>Raw DrawList</b><br/>No state management"]
+    end
+    MA -->|primary| W[WidgetTree + SceneSnapshot]
+    MVU --> W
+    RAW --> W
+```
+
+**1. Model-driven** (primary API) — define model structs, reflection does the rest:
+```cpp
+Dashboard dashboard;
+prism::model_app("My App", dashboard);
+```
+
+**2. Retained layout** — manual `row()`/`column()`/`spacer()` composition:
+```cpp
+prism::app<State>("App", State{},
+    [](auto& ui) { ui.column([&] { /* ... */ }); },
+    [](State& s, const prism::InputEvent& ev) { /* ... */ }
+);
+```
+
+**3. Raw DrawList** — direct rendering, no state management:
+```cpp
+prism::App app({.title = "Hello", .width = 800, .height = 600});
+app.run([](prism::Frame& frame) {
+    frame.filled_rect({10, 10, 200, 100}, prism::Color::rgba(0, 120, 215));
+});
+```
+
+## Threading Model
+
+```mermaid
+sequenceDiagram
+    participant App as Application Thread
+    participant Snap as SceneSnapshot (atomic)
+    participant Back as Backend Thread (SDL)
+
+    Note over App: Sleeps until event or field change
+    Note over Back: Blocks on SDL_WaitEvent
+
+    Back->>App: InputEvent (mouse click)
+    App->>App: field.set(new_value)
+    App->>App: Sender fires → mark widget dirty
+    App->>App: Rebuild dirty DrawLists only
+    App->>Snap: Publish new snapshot (atomic swap)
+    App->>Back: Wake (SDL_PushEvent)
+    Back->>Snap: Load latest snapshot
+    Back->>Back: Rasterise + present
+```
+
+Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when nothing changes.
 
 ## C++26 Features
 
 | Feature | Used for |
 |---|---|
-| `std::execution` (P2300) | Signal/slot scheduling, async pipeline, render job submission |
-| Static Reflection | Observable properties, binding derivation, serialisation |
-| `std::expected` | All fallible API operations — no exceptions at API boundary |
+| Static Reflection (P2996) | Walk model structs, map `Field<T>` to widgets, generate UI |
+| `std::execution` (P2300) | Signal/slot scheduling, async pipeline (future) |
+| Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` |
+| Concepts & Constraints | Composability rules, clean error messages |
+| `std::expected` | Fallible API operations — no exceptions at API boundary |
 | Designated initialisers | Named-parameter widget construction |
-| Concepts & Constraints | Composability rules with clean error messages |
-| `std::mdspan` | Tile buffer management, texture atlases |
-| `std::flat_map` | Cache-friendly widget property storage |
 
 ## Building
 
-Requires GCC 15+ (or any compiler with C++26 support) and Meson >= 1.5.
+Requires **GCC 16+** with C++26 reflection support and **Meson >= 1.5**.
 
 ```bash
 meson setup builddir
@@ -145,23 +171,39 @@ ninja -C builddir
 meson test -C builddir
 ```
 
+The build automatically passes `-freflection` for P2996 support. Dependencies (SDL3, doctest) are fetched via Meson wraps.
+
 ## Roadmap
 
-- **Phase 1** — Core threading infrastructure (MPSC queue, double-buffered scene snapshot, draw list, tile rasteriser stub)
-- **Phase 2** — Layout engine (constraint regions, parallel solving, pure functional layout with memoisation)
-- **Phase 3** — Reactivity & bindings (`observable<T>`, `bind()`, `std::execution`-based signals)
-- **Phase 4** — Widget library (Label, Button, TextField, VStack/HStack/Grid, Plot, VirtualList)
-- **Phase 5** — GPU backend & compositing (Vulkan/Metal, SDF text, tile compositing, 10M-point benchmark)
+```mermaid
+graph LR
+    P1["Phase 1<br/>Core Infrastructure<br/><b>DONE</b>"]
+    P2["Phase 2<br/>Layout + Observers<br/><b>DONE</b>"]
+    P3["Phase 3<br/>Widgets + Rendering<br/><i>next</i>"]
+    P4["Phase 4<br/>Advanced Features"]
+    P5["Phase 5<br/>GPU Backend"]
+
+    P1 --> P2 --> P3 --> P4 --> P5
+```
+
+- **Phase 1** (done) — MPSC queue, DrawList, SceneSnapshot, SDL3 backend, event-driven loop
+- **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
+- **Phase 3** (next) — Real widget rendering, hit_test→sender routing, type-based widget dispatch, built-in widgets (button, label, text field, checkbox, slider)
+- **Phase 4** — Async sender composition, animation, accessibility, data widgets (plot, table)
+- **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
 ## Design Documents
 
 Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design/):
 
-- [App Facade](doc/design/app-facade.md) — zero-boilerplate entry point, App + Frame
 - [Threading Model](doc/design/threading-model.md) — lock-free snapshot handoff, thread roles, input flow
-- [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, full replacement model
+- [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, dirty repaint model
 - [Draw List](doc/design/draw-list.md) — command set, extensibility, serialisation
-- [Render Backend](doc/design/render-backend.md) — concept interface, software vs GPU path
+- [Render Backend](doc/design/render-backend.md) — BackendBase vtable, software vs GPU path
+- [Input Events](doc/design/input-events.md) — input queue, event forwarding, hit testing
+- [Layout Engine](docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) — row/column/spacer, two-pass solver, hit testing
+- [Field/Sender/Widget Spec](docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) — Field<T>, observer pattern, persistent widget tree
+- [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
 
 ## License
 
