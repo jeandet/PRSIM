@@ -13,6 +13,7 @@ headless_tests = {
   'connection' : files('test_connection.cpp'),
   'field' : files('test_field.cpp'),
   'reflect' : files('test_reflect.cpp'),
+  'widget_tree' : files('test_widget_tree.cpp'),
 }
 
 foreach name, src : headless_tests
