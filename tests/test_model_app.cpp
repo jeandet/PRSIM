@@ -80,29 +80,32 @@ struct ClickTestModel {
 };
 
 TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
-    std::vector<std::shared_ptr<const prism::SceneSnapshot>> snapshots;
+    std::shared_ptr<const prism::SceneSnapshot> latest_snap;
+    std::atomic<size_t> snap_count{0};
 
     struct ClickBackend final : public prism::BackendBase {
-        std::vector<std::shared_ptr<const prism::SceneSnapshot>>& snaps;
-        explicit ClickBackend(std::vector<std::shared_ptr<const prism::SceneSnapshot>>& s)
-            : snaps(s) {}
+        std::shared_ptr<const prism::SceneSnapshot>& latest;
+        std::atomic<size_t>& count;
+        ClickBackend(std::shared_ptr<const prism::SceneSnapshot>& l, std::atomic<size_t>& c)
+            : latest(l), count(c) {}
         void run(std::function<void(const prism::InputEvent&)> cb) override {
-            // Wait for first snapshot to know geometry
-            while (snaps.empty()) {}
-            auto& geo = snaps.back()->geometry;
-            REQUIRE_FALSE(geo.empty());
-            auto [id, rect] = geo[0];
+            count.wait(0, std::memory_order_acquire);
+            auto geo = latest;
+            REQUIRE_FALSE(geo->geometry.empty());
+            auto [id, rect] = geo->geometry[0];
             auto center = rect.center();
 
-            // Click in the widget
             cb(prism::MouseButton{center, 1, true});
-            // Give app thread time to process
-            while (snaps.size() < 2) {}
+
+            auto before = count.load(std::memory_order_acquire);
+            count.wait(before, std::memory_order_acquire);
 
             cb(prism::WindowClose{});
         }
         void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
-            snaps.push_back(std::move(s));
+            latest = std::move(s);
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
         }
         void wake() override {}
         void quit() override {}
@@ -112,11 +115,11 @@ TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
     CHECK(model.toggle.get() == false);
 
     prism::model_app(
-        prism::Backend{std::make_unique<ClickBackend>(snapshots)},
+        prism::Backend{std::make_unique<ClickBackend>(latest_snap, snap_count)},
         prism::BackendConfig{.width = 800, .height = 600},
         model
     );
 
     CHECK(model.toggle.get() == true);
-    CHECK(snapshots.size() >= 2);
+    CHECK(snap_count.load() >= 2);
 }
