@@ -25,6 +25,7 @@ struct WidgetNode {
     std::vector<WidgetNode> children;
     SenderHub<const InputEvent&> on_input;
     std::function<void(WidgetNode&)> wire;
+    std::function<void(WidgetNode&)> record;
 };
 
 // index_ stores raw pointers into the tree — valid only because the tree
@@ -64,6 +65,8 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
+        refresh_dirty(root_);
+
         LayoutNode layout;
         layout.kind = LayoutNode::Kind::Column;
         layout.id = root_.id;
@@ -120,6 +123,13 @@ private:
         for (auto& c : node.children) collect_leaf_ids(c, ids);
     }
 
+    static void refresh_dirty(WidgetNode& node) {
+        if (node.dirty && node.record)
+            node.record(node);
+        for (auto& c : node.children)
+            refresh_dirty(c);
+    }
+
     static bool mark_dirty(WidgetNode& node, WidgetId id) {
         if (node.id == id) { node.dirty = true; return true; }
         for (auto& c : node.children)
@@ -147,7 +157,10 @@ private:
         node.id = next_id_++;
         node.is_container = false;
 
-        record_field_widget(node, field);
+        node.record = [&field](WidgetNode& n) {
+            record_field_widget(n, field);
+        };
+        node.record(node);
 
         auto id = node.id;
         node.connections.push_back(

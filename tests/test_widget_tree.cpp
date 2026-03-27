@@ -78,6 +78,21 @@ TEST_CASE("WidgetTree dispatch emits on correct widget on_input") {
     CHECK(received);
 }
 
+TEST_CASE("WidgetTree refresh_dirty re-records draws from field state") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    tree.clear_dirty();
+
+    model.count.set(99);
+    CHECK(tree.any_dirty());
+
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    REQUIRE(snap2 != nullptr);
+    CHECK(snap2->geometry.size() == 2);
+}
+
 TEST_CASE("WidgetTree dispatch to unknown id is a no-op") {
     SimpleModel model;
     prism::WidgetTree tree(model);
