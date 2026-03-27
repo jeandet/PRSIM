@@ -18,7 +18,7 @@ prism_software_backend_dep = declare_dependency(
   dependencies : [prism_core_dep],
 )
 
-# Convenience: core + default software backend
+# Convenience: core + default software backend (SDL3 headers exposed for keycodes etc.)
 prism_dep = declare_dependency(
-  dependencies : [prism_core_dep, prism_software_backend_dep],
+  dependencies : [prism_core_dep, prism_software_backend_dep, sdl3_dep],
 )
