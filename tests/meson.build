@@ -20,6 +20,7 @@ endforeach
 # Tests that need BackendBase vtable but not SDL
 backend_base_tests = {
   'null_backend' : files('test_null_backend.cpp'),
+  'test_backend' : files('test_test_backend.cpp'),
   'ui' : files('test_ui.cpp'),
 }
 
