@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <variant>
 #include <vector>
@@ -24,6 +26,10 @@ struct Rect {
     float x, y, w, h;
 
     [[nodiscard]] Point center() const { return {x + w / 2, y + h / 2}; }
+
+    [[nodiscard]] bool contains(Point p) const {
+        return p.x >= x && p.x < x + w && p.y >= y && p.y < y + h;
+    }
 };
 
 struct FilledRect {
@@ -73,6 +79,29 @@ struct DrawList {
     void clear() { commands.clear(); }
     [[nodiscard]] bool empty() const { return commands.empty(); }
     [[nodiscard]] std::size_t size() const { return commands.size(); }
+
+    [[nodiscard]] Rect bounding_box() const {
+        if (commands.empty()) return {0, 0, 0, 0};
+        float min_x = std::numeric_limits<float>::max();
+        float min_y = std::numeric_limits<float>::max();
+        float max_x = std::numeric_limits<float>::lowest();
+        float max_y = std::numeric_limits<float>::lowest();
+        auto expand = [&](Rect r) {
+            min_x = std::min(min_x, r.x);
+            min_y = std::min(min_y, r.y);
+            max_x = std::max(max_x, r.x + r.w);
+            max_y = std::max(max_y, r.y + r.h);
+        };
+        for (const auto& cmd : commands) {
+            std::visit([&](const auto& c) {
+                if constexpr (requires { c.rect; })
+                    expand(c.rect);
+                else if constexpr (requires { c.origin; })
+                    expand({c.origin.x, c.origin.y, 0, c.size});
+            }, cmd);
+        }
+        return {min_x, min_y, max_x - min_x, max_y - min_y};
+    }
 };
 
 } // namespace prism
