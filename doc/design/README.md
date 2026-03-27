@@ -9,11 +9,11 @@ Each document details the design, rationale, and constraints for one subsystem. 
 | [scene-snapshot.md](scene-snapshot.md) | SceneSnapshot structure, versioning, full replacement model | **Implemented (POC)** |
 | [draw-list.md](draw-list.md) | DrawList format, command set, serialisation, extensibility | **Implemented (POC)** |
 | [render-backend.md](render-backend.md) | BackendBase vtable, SoftwareBackend, Backend wrapper | **Implemented** |
-| [input-events.md](input-events.md) | Input queue, event forwarding, hit testing | **Implemented** (queue + forwarding + keyboard), hit regions planned Phase 2 |
+| [input-events.md](input-events.md) | Input queue, event forwarding, hit testing | **Implemented** (queue + forwarding + keyboard + hit_test) |
 | [widget-model.md](widget-model.md) | Function components, `Ui<State>` context, `.on_X()` handlers, low-level Widget concept | **Redesigned** — components are functions, not structs |
 | [reactivity.md](reactivity.md) | MVU state flow, `.on_X()` handlers, internal signals, future reflection-derived UI | **Redesigned** — MVU primary, signals internal |
 | [styling.md](styling.md) | Theme as data, Context propagation, per-instance overrides, state variants | Draft |
-| [layout-engine.md](layout-engine.md) | `row()`, `column()`, `spacer()`, constraint regions, parallel solving | Planned (Phase 2) |
+| [layout-engine.md](layout-engine.md) | `row()`, `column()`, `spacer()`, stack-based layout, hit testing | **Implemented (Phase 2)** |
 | [python-bindings.md](python-bindings.md) | nanobind wrapping, GIL-free Python 3.14+, callback threading | Planned |
 | [testing-strategy.md](testing-strategy.md) | doctest, synchronous scheduler for tests, headless rendering, visual regression | Planned |
 | [tracing-profiling.md](tracing-profiling.md) | Tracy behind generic macros, trace points at pipeline boundaries | Planned |
