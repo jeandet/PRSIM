@@ -2,43 +2,61 @@
 
 #include <SDL3/SDL_keycode.h>
 
-#include <array>
-
 struct State {
-    uint8_t color_index = 0;
+    int selected_panel = 0;
 };
 
-static constexpr std::array colors = {
-    prism::Color::rgba(0, 120, 215),
-    prism::Color::rgba(215, 50, 50),
-    prism::Color::rgba(50, 180, 50),
-    prism::Color::rgba(200, 150, 0),
-};
+static constexpr auto bg       = prism::Color::rgba(30, 30, 40);
+static constexpr auto sidebar  = prism::Color::rgba(45, 45, 55);
+static constexpr auto header   = prism::Color::rgba(0, 120, 215);
+static constexpr auto footer   = prism::Color::rgba(50, 50, 60);
+static constexpr auto accent   = prism::Color::rgba(0, 180, 120);
+static constexpr auto muted    = prism::Color::rgba(60, 60, 75);
+static constexpr auto panel_bg = prism::Color::rgba(38, 38, 50);
+
+void nav_item(auto& ui, float h, prism::Color c) {
+    ui.frame().filled_rect({4, 4, 192, h - 8}, c);
+}
+
+void content_card(auto& ui, float w, float h, prism::Color c) {
+    ui.frame().filled_rect({8, 8, w - 16, h - 16}, c);
+}
 
 int main() {
-    prism::app<State>("Interactive PRISM", State{},
+    prism::app<State>("PRISM Layout Demo", State{},
         [](auto& ui) {
-            ui.row([&] {
-                // Left sidebar
-                ui.frame().filled_rect({0, 0, 200, 100},
-                    prism::Color::rgba(50, 50, 60));
+            // Root: full-window column (header / body / footer)
+            ui.column([&] {
+                // Header bar
+                ui.frame().filled_rect({0, 0, 100, 48}, header);
 
-                ui.spacer();
+                // Body: sidebar | content
+                ui.row([&] {
+                    // Sidebar: fixed-width column of nav items
+                    ui.column([&] {
+                        nav_item(ui, 50, ui->selected_panel == 0 ? accent : muted);
+                        nav_item(ui, 50, ui->selected_panel == 1 ? accent : muted);
+                        nav_item(ui, 50, ui->selected_panel == 2 ? accent : muted);
+                        ui.spacer();
+                        nav_item(ui, 40, sidebar);
+                    });
 
-                // Right panel with colored rect
-                ui.column([&] {
-                    ui.frame().filled_rect({0, 0, 300, 150},
-                        colors[ui->color_index]);
+                    // Content area: stretches to fill
                     ui.spacer();
-                    ui.frame().filled_rect({0, 0, 300, 80},
-                        prism::Color::rgba(40, 40, 50));
                 });
+
+                // Footer bar
+                ui.frame().filled_rect({0, 0, 100, 32}, footer);
             });
         },
         [](State& s, const prism::InputEvent& ev) {
-            if (auto* click = std::get_if<prism::MouseButton>(&ev);
-                click && click->pressed) {
-                s.color_index = (s.color_index + 1) % colors.size();
+            if (auto* key = std::get_if<prism::KeyPress>(&ev)) {
+                switch (key->key) {
+                case SDLK_1: s.selected_panel = 0; break;
+                case SDLK_2: s.selected_panel = 1; break;
+                case SDLK_3: s.selected_panel = 2; break;
+                default: break;
+                }
             }
         }
     );
