@@ -12,6 +12,7 @@ headless_tests = {
   'hit_test' : files('test_hit_test.cpp'),
   'connection' : files('test_connection.cpp'),
   'field' : files('test_field.cpp'),
+  'state' : files('test_state.cpp'),
   'list' : files('test_list.cpp'),
   'reflect' : files('test_reflect.cpp'),
   'widget_tree' : files('test_widget_tree.cpp'),
