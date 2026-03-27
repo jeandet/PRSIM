@@ -81,8 +81,23 @@ No abstract base class with dozens of virtual methods. The draw list *is* the ab
 
 ## API Taste
 
+### Minimal — open a window, draw a rectangle
+
 ```cpp
-// Declarative composition — no heap allocations, no pointers, no macros
+#include <prism/prism.hpp>
+
+int main() {
+    prism::App app({.title = "Hello", .width = 800, .height = 600});
+
+    app.run([](prism::Frame& frame) {
+        frame.filled_rect({10, 10, 200, 100}, prism::Color::rgba(0, 120, 215));
+    });
+}
+```
+
+### Declarative composition (future)
+
+```cpp
 auto login_form = VStack {
     .gap      = 16,
     .padding  = Insets::all(24),
@@ -142,8 +157,9 @@ meson test -C builddir
 
 Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design/):
 
-- [Threading Model](doc/design/threading-model.md) — lock-free snapshot handoff, MPSC diff queue, thread roles
-- [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, diffing strategy
+- [App Facade](doc/design/app-facade.md) — zero-boilerplate entry point, App + Frame
+- [Threading Model](doc/design/threading-model.md) — lock-free snapshot handoff, thread roles, input flow
+- [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, full replacement model
 - [Draw List](doc/design/draw-list.md) — command set, extensibility, serialisation
 - [Render Backend](doc/design/render-backend.md) — concept interface, software vs GPU path
 

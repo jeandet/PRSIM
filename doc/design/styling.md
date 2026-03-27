@@ -16,9 +16,18 @@ Styling in PRISM is plain data — no CSS cascade, no global state, no callbacks
 Every `record()` call receives a `Context` — a lightweight value carrying the current theme and widget state:
 
 ```cpp
+// Bitmask — combinable states (e.g. Hovered | Focused).
+enum class WidgetState : uint8_t {
+    Normal   = 0,
+    Hovered  = 1 << 0,
+    Focused  = 1 << 1,
+    Pressed  = 1 << 2,
+    Disabled = 1 << 3,
+};
+
 struct Context {
     const Theme& theme;
-    WidgetState  state;   // hovered, focused, pressed, disabled
+    WidgetState  state = WidgetState::Normal;
 };
 
 template <typename T>
@@ -87,9 +96,9 @@ State selection is a branch, not a callback:
 
 ```cpp
 const ButtonVisuals& resolve(const ButtonStyle& s, WidgetState state) {
-    if (state.disabled) return s.disabled;
-    if (state.pressed)  return s.pressed;
-    if (state.hovered)  return s.hovered;
+    if (has(state, WidgetState::Disabled)) return s.disabled;
+    if (has(state, WidgetState::Pressed))  return s.pressed;
+    if (has(state, WidgetState::Hovered))  return s.hovered;
     return s.normal;
 }
 ```
@@ -161,7 +170,7 @@ Hot-reloading a theme from Python is just reassigning the theme reference in the
 
 ## Open Questions
 
-- Should `WidgetState` be a bitmask or a struct of bools?
+- ~~Should `WidgetState` be a bitmask or a struct of bools?~~ **Decided:** bitmask enum, combinable via `operator|`, queried via `has()`.
 - How does Context propagation work for deeply nested widgets — implicit via the call stack, or explicit parent → child?
 - Should themes support partial overrides (a "dark mode overlay" that only changes some fields)?
 - Animation interpolation between style states — is this a style concern or an animation concern?

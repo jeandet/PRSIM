@@ -25,7 +25,7 @@ struct Gauge {
     Color background;
     Color fill;
 
-    void record(DrawList& dl) const {
+    void record(DrawList& dl, const Context&) const {
         dl.filled_rect(bounds, background);
         dl.filled_rect({bounds.x, bounds.y, bounds.w * value, bounds.h}, fill);
         dl.rect_outline(bounds, fill, 1.0f);
@@ -42,9 +42,9 @@ struct LabeledGauge {
     std::string label;
     Gauge       gauge;
 
-    void record(DrawList& dl) const {
+    void record(DrawList& dl, const Context& ctx) const {
         dl.text(label, {gauge.bounds.x, gauge.bounds.y - 20}, 12.0f, Color::rgba(0, 0, 0));
-        gauge.record(dl);
+        gauge.record(dl, ctx);
     }
 };
 ```
@@ -81,7 +81,7 @@ auto moved = std::move(label);           // zero cost
 
 ## Thread Safety
 
-`record()` writes to a thread-local `DrawList`. The draw list is then captured into a `SceneSnapshot` and handed off to the render thread via atomic swap. The user never deals with threads or synchronisation when writing widgets.
+`record()` writes to a thread-local `DrawList`, receiving the current `Context` for theme/state access. The draw list is then captured into a `SceneSnapshot` and handed off to the render thread via atomic swap. The user never deals with threads or synchronisation when writing widgets.
 
 ## Python Bindings
 
@@ -95,7 +95,7 @@ class Gauge:
         self.bg = bg
         self.fill = fill
 
-    def record(self, dl):
+    def record(self, dl, ctx):
         dl.filled_rect(self.bounds, self.bg)
         dl.filled_rect(Rect(self.bounds.x, self.bounds.y,
                             self.bounds.w * self.value, self.bounds.h), self.fill)
@@ -105,7 +105,7 @@ class Gauge:
 
 ## Open Questions
 
-- How does layout interact with the widget concept? Should widgets declare size constraints, or is layout a separate concern?
+- How does layout interact with the widget concept? Should widgets declare size constraints, or is layout a separate concern? (For POC: manual `Rect bounds`, layout is Phase 2.)
 - Declarative composition syntax (`VStack { .children = { ... } }`) — how to make this work with the Widget concept and designated initialisers?
-- Handle system — how do widgets that need mutable state (text fields, checkboxes) expose updates through the diff queue?
-- Event handling — should `record()` be purely visual, with a separate `hit_test()` or event concept?
+- Handle system — how do widgets that need mutable state (text fields, checkboxes) expose updates? (Deferred to Phase 3 with reactivity.)
+- ~~Event handling — should `record()` be purely visual, with a separate `hit_test()` or event concept?~~ **Decided:** `record()` is purely visual. Input dispatch is a separate concern — see [input-events.md](input-events.md).
