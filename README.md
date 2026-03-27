@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="doc/logo/logo.png" alt="PRISM logo" width="500"/>
+</p>
+
 # PRISM — Persistent Rendering & Interactive Scene Model
 
 **This is an R&D experiment** — exploring what a 2D UI toolkit could look like if built from scratch in C++26 with no legacy constraints. Nothing here is production-ready.
@@ -50,20 +54,44 @@ graph TB
 
 **The frame contract:** the renderer guarantees frame delivery independent of application state. The application never blocks the renderer. The renderer never calls into application code.
 
-## Core Abstraction: `Field<T>`
+## Core Abstractions: `Field<T>` and `State<T>`
 
-`Field<T>` is the triple-duty building block — simultaneously **data**, **observable**, and **widget spec**:
+Two observable types share the same core (`.get()`, `.set()`, `.on_change()`):
+
+- **`Field<T>`** — data + observable + **widget** (reflection generates UI for it)
+- **`State<T>`** — data + observable + **no widget** (backend state, synchronisation)
 
 ```cpp
 struct Settings {
-    prism::Field<std::string> username{"Username", "jeandet"};
-    prism::Field<bool>        dark_mode{"Dark Mode", true};
+    prism::Field<std::string> username{"Username", "jeandet"};  // → text input
+    prism::Field<bool>        dark_mode{"Dark Mode", true};      // → checkbox
+    prism::State<std::string> session_token{""};                 // → no widget, still observable
 };
 ```
 
-- **Data** — `field.get()` / `field.set(v)` with equality guard (no spurious notifications)
-- **Observable** — `field.on_change().connect(callback)` with RAII `Connection` lifetime
-- **Widget spec** — P2996 reflection maps `Field<bool>` to checkbox, `Field<string>` to text field, etc.
+Both support equality-guarded `set()` (no spurious notifications) and RAII `Connection` lifetime on `on_change()`.
+
+## Sentinel Types & Delegates
+
+The type inside `Field<T>` determines which **delegate** renders it. Sentinel types are templated wrappers that encode presentation semantics:
+
+```cpp
+struct Editor {
+    prism::Field<std::string>         title{"Title"};              // → text input (default for StringLike)
+    prism::Field<prism::Label<>>      status{"Status", {"OK"}};    // → read-only label
+    prism::Field<prism::Password<>>   secret{"Password"};          // → masked input
+    prism::Field<prism::Slider<>>     volume{"Volume", {.value = 0.8}};           // → continuous slider
+    prism::Field<prism::Slider<int>>  quality{"Quality", {.value = 3, .min = 1,
+                                               .max = 5, .step = 1}};            // → discrete slider
+};
+```
+
+Delegates are resolved at compile time via **concepts**, not concrete types. A delegate matches on traits (`StringLike`, `Numeric`, `SliderRenderable`), so custom types work automatically if they satisfy the right concept:
+
+```cpp
+// Your own string type works in Label<> if it satisfies StringLike
+prism::Field<prism::Label<MyString>> info{"Info", {my_string}};
+```
 
 ## Component Model
 
@@ -78,6 +106,7 @@ struct Settings {
 struct Dashboard {
     Settings settings;                        // nested component
     prism::Field<int> counter{"Counter", 0};
+    prism::State<int> request_count{0};       // observable, no widget
 };
 ```
 
@@ -85,11 +114,12 @@ struct Dashboard {
 graph TD
     D["Dashboard"] --> S["Settings"]
     D --> C["counter : Field&lt;int&gt;"]
+    D --> R["request_count : State&lt;int&gt;<br/><i>(no widget)</i>"]
     S --> U["username : Field&lt;string&gt;"]
     S --> DM["dark_mode : Field&lt;bool&gt;"]
 ```
 
-C++26 reflection (`P2996`) walks the struct members at compile time — no registration, no moc, no string-based identity.
+C++26 reflection (`P2996`) walks the struct members at compile time — `Field<T>` gets a widget, `State<T>` is skipped, nested structs recurse. No registration, no moc, no string-based identity.
 
 ## Three Entry Points
 
@@ -157,7 +187,7 @@ Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when
 | Static Reflection (P2996) | Walk model structs, map `Field<T>` to widgets, generate UI |
 | `std::execution` (P2300) | Signal/slot scheduling, async pipeline (future) |
 | Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` |
-| Concepts & Constraints | Composability rules, clean error messages |
+| Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), composability rules |
 | `std::expected` | Fallible API operations — no exceptions at API boundary |
 | Designated initialisers | Named-parameter widget construction |
 
@@ -188,7 +218,7 @@ graph LR
 
 - **Phase 1** (done) — MPSC queue, DrawList, SceneSnapshot, SDL3 backend, event-driven loop
 - **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
-- **Phase 3** (next) — Real widget rendering, hit_test→sender routing, type-based widget dispatch, built-in widgets (button, label, text field, checkbox, slider)
+- **Phase 3** (next) — Real widget rendering, hit_test→sender routing, concept-based delegate dispatch, `State<T>`, sentinel types (`Label<T>`, `Slider<T>`), built-in widgets (button, label, text field, checkbox, slider)
 - **Phase 4** — Async sender composition, animation, accessibility, data widgets (plot, table)
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
@@ -203,6 +233,7 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Input Events](doc/design/input-events.md) — input queue, event forwarding, hit testing
 - [Layout Engine](docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) — row/column/spacer, two-pass solver, hit testing
 - [Field/Sender/Widget Spec](docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) — Field<T>, observer pattern, persistent widget tree
+- [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, templated sentinel types, Field vs State
 - [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
 
 ## License
