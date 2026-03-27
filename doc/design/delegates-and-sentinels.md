@@ -10,7 +10,11 @@ Two field wrapper types exist:
 
 ## Field vs State
 
-Both share the same observable core (`.get()`, `.set()`, `.on_change()`). The only difference: reflection emits a widget for `Field<T>` and skips `State<T>`.
+Both share the same observable core (`.get()`, `.set()`, `.on_change()`, `.observe()`). The only difference: reflection emits a widget for `Field<T>` and skips `State<T>`.
+
+Two subscription APIs:
+- `.observe(cb)` — fire-and-forget, connection stored internally, lives as long as the Field/State. Use this by default.
+- `.on_change().connect(cb)` — returns `[[nodiscard]] Connection` for scoped lifetime management.
 
 ```cpp
 struct Dashboard {
