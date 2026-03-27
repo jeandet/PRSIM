@@ -3,12 +3,15 @@
 #include <prism/core/connection.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/input_event.hpp>
 #include <prism/core/layout.hpp>
 #include <prism/core/reflect.hpp>
 #include <prism/core/scene_snapshot.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace prism {
@@ -20,6 +23,8 @@ struct WidgetNode {
     DrawList draws;
     std::vector<Connection> connections;
     std::vector<WidgetNode> children;
+    SenderHub<const InputEvent&> on_input;
+    std::function<void(WidgetNode&)> wire;
 };
 
 class WidgetTree {
@@ -27,6 +32,7 @@ public:
     template <typename Model>
     explicit WidgetTree(Model& model) {
         root_ = build_container(model);
+        build_index(root_);
         clear_dirty();
     }
 
@@ -39,6 +45,17 @@ public:
         std::vector<WidgetId> ids;
         collect_leaf_ids(root_, ids);
         return ids;
+    }
+
+    void dispatch(WidgetId id, const InputEvent& ev) {
+        if (auto it = index_.find(id); it != index_.end())
+            it->second->on_input.emit(ev);
+    }
+
+    Connection connect_input(WidgetId id, std::function<void(const InputEvent&)> cb) {
+        if (auto it = index_.find(id); it != index_.end())
+            return it->second->on_input.connect(std::move(cb));
+        return {};
     }
 
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
@@ -59,6 +76,17 @@ public:
 private:
     WidgetNode root_;
     WidgetId next_id_ = 1;
+    std::unordered_map<WidgetId, WidgetNode*> index_;
+
+    void build_index(WidgetNode& node) {
+        index_[node.id] = &node;
+        if (node.wire) {
+            node.wire(node);
+            node.wire = nullptr;
+        }
+        for (auto& c : node.children)
+            build_index(c);
+    }
 
     static size_t count_leaves(const WidgetNode& node) {
         if (!node.is_container) return 1;

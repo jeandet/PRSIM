@@ -3,6 +3,7 @@
 
 #include <prism/core/widget_tree.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/input_event.hpp>
 
 #include <string>
 
@@ -60,4 +61,26 @@ TEST_CASE("WidgetTree builds SceneSnapshot from model") {
     REQUIRE(snap != nullptr);
     CHECK(snap->geometry.size() == 2);
     CHECK(snap->version == 1);
+}
+
+TEST_CASE("WidgetTree dispatch emits on correct widget on_input") {
+    NestedModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 3);
+
+    bool received = false;
+    auto conn = tree.connect_input(ids[2], [&](const prism::InputEvent&) {
+        received = true;
+    });
+
+    tree.dispatch(ids[2], prism::MouseButton{{50, 15}, 1, true});
+    CHECK(received);
+}
+
+TEST_CASE("WidgetTree dispatch to unknown id is a no-op") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    // Should not crash
+    tree.dispatch(9999, prism::MouseButton{{0, 0}, 1, true});
 }
