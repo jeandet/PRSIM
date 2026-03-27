@@ -10,6 +10,7 @@ headless_tests = {
   'software_renderer' : files('test_software_renderer.cpp'),
   'layout' : files('test_layout.cpp'),
   'hit_test' : files('test_hit_test.cpp'),
+  'connection' : files('test_connection.cpp'),
 }
 
 foreach name, src : headless_tests
