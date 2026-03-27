@@ -2,9 +2,91 @@
 
 ## Overview
 
-A widget is any type that can record draw commands into a `DrawList`. No base class, no inheritance, no registration system. Built-in and user-defined widgets use the exact same API.
+PRISM's widget model has two layers:
 
-## The Widget Concept
+1. **User-facing:** Components are plain functions that call methods on a `Ui<State>` context. No base class, no registration, no lifecycle hooks.
+2. **Internal:** Built-in components use the low-level `DrawList` + `Widget` concept. Users can drop to this level for custom rendering.
+
+## Components as Functions
+
+A component is a function that takes a `ui` context and data:
+
+```cpp
+void task_row(auto& ui, const Task& task, size_t index) {
+    ui.row([&] {
+        ui.checkbox(task.done).on_toggle([=](auto& s) {
+            s.tasks[index].done = !s.tasks[index].done;
+        });
+        ui.label(task.title);
+        ui.spacer();
+        ui.button("x").on_click([=](auto& s) {
+            s.tasks.erase(s.tasks.begin() + index);
+        });
+    });
+}
+```
+
+Components compose by calling each other — just function calls. A sidebar calls selectable items, a form calls text fields and buttons.
+
+## The Ui Context
+
+`Ui<State>` is the interface between user code and the framework:
+
+```cpp
+template <typename State>
+class Ui {
+public:
+    // Read-only access to current state
+    const State* operator->() const;
+    const State& state() const;
+
+    // Built-in components (return handles for event chaining)
+    auto button(std::string_view label) -> WidgetHandle;
+    auto label(std::string_view text) -> WidgetHandle;
+    auto checkbox(bool value) -> WidgetHandle;
+    auto text_field(std::string_view value) -> WidgetHandle;
+    auto slider(float value, float min, float max) -> WidgetHandle;
+
+    // Layout containers
+    void row(auto&& children);
+    void column(auto&& children);
+    void spacer();
+
+    // Low-level (drop to DrawList)
+    Frame& frame();
+};
+```
+
+## Event Handlers — Retained, Not Immediate
+
+Components return lightweight handles for chaining `.on_X()`:
+
+```cpp
+ui.button("Save").on_click([](auto& s) {
+    s.saved = true;
+});
+```
+
+The lambda is **not** called during the view pass. It is stored in the snapshot's event table. When the framework resolves a hit (user clicks the button region), it dispatches the handler on the app thread, then re-runs the view.
+
+This is the key difference from immediate mode: components never return "was I clicked?" — they declare "when clicked, do this."
+
+## Widget Identity
+
+The framework assigns stable IDs from call-site position (source location + loop index), similar to React hooks. Users never manage widget IDs manually.
+
+For dynamic lists, `ui.key(value)` provides explicit identity:
+
+```cpp
+for (auto& task : ui->tasks) {
+    ui.key(task.id);  // stable identity across reorders
+    task_row(ui, task);
+}
+```
+
+## Low-Level Widget Concept (Internal)
+
+The `Widget` concept from the POC remains as the internal primitive:
 
 ```cpp
 template <typename T>
@@ -13,49 +95,20 @@ concept Widget = requires(const T w, DrawList& dl, const Context& ctx) {
 };
 ```
 
-That's the entire contract. A widget is a value type with a `record()` method. The `Context` carries the current theme and widget state — see [styling.md](styling.md).
-
-## User-Defined Widgets
+Built-in components (`ui.button()`, etc.) use this internally. Users can drop to it for custom rendering via `ui.frame()`:
 
 ```cpp
-// No inheritance, no macros, no registration
-struct Gauge {
-    float value;     // 0.0 to 1.0
-    Rect  bounds;
-    Color background;
-    Color fill;
-
-    void record(DrawList& dl, const Context&) const {
-        dl.filled_rect(bounds, background);
-        dl.filled_rect({bounds.x, bounds.y, bounds.w * value, bounds.h}, fill);
-        dl.rect_outline(bounds, fill, 1.0f);
-    }
-};
+void custom_gauge(auto& ui, float value, Rect bounds) {
+    auto& frame = ui.frame();
+    frame.filled_rect(bounds, Color::rgba(40, 40, 50));
+    frame.filled_rect({bounds.x, bounds.y, bounds.w * value, bounds.h},
+                      Color::rgba(0, 180, 80));
+}
 ```
-
-## Composition
-
-Widgets compose by aggregation. A composite widget calls `record()` on its children:
-
-```cpp
-struct LabeledGauge {
-    std::string label;
-    Gauge       gauge;
-
-    void record(DrawList& dl, const Context& ctx) const {
-        dl.text(label, {gauge.bounds.x, gauge.bounds.y - 20}, 12.0f, Color::rgba(0, 0, 0));
-        gauge.record(dl, ctx);
-    }
-};
-```
-
-No special container class, no `addWidget()`, no child list management. Composition is just struct fields.
 
 ## DrawList as the Drawing API
 
-`DrawList` is both the internal rendering primitive and the user-facing drawing API. There is no separate "public" vs "internal" drawing interface.
-
-Available drawing operations (current and planned):
+`DrawList` remains both the internal rendering primitive and the escape hatch for custom rendering. There is no separate "public" vs "internal" drawing interface.
 
 | Method | Purpose |
 |---|---|
@@ -66,46 +119,31 @@ Available drawing operations (current and planned):
 | `line()` / `polyline()` | Lines (planned) |
 | `rounded_rect()` | Rounded corners (planned) |
 | `image()` | Texture blit (planned) |
-| `path()` | General vector path (planned) |
-| `gradient()` | Linear/radial fill (planned) |
 
 ## Value Semantics
 
-Widgets are plain data — stack-allocatable, copyable, movable. No heap allocation to create a widget. No pointer to a parent. No hidden mutable state.
-
-```cpp
-auto label = Label { .text = "Hello" };
-auto copy  = label;                      // trivial copy
-auto moved = std::move(label);           // zero cost
-```
-
-## Thread Safety
-
-`record()` writes to a thread-local `DrawList`, receiving the current `Context` for theme/state access. The draw list is then captured into a `SceneSnapshot` and handed off to the render thread via atomic swap. The user never deals with threads or synchronisation when writing widgets.
+State and data passed to components are plain values. Components read state via `const State&` (through `ui->`). Mutation only happens through `.on_X()` handlers, which receive `State&` and execute outside the view pass.
 
 ## Python Bindings
 
-User-defined widgets in Python follow the same pattern — a class with a `record()` method:
+Components in Python follow the same function pattern:
 
 ```python
-class Gauge:
-    def __init__(self, value, bounds, bg, fill):
-        self.value = value
-        self.bounds = bounds
-        self.bg = bg
-        self.fill = fill
-
-    def record(self, dl, ctx):
-        dl.filled_rect(self.bounds, self.bg)
-        dl.filled_rect(Rect(self.bounds.x, self.bounds.y,
-                            self.bounds.w * self.value, self.bounds.h), self.fill)
+def task_row(ui, task, index):
+    with ui.row():
+        ui.checkbox(task.done).on_toggle(lambda s: toggle_task(s, index))
+        ui.label(task.title)
 ```
 
-`DrawList` methods take plain data arguments — trivial to expose via nanobind.
+## Resolved Questions
+
+- ~~How does layout interact with the widget concept?~~ Layout is built into `Ui` via `row()`, `column()`, `spacer()`.
+- ~~Handle system for mutable state?~~ `.on_X()` handlers take `State&` — no per-widget mutable state needed.
+- ~~Event handling — should `record()` be purely visual?~~ **Yes.** View is pure. Events are retained via `.on_X()`.
+- ~~Immediate mode vs retained?~~ **Retained.** Components declare event handlers, they don't return interaction results.
 
 ## Open Questions
 
-- How does layout interact with the widget concept? Should widgets declare size constraints, or is layout a separate concern? (For POC: manual `Rect bounds`, layout is Phase 2.)
-- Declarative composition syntax (`VStack { .children = { ... } }`) — how to make this work with the Widget concept and designated initialisers?
-- Handle system — how do widgets that need mutable state (text fields, checkboxes) expose updates? (Deferred to Phase 3 with reactivity.)
-- ~~Event handling — should `record()` be purely visual, with a separate `hit_test()` or event concept?~~ **Decided:** `record()` is purely visual. Input dispatch is a separate concern — see [input-events.md](input-events.md).
+- Hit region resolution: how does the framework map a mouse click to the correct `.on_click()` handler when regions overlap? Z-order from snapshot?
+- Keyboard focus: tab order, focus ring rendering, focus-related widget state.
+- Accessibility: how do components declare labels, roles, and relationships for screen readers?

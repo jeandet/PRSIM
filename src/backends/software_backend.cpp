@@ -52,6 +52,12 @@ void SoftwareBackend::run(std::function<void(const InputEvent&)> event_cb) {
                 event_cb(MouseScroll{
                     {ev.wheel.mouse_x, ev.wheel.mouse_y}, ev.wheel.x, ev.wheel.y});
                 break;
+            case SDL_EVENT_KEY_DOWN:
+                event_cb(KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod});
+                break;
+            case SDL_EVENT_KEY_UP:
+                event_cb(KeyRelease{static_cast<int32_t>(ev.key.key), ev.key.mod});
+                break;
             case SDL_EVENT_USER:
                 break;
             default:
