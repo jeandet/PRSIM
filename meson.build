@@ -10,6 +10,8 @@ project('prism', 'cpp',
   meson_version : '>= 1.5.0',
 )
 
+add_project_arguments('-freflection', language : 'cpp')
+
 prism_inc = include_directories('include')
 
 subdir('src')
