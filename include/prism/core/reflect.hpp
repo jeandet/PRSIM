@@ -17,6 +17,19 @@ struct is_field<T> : std::true_type {};
 template <typename T>
 inline constexpr bool is_field_v = is_field<T>::value;
 
+// Detect State<T>
+template <typename T>
+struct is_state : std::false_type {};
+
+template <typename T>
+    requires requires { typename std::remove_cvref_t<decltype(std::declval<T>().value)>; }
+    && requires(T t) { t.on_change(); }
+    && (!requires { T::label; })
+struct is_state<T> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_state_v = is_state<T>::value;
+
 // Visit all Field<T> members of a struct (non-recursive)
 template <typename Model, typename Fn>
 void for_each_field(Model& model, Fn&& fn) {
@@ -41,7 +54,7 @@ consteval bool check_is_component() {
         bool found = false;
         template for (constexpr auto m : members) {
             using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
-            if constexpr (is_field_v<M>) found = true;
+            if constexpr (is_field_v<M> || is_state_v<M>) found = true;
         }
         return found;
     }

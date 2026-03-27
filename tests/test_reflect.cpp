@@ -70,3 +70,28 @@ TEST_CASE("for_each_member visits fields and sub-components") {
     CHECK(fields == 1);      // flag
     CHECK(components == 1);  // inner
 }
+
+#include <prism/core/state.hpp>
+
+struct ModelWithState {
+    prism::Field<int> visible{"Vis", 0};
+    prism::State<int> hidden{0};
+};
+
+TEST_CASE("is_state_v detects State<T>") {
+    CHECK(prism::is_state_v<prism::State<int>>);
+    CHECK(prism::is_state_v<prism::State<std::string>>);
+    CHECK_FALSE(prism::is_state_v<prism::Field<int>>);
+    CHECK_FALSE(prism::is_state_v<int>);
+}
+
+TEST_CASE("is_component_v is true for struct with State + Field members") {
+    CHECK(prism::is_component_v<ModelWithState>);
+}
+
+TEST_CASE("for_each_field skips State members") {
+    ModelWithState model;
+    int count = 0;
+    prism::for_each_field(model, [&](auto&) { ++count; });
+    CHECK(count == 1);
+}
