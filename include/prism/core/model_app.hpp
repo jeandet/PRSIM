@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/backend.hpp>
+#include <prism/core/hit_test.hpp>
 #include <prism/core/input_event.hpp>
 #include <prism/core/mpsc_queue.hpp>
 #include <prism/core/widget_tree.hpp>
@@ -32,13 +33,22 @@ void model_app(Backend backend, BackendConfig cfg, Model& model) {
     int w = cfg.width, h = cfg.height;
     uint64_t version = 0;
 
-    // Initial snapshot
-    backend.submit(tree.build_snapshot(w, h, ++version));
-    backend.wake();
+    auto publish = [&]() -> std::shared_ptr<const SceneSnapshot> {
+        auto snap = std::shared_ptr<const SceneSnapshot>(
+            tree.build_snapshot(w, h, ++version));
+        backend.submit(snap);
+        backend.wake();
+        tree.clear_dirty();
+        return snap;
+    };
+
+    auto current_snap = publish();
 
     while (running.load(std::memory_order_relaxed)) {
         input_pending.wait(false, std::memory_order_acquire);
         input_pending.store(false, std::memory_order_relaxed);
+
+        bool needs_rebuild = false;
 
         while (auto ev = input_queue.pop()) {
             if (std::holds_alternative<WindowClose>(*ev)) {
@@ -48,16 +58,18 @@ void model_app(Backend backend, BackendConfig cfg, Model& model) {
             if (auto* resize = std::get_if<WindowResize>(&*ev)) {
                 w = resize->width;
                 h = resize->height;
+                needs_rebuild = true;
             }
-            // Future: hit_test + event routing to widget senders
+            if (auto* mb = std::get_if<MouseButton>(&*ev); mb && current_snap) {
+                if (auto id = hit_test(*current_snap, mb->position))
+                    tree.dispatch(*id, *ev);
+            }
         }
 
         if (!running.load(std::memory_order_relaxed)) break;
 
-        // Rebuild snapshot (only dirty widgets re-record in the future)
-        backend.submit(tree.build_snapshot(w, h, ++version));
-        backend.wake();
-        tree.clear_dirty();
+        if (tree.any_dirty() || needs_rebuild)
+            current_snap = publish();
     }
 
     backend.quit();
