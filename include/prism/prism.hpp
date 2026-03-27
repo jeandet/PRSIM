@@ -21,3 +21,5 @@
 #include <prism/core/model_app.hpp>
 #include <prism/core/reflect.hpp>
 #include <prism/core/widget_tree.hpp>
+#include <prism/core/state.hpp>
+#include <prism/core/delegate.hpp>
