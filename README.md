@@ -25,9 +25,15 @@ graph TD
 
 This is an **architectural problem**, not a tuning problem.
 
-## Architecture
+## Architecture — Model-View-Behavior (MVB)
 
-PRISM decouples the application from the renderer through a versioned, immutable scene snapshot exchanged via atomic pointer swap. Both threads sleep at OS level when idle — zero CPU when nothing changes.
+PRISM follows a **Model-View-Behavior** pattern:
+
+- **Model** — plain structs with `Field<T>` members. Data + change notification. Knows nothing about rendering or input.
+- **View** — `Delegate<T>` specializations. Per-type rendering and widget-level input mechanics, automatic via P2996 reflection. PRISM-internal.
+- **Behavior** — user-written `on_change()` / `observe()` chains. Business logic that reacts to field mutations.
+
+The application and renderer are decoupled through a versioned, immutable scene snapshot exchanged via atomic pointer swap. Both threads sleep at OS level when idle — zero CPU when nothing changes.
 
 ```mermaid
 graph TB
@@ -75,24 +81,33 @@ Both support equality-guarded `set()` (no spurious notifications) and RAII `Conn
 
 ## Sentinel Types & Delegates
 
-The type inside `Field<T>` determines which **delegate** renders it. Sentinel types are templated wrappers that encode presentation semantics:
+The type inside `Field<T>` determines which **delegate** (View layer) renders it. Sentinel types are templated wrappers that encode presentation semantics:
 
 ```cpp
+enum class Theme { Light, Dark, System };
+
 struct Editor {
-    prism::Field<std::string>         title{""};                                    // → text input (default for StringLike)
+    prism::Field<std::string>         title{""};                                    // → read-only text (default for StringLike)
     prism::Field<prism::Label<>>      status{{"OK"}};                               // → read-only label
-    prism::Field<prism::Password<>>   secret{""};                                   // → masked input
+    prism::Field<prism::TextField<>>  search{{.placeholder = "Search..."}};          // → editable text field
+    prism::Field<prism::Password<>>   secret{{.placeholder = "API key"}};            // → masked input
     prism::Field<prism::Slider<>>     volume{{.value = 0.8}};                       // → continuous slider
+    prism::Field<prism::Button>       save{{"Save"}};                               // → clickable button
+    prism::Field<bool>                dark_mode{true};                              // → checkbox
+    prism::Field<prism::Checkbox>     notify{{.checked = true, .label = "Enable"}}; // → checkbox with label
+    prism::Field<Theme>               theme{Theme::Dark};                           // → auto-dropdown via reflection
     prism::Field<prism::Slider<int>>  quality{{.value = 3, .min = 1,
                                                .max = 5, .step = 1}};              // → discrete slider
 };
 ```
 
-Delegates are resolved at compile time via **concepts**, not concrete types. A delegate matches on traits (`StringLike`, `Numeric`, `SliderRenderable`), so custom types work automatically if they satisfy the right concept:
+Delegates are resolved at compile time via **concepts**, not concrete types. A delegate matches on traits (`StringLike`, `Numeric`, `ScopedEnum`), so custom types work automatically if they satisfy the right concept:
 
 ```cpp
 // Your own string type works in Label<> if it satisfies StringLike
 prism::Field<prism::Label<MyString>> info{{my_string}};
+// Any scoped enum gets an auto-dropdown via P2996 enumerators_of
+prism::Field<MyEnum> mode{MyEnum::Default};
 ```
 
 ## Composition by Nesting
@@ -129,7 +144,7 @@ C++26 reflection (`P2996`) walks the struct members at compile time — `Field<T
 graph LR
     subgraph "Entry Points"
         MA["model_app(title, model)<br/><b>Model-driven</b><br/>Reflection generates UI"]
-        MVU["app&lt;State&gt;(title, view, update)<br/><b>Retained MVU</b><br/>Manual layout"]
+        MVU["app&lt;State&gt;(title, view, update)<br/><b>Retained layout</b><br/>Manual composition"]
         RAW["App + Frame<br/><b>Raw DrawList</b><br/>No state management"]
     end
     MA -->|primary| W[WidgetTree + SceneSnapshot]
@@ -167,12 +182,12 @@ sequenceDiagram
     participant Snap as SceneSnapshot (atomic)
     participant Back as Backend Thread (SDL)
 
-    Note over App: Sleeps until event or field change
+    Note over App: Sleeps on stdexec run_loop
     Note over Back: Blocks on SDL_WaitEvent
 
-    Back->>App: InputEvent (mouse click)
-    App->>App: field.set(new_value)
-    App->>App: Sender fires → mark widget dirty
+    Back->>App: InputEvent via run_loop scheduler
+    App->>App: Delegate handle_input (View)
+    App->>App: field.set() → on_change (Behavior)
     App->>App: Rebuild dirty DrawLists only
     App->>Snap: Publish new snapshot (atomic swap)
     App->>Back: Wake (SDL_PushEvent)
@@ -187,7 +202,7 @@ Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when
 | Feature | Used for |
 |---|---|
 | Static Reflection (P2996) | Walk model structs, map `Field<T>` to widgets, generate UI |
-| `std::execution` (P2300) | Signal/slot scheduling, async pipeline (future) |
+| `std::execution` (P2300) | `run_loop` event loop, `prism::then` / `prism::on` pipe adaptors |
 | Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` |
 | Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), composability rules |
 | `std::expected` | Fallible API operations — no exceptions at API boundary |
@@ -218,10 +233,10 @@ graph LR
     P1 --> P2 --> P3 --> P4 --> P5
 ```
 
-- **Phase 1** (done) — MPSC queue, DrawList, SceneSnapshot, SDL3 backend, event-driven loop
+- **Phase 1** (done) — DrawList, SceneSnapshot, SDL3 backend, event-driven loop
 - **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
-- **Phase 3** (in progress) — Real widget rendering, hit_test→sender routing, concept-based delegate dispatch, `State<T>`, sentinel types (`Label<T>`, `Slider<T>`), SDL_Renderer + SDL3_ttf text rendering, built-in widgets (button, label, text field, checkbox, slider)
-- **Phase 4** — Async sender composition, animation, accessibility, data widgets (plot, table)
+- **Phase 3** (in progress) — Delegate dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, Slider, Button, Checkbox, Dropdown, enum auto-dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors. Next: TextArea, custom `view()`, `canvas()` escape hatch
+- **Phase 4** — Animation, accessibility, scroll areas, data widgets (plot, table)
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
 ## Design Documents
@@ -235,7 +250,9 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Input Events](doc/design/input-events.md) — input queue, event forwarding, hit testing
 - [Layout Engine](docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) — row/column/spacer, two-pass solver, hit testing
 - [Field/Sender/Widget Spec](docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) — Field<T>, observer pattern, persistent widget tree
-- [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, templated sentinel types, Field vs State
+- [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, all sentinel types, overlay system, focus policy
+- [Input Routing](docs/superpowers/specs/2026-03-27-input-routing-design.md) — hit_test → dispatch → delegate handle_input → field mutation
+- [stdexec Integration](doc/design/stdexec-integration.md) — run_loop event loops, prism::then/on pipe adaptors, AppContext
 - [SDL_Renderer Migration](docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) — SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit
 - [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
 - [Components](doc/design/components.md) — `prism::Component` base class, self-wiring reusable UI + logic bundles (design only)
