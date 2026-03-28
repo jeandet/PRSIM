@@ -36,10 +36,11 @@ TEST_CASE("Delegate<bool> record changes with value") {
     prism::DrawList dl2;
     prism::Delegate<bool>::record(dl2, field, node);
 
-    CHECK(dl1.size() == dl2.size());
-    auto color1 = std::get<prism::FilledRect>(dl1.commands[0]).color;
-    auto color2 = std::get<prism::FilledRect>(dl2.commands[0]).color;
-    CHECK(color1.r != color2.r);  // false=grey, true=teal
+    // commands[0] is background (same for true/false); commands[1] is the checkbox box fill
+    // true adds a checkmark text, so sizes differ
+    auto color1 = std::get<prism::FilledRect>(dl1.commands[1]).color;
+    auto color2 = std::get<prism::FilledRect>(dl2.commands[1]).color;
+    CHECK(color1.r != color2.r);  // false=grey, true=blue
 }
 
 TEST_CASE("Delegate<bool> handle_input toggles on press") {
@@ -54,6 +55,18 @@ TEST_CASE("Delegate<bool> handle_input ignores release") {
     auto node = make_node();
     prism::Delegate<bool>::handle_input(field, prism::MouseButton{{0, 0}, 1, false}, node);
     CHECK(field.get() == false);
+}
+
+TEST_CASE("Delegate<bool> renders checkbox box outline") {
+    prism::Field<bool> field{false};
+    auto node = make_node();
+    prism::DrawList dl;
+    prism::Delegate<bool>::record(dl, field, node);
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+    }
+    CHECK(has_outline);
 }
 
 TEST_CASE("Default Delegate record produces draws for int") {
@@ -272,11 +285,12 @@ TEST_CASE("Delegate<bool> no focus ring when not focused") {
     auto node = make_node();
     prism::DrawList dl;
     prism::Delegate<bool>::record(dl, field, node);
-    bool has_outline = false;
+    // The checkbox box border is always present; the focus ring adds a second outline
+    int outline_count = 0;
     for (auto& cmd : dl.commands) {
-        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+        if (std::holds_alternative<prism::RectOutline>(cmd)) outline_count++;
     }
-    CHECK_FALSE(has_outline);
+    CHECK(outline_count == 1);  // only box border, no focus ring
 }
 
 TEST_CASE("Slider renders focus ring when focused") {

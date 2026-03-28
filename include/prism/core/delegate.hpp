@@ -99,6 +99,36 @@ struct Delegate<T> {
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
 };
 
+// Sentinel: checkbox with label
+struct Checkbox {
+    bool checked = false;
+    std::string label;
+    bool operator==(const Checkbox&) const = default;
+};
+
+// Shared checkbox box rendering for Delegate<bool> and Delegate<Checkbox>
+inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
+                           const WidgetVisualState& vs) {
+    constexpr float box_size = 16.f;
+    constexpr float border = 1.5f;
+
+    if (checked) {
+        auto fill = vs.pressed  ? Color::rgba(0, 100, 170)
+                  : vs.hovered  ? Color::rgba(0, 140, 220)
+                  :               Color::rgba(0, 120, 200);
+        dl.filled_rect({x, y, box_size, box_size}, fill);
+        dl.text("\xe2\x9c\x93", {x + 2, y + 1}, 13, Color::rgba(255, 255, 255)); // checkmark
+    } else {
+        auto fill = vs.pressed  ? Color::rgba(35, 35, 42)
+                  : vs.hovered  ? Color::rgba(55, 55, 65)
+                  :               Color::rgba(45, 45, 55);
+        dl.filled_rect({x, y, box_size, box_size}, fill);
+    }
+    dl.rect_outline({x, y, box_size, box_size},
+                    vs.hovered ? Color::rgba(120, 120, 135) : Color::rgba(90, 90, 105),
+                    border);
+}
+
 // bool specialization: toggle widget
 template <>
 struct Delegate<bool> {
@@ -106,19 +136,18 @@ struct Delegate<bool> {
 
     static void record(DrawList& dl, const Field<bool>& field, const WidgetNode& node) {
         auto& vs = node_vs(node);
-        Color bg;
-        if (field.get()) {
-            bg = vs.pressed ? Color::rgba(0, 100, 65)
-               : vs.hovered ? Color::rgba(0, 140, 95)
-               : Color::rgba(0, 120, 80);
-        } else {
-            bg = vs.pressed ? Color::rgba(40, 40, 48)
-               : vs.hovered ? Color::rgba(60, 60, 72)
-               : Color::rgba(50, 50, 60);
-        }
-        dl.filled_rect({0, 0, 200, 30}, bg);
+        constexpr float widget_w = 200.f, widget_h = 30.f;
+        constexpr float box_size = 16.f;
+
+        auto bg = vs.hovered ? Color::rgba(55, 55, 65) : Color::rgba(45, 45, 55);
+        dl.filled_rect({0, 0, widget_w, widget_h}, bg);
+
+        float box_y = (widget_h - box_size) / 2.f;
+        draw_check_box(dl, 8, box_y, field.get(), vs);
+
         if (vs.focused)
-            dl.rect_outline({-1, -1, 202, 32}, Color::rgba(80, 160, 240), 2.0f);
+            dl.rect_outline({-1, -1, widget_w + 2, widget_h + 2},
+                            Color::rgba(80, 160, 240), 2.0f);
     }
 
     static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetNode&) {
@@ -239,36 +268,6 @@ struct Delegate<Button> {
         }
     }
 };
-
-// Sentinel: checkbox with label
-struct Checkbox {
-    bool checked = false;
-    std::string label;
-    bool operator==(const Checkbox&) const = default;
-};
-
-// Shared checkbox box rendering for Delegate<bool> and Delegate<Checkbox>
-inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
-                           const WidgetVisualState& vs) {
-    constexpr float box_size = 16.f;
-    constexpr float border = 1.5f;
-
-    if (checked) {
-        auto fill = vs.pressed  ? Color::rgba(0, 100, 170)
-                  : vs.hovered  ? Color::rgba(0, 140, 220)
-                  :               Color::rgba(0, 120, 200);
-        dl.filled_rect({x, y, box_size, box_size}, fill);
-        dl.text("\xe2\x9c\x93", {x + 2, y + 1}, 13, Color::rgba(255, 255, 255)); // checkmark
-    } else {
-        auto fill = vs.pressed  ? Color::rgba(35, 35, 42)
-                  : vs.hovered  ? Color::rgba(55, 55, 65)
-                  :               Color::rgba(45, 45, 55);
-        dl.filled_rect({x, y, box_size, box_size}, fill);
-    }
-    dl.rect_outline({x, y, box_size, box_size},
-                    vs.hovered ? Color::rgba(120, 120, 135) : Color::rgba(90, 90, 105),
-                    border);
-}
 
 template <StringLike T>
 struct Delegate<TextField<T>> {
