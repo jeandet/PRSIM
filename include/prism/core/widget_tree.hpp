@@ -39,6 +39,63 @@ struct WidgetNode {
 // Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
 inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }
 
+// --- Delegate<TextField<T>> method bodies ---
+// These are defined here because they access WidgetNode members (edit_state, dirty)
+// which require the complete type.
+
+template <StringLike T>
+const TextEditState& Delegate<TextField<T>>::get_edit_state(const WidgetNode& node) {
+    static const TextEditState default_state;
+    if (!node.edit_state.has_value()) return default_state;
+    return std::any_cast<const TextEditState&>(node.edit_state);
+}
+
+template <StringLike T>
+TextEditState& Delegate<TextField<T>>::ensure_edit_state(WidgetNode& node) {
+    if (!node.edit_state.has_value())
+        node.edit_state = TextEditState{};
+    return std::any_cast<TextEditState&>(node.edit_state);
+}
+
+template <StringLike T>
+void Delegate<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
+                                    const WidgetNode& node) {
+    auto& vs = node_vs(node);
+    auto& tf = field.get();
+    auto& es = get_edit_state(node);
+    float cw = char_width(font_size);
+
+    auto bg = vs.focused ? Color::rgba(65, 65, 78)
+            : vs.hovered ? Color::rgba(55, 55, 68)
+            : Color::rgba(45, 45, 55);
+    dl.filled_rect({0, 0, widget_w, widget_h}, bg);
+
+    if (vs.focused)
+        dl.rect_outline({-1, -1, widget_w + 2, widget_h + 2},
+                        Color::rgba(80, 160, 240), 2.0f);
+
+    float text_area_w = widget_w - 2 * padding;
+    dl.clip_push({padding, 0, text_area_w, widget_h});
+
+    if (tf.value.empty() && !vs.focused) {
+        dl.text(tf.placeholder, {padding, padding + 2}, font_size,
+                Color::rgba(120, 120, 130));
+    } else {
+        float text_x = padding - es.scroll_offset;
+        std::string text_str(tf.value.data(), tf.value.size());
+        dl.text(text_str, {text_x, padding + 2}, font_size,
+                Color::rgba(220, 220, 220));
+    }
+
+    if (vs.focused) {
+        float cursor_x = padding + es.cursor * cw - es.scroll_offset;
+        dl.filled_rect({cursor_x, padding, cursor_w, widget_h - 2 * padding},
+                       Color::rgba(220, 220, 240));
+    }
+
+    dl.clip_pop();
+}
+
 // index_ stores raw pointers into the tree — valid only because the tree
 // is fully built before build_index runs and never mutated after construction.
 class WidgetTree {

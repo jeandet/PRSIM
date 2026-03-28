@@ -5,6 +5,7 @@
 #include <prism/core/input_event.hpp>
 
 #include <algorithm>
+#include <any>
 #include <string>
 #include <variant>
 
@@ -242,10 +243,15 @@ struct Delegate<Button> {
 template <StringLike T>
 struct Delegate<TextField<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+    static constexpr float widget_w = 200.f;
+    static constexpr float widget_h = 30.f;
+    static constexpr float padding = 4.f;
+    static constexpr float font_size = 14.f;
+    static constexpr float cursor_w = 2.f;
 
+    // Defined in widget_tree.hpp (after WidgetNode is complete).
     static const TextEditState& get_edit_state(const WidgetNode& node);
     static TextEditState& ensure_edit_state(WidgetNode& node);
-
     static void record(DrawList& dl, const Field<TextField<T>>& field, const WidgetNode& node);
     static void handle_input(Field<TextField<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
