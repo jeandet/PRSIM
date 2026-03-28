@@ -80,6 +80,8 @@ struct Delegate<bool> {
                : Color::rgba(50, 50, 60);
         }
         dl.filled_rect({0, 0, 200, 30}, bg);
+        if (vs.focused)
+            dl.rect_outline({-1, -1, 202, 32}, Color::rgba(80, 160, 240), 2.0f);
     }
 
     static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetVisualState&) {
@@ -141,6 +143,8 @@ struct Delegate<Slider<T>> {
                          : Color::rgba(0, 140, 200);
         float thumb_x = r * (track_w - thumb_w);
         dl.filled_rect({thumb_x, 0, thumb_w, widget_h}, thumb_color);
+        if (vs.focused)
+            dl.rect_outline({-1, -1, track_w + 2, widget_h + 2}, Color::rgba(80, 160, 240), 2.0f);
     }
 
     static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetVisualState&) {
@@ -178,6 +182,8 @@ struct Delegate<Button> {
         dl.filled_rect({0, 0, 200, 32}, bg);
         dl.rect_outline({0, 0, 200, 32}, Color::rgba(60, 140, 220), 1.0f);
         dl.text(field.get().text, {8, 7}, 14, Color::rgba(240, 240, 240));
+        if (vs.focused)
+            dl.rect_outline({-2, -2, 204, 36}, Color::rgba(80, 160, 240), 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetVisualState&) {

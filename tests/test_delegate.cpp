@@ -245,3 +245,51 @@ TEST_CASE("Button ignores other keys") {
     prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{0x41, 0}, vs);
     CHECK(field.get().click_count == 0);
 }
+
+TEST_CASE("Delegate<bool> renders focus ring when focused") {
+    prism::Field<bool> field{false};
+    prism::WidgetVisualState vs{.focused = true};
+    prism::DrawList dl;
+    prism::Delegate<bool>::record(dl, field, vs);
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+    }
+    CHECK(has_outline);
+}
+
+TEST_CASE("Delegate<bool> no focus ring when not focused") {
+    prism::Field<bool> field{false};
+    prism::WidgetVisualState vs{};
+    prism::DrawList dl;
+    prism::Delegate<bool>::record(dl, field, vs);
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+    }
+    CHECK_FALSE(has_outline);
+}
+
+TEST_CASE("Slider renders focus ring when focused") {
+    prism::Field<prism::Slider<>> field{{.value = 0.5}};
+    prism::WidgetVisualState vs{.focused = true};
+    prism::DrawList dl;
+    prism::Delegate<prism::Slider<>>::record(dl, field, vs);
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+    }
+    CHECK(has_outline);
+}
+
+TEST_CASE("Button renders focus ring when focused") {
+    prism::Field<prism::Button> field{{"Go"}};
+    prism::WidgetVisualState vs{.focused = true};
+    prism::DrawList dl;
+    prism::Delegate<prism::Button>::record(dl, field, vs);
+    int outline_count = 0;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) outline_count++;
+    }
+    CHECK(outline_count >= 2);  // existing border + focus ring
+}
