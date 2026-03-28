@@ -9,6 +9,8 @@
 
 #include <string>
 
+enum class TestColor { Red, Green, Blue };
+
 namespace {
 prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
     prism::WidgetNode node;
@@ -403,6 +405,11 @@ TEST_CASE("Checkbox renders focus ring when focused") {
         if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
     }
     CHECK(has_outline);
+}
+
+TEST_CASE("FocusPolicy: enum delegates are focusable") {
+    CHECK(prism::Delegate<TestColor>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Delegate<prism::Dropdown<TestColor>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 TEST_CASE("Checkbox observer fires on toggle") {
