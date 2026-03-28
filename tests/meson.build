@@ -21,6 +21,7 @@ headless_tests = {
   'text_field' : files('test_text_field.cpp'),
   'dropdown' : files('test_dropdown.cpp'),
   'password' : files('test_password.cpp'),
+  'text_area' : files('test_text_area.cpp'),
 }
 
 foreach name, src : headless_tests

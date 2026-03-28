@@ -14,7 +14,9 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -171,6 +173,82 @@ void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widge
         es.scroll_offset = cursor_px - text_area_w;
     if (cursor_px < es.scroll_offset)
         es.scroll_offset = cursor_px;
+}
+
+// --- TextArea helpers ---
+
+struct LineSpan {
+    size_t start;
+    size_t length;
+};
+
+struct LineCol {
+    size_t line;
+    size_t col;
+};
+
+inline std::vector<LineSpan> wrap_lines(std::string_view text, float text_area_w, float char_w) {
+    std::vector<LineSpan> result;
+    size_t max_chars = static_cast<size_t>(text_area_w / char_w);
+    if (max_chars == 0) max_chars = 1;
+
+    size_t pos = 0;
+    while (pos <= text.size()) {
+        size_t nl = text.find('\n', pos);
+        size_t logical_end = (nl == std::string_view::npos) ? text.size() : nl;
+        size_t logical_len = logical_end - pos;
+
+        if (logical_len == 0) {
+            result.push_back({pos, 0});
+        } else {
+            size_t offset = 0;
+            while (offset < logical_len) {
+                size_t chunk = std::min(max_chars, logical_len - offset);
+                result.push_back({pos + offset, chunk});
+                offset += chunk;
+            }
+        }
+
+        if (nl == std::string_view::npos) break;
+        pos = nl + 1;
+        if (pos == text.size() + 1) break;
+    }
+
+    if (result.empty()) result.push_back({0, 0});
+    return result;
+}
+
+inline LineCol cursor_to_line_col(size_t cursor, std::span<const LineSpan> lines) {
+    for (size_t i = 0; i < lines.size(); ++i) {
+        size_t line_end = lines[i].start + lines[i].length;
+        bool is_last = (i + 1 == lines.size());
+        if (cursor < line_end || (cursor == line_end && is_last))
+            return {i, cursor - lines[i].start};
+        if (!is_last && lines[i + 1].start > line_end) {
+            if (cursor <= line_end)
+                return {i, cursor - lines[i].start};
+        }
+    }
+    auto& last = lines.back();
+    return {lines.size() - 1, last.length};
+}
+
+inline size_t line_col_to_cursor(size_t line, size_t col, std::span<const LineSpan> lines) {
+    if (line >= lines.size()) line = lines.size() - 1;
+    size_t clamped_col = std::min(col, lines[line].length);
+    return lines[line].start + clamped_col;
+}
+
+inline const TextAreaEditState& get_text_area_edit_state(const WidgetNode& node) {
+    static const TextAreaEditState default_state;
+    if (!node.edit_state.has_value()) return default_state;
+    return std::any_cast<const TextAreaEditState&>(node.edit_state);
+}
+
+inline TextAreaEditState& ensure_text_area_edit_state(WidgetNode& node) {
+    if (!node.edit_state.has_value())
+        node.edit_state = TextAreaEditState{};
+    return std::any_cast<TextAreaEditState&>(node.edit_state);
 }
 
 } // namespace detail
