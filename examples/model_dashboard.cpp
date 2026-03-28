@@ -12,6 +12,7 @@ struct Settings {
     prism::Field<prism::Slider<>> volume{{.value = 0.7}};
     prism::Field<prism::TextField<>> search{{.value = "", .placeholder = "Search..."}};
     prism::Field<Theme> theme{Theme::Dark};
+    prism::Field<prism::Password<>> api_key{{.placeholder = "API key"}};
 };
 
 struct Dashboard {
