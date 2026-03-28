@@ -320,3 +320,313 @@ TEST_CASE("TextArea record renders cursor when focused") {
     }
     CHECK(thin_rects >= 1);
 }
+
+// --- handle_input() tests ---
+
+TEST_CASE("TextArea: TextInput inserts text at cursor") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 1;
+
+    prism::InputEvent ev = prism::TextInput{"X"};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "aXb");
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Enter inserts newline") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 1;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::enter, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "a\nb");
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: max_length enforced on TextInput") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc", .max_length = 5}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 3;
+
+    prism::InputEvent ev = prism::TextInput{"XYZ"};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abcXY");
+    CHECK(es.cursor == 5);
+}
+
+TEST_CASE("TextArea: max_length enforced on Enter") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcde", .max_length = 5}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 3;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::enter, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abcde");
+    CHECK(es.cursor == 3);
+}
+
+TEST_CASE("TextArea: Backspace deletes char before cursor") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::backspace, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "ac");
+    CHECK(es.cursor == 1);
+}
+
+TEST_CASE("TextArea: Backspace at start of line joins with previous") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab\ncd"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 3;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::backspace, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abcd");
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Backspace at position 0 is no-op") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 0;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::backspace, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abc");
+    CHECK(es.cursor == 0);
+}
+
+TEST_CASE("TextArea: Delete removes char at cursor") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 1;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::delete_, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "ac");
+    CHECK(es.cursor == 1);
+}
+
+TEST_CASE("TextArea: Delete at end-of-line joins with next") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab\ncd"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::delete_, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abcd");
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Delete at end of text is no-op") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 3;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::delete_, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abc");
+}
+
+TEST_CASE("TextArea: Left/Right arrow movement") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab\ncd"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::InputEvent left = prism::KeyPress{.key = prism::keys::left, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, left, node);
+    CHECK(es.cursor == 1);
+
+    prism::InputEvent right = prism::KeyPress{.key = prism::keys::right, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, right, node);
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Left at position 0 is no-op") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 0;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::left, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 0);
+}
+
+TEST_CASE("TextArea: Right at end of text is no-op") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::right, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Home moves to start of wrapped line") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab\ncde"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 5;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::home, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 3);
+}
+
+TEST_CASE("TextArea: End moves to end of wrapped line") {
+    prism::Field<prism::TextArea<>> field{{.value = "ab\ncde"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 3;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::end, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 6);
+}
+
+TEST_CASE("TextArea: Up moves to previous line, same column") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcde\nfgh"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 8;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::up, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Up on first line is no-op") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcde\nfgh"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::up, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 2);
+}
+
+TEST_CASE("TextArea: Down moves to next line, same column") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcde\nfgh"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::down, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 8);
+}
+
+TEST_CASE("TextArea: Down on last line is no-op") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcde\nfgh"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 8;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::down, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 8);
+}
+
+TEST_CASE("TextArea: Down clamps col to shorter line") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcde\nfg"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 4;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::down, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+    CHECK(es.cursor == 8);
+}
+
+TEST_CASE("TextArea: mouse click positions cursor") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc\ndef"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    float cw = prism::char_width(14.f);
+    constexpr float padding = 4.f;
+    constexpr float line_h = 14.f * 1.4f;
+
+    float click_x = padding + 1.5f * cw;
+    float click_y = padding + 1.0f * line_h + line_h * 0.5f;
+    prism::InputEvent ev = prism::MouseButton{
+        .position = {click_x, click_y}, .button = 1, .pressed = true};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(es.cursor == 6);
+}
+
+TEST_CASE("TextArea: mouse click below last line clamps to end") {
+    prism::Field<prism::TextArea<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    constexpr float line_h = 14.f * 1.4f;
+
+    prism::InputEvent ev = prism::MouseButton{
+        .position = {100.f, 10.f * line_h}, .button = 1, .pressed = true};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(es.cursor == 3);
+}
+
+TEST_CASE("TextArea: scroll adjusts when cursor goes below viewport") {
+    prism::Field<prism::TextArea<>> field{{.value = "a\nb\nc\nd", .rows = 2}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 0;
+
+    constexpr float line_h = 14.f * 1.4f;
+    float text_area_h = 2 * line_h;
+
+    es.cursor = 6;
+
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::right, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(es.scroll_y > 0.f);
+    float cursor_y = 3.f * line_h;
+    CHECK(es.scroll_y == doctest::Approx(cursor_y - text_area_h + line_h));
+}
+
+TEST_CASE("TextArea: scroll adjusts when cursor goes above viewport") {
+    prism::Field<prism::TextArea<>> field{{.value = "a\nb\nc\nd", .rows = 2}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    constexpr float line_h = 14.f * 1.4f;
+
+    es.cursor = 6;
+    es.scroll_y = 2 * line_h;
+
+    es.cursor = 0;
+    prism::InputEvent ev = prism::KeyPress{.key = prism::keys::home, .mods = 0};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(es.scroll_y == doctest::Approx(0.f));
+}

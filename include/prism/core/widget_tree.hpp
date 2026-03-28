@@ -305,6 +305,111 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     dl.clip_pop();
 }
 
+template <typename Sentinel>
+void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, WidgetNode& node) {
+    auto& es = ensure_text_area_edit_state(node);
+    auto sf = field.get();
+    auto len = sf.value.size();
+    float cw = char_width(ta_font_size);
+    float text_area_w = ta_widget_w - 2 * ta_padding;
+    float text_area_h = sf.rows * ta_line_height;
+
+    auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
+                              text_area_w, cw);
+
+    if (auto* ti = std::get_if<TextInput>(&ev)) {
+        std::string to_insert = ti->text;
+        if (sf.max_length > 0 && len + to_insert.size() > sf.max_length) {
+            size_t room = (len < sf.max_length) ? sf.max_length - len : 0;
+            to_insert = to_insert.substr(0, room);
+        }
+        if (!to_insert.empty()) {
+            std::string v(sf.value.data(), sf.value.size());
+            v.insert(es.cursor, to_insert);
+            es.cursor += to_insert.size();
+            sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+            field.set(sf);
+        }
+    } else if (auto* kp = std::get_if<KeyPress>(&ev)) {
+        if (kp->key == keys::enter) {
+            if (sf.max_length == 0 || len < sf.max_length) {
+                std::string v(sf.value.data(), sf.value.size());
+                v.insert(es.cursor, 1, '\n');
+                es.cursor++;
+                sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+                field.set(sf);
+            }
+        } else if (kp->key == keys::backspace && es.cursor > 0) {
+            std::string v(sf.value.data(), sf.value.size());
+            v.erase(es.cursor - 1, 1);
+            es.cursor--;
+            sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+            field.set(sf);
+        } else if (kp->key == keys::delete_ && es.cursor < len) {
+            std::string v(sf.value.data(), sf.value.size());
+            v.erase(es.cursor, 1);
+            sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+            field.set(sf);
+        } else if (kp->key == keys::left && es.cursor > 0) {
+            es.cursor--;
+            node.dirty = true;
+        } else if (kp->key == keys::right && es.cursor < len) {
+            es.cursor++;
+            node.dirty = true;
+        } else if (kp->key == keys::home) {
+            auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
+            size_t new_cursor = line_col_to_cursor(line, 0, wrapped);
+            if (new_cursor != es.cursor) {
+                es.cursor = new_cursor;
+                node.dirty = true;
+            }
+        } else if (kp->key == keys::end) {
+            auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
+            size_t new_cursor = line_col_to_cursor(line, wrapped[line].length, wrapped);
+            if (new_cursor != es.cursor) {
+                es.cursor = new_cursor;
+                node.dirty = true;
+            }
+        } else if (kp->key == keys::up) {
+            auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
+            if (line > 0) {
+                es.cursor = line_col_to_cursor(line - 1, col, wrapped);
+                node.dirty = true;
+            }
+        } else if (kp->key == keys::down) {
+            auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
+            if (line + 1 < wrapped.size()) {
+                es.cursor = line_col_to_cursor(line + 1, col, wrapped);
+                node.dirty = true;
+            }
+        }
+    } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
+        float rel_y = mb->position.y - ta_padding + es.scroll_y;
+        size_t click_line = static_cast<size_t>(
+            std::clamp(rel_y / ta_line_height, 0.f, static_cast<float>(wrapped.size() - 1)));
+        float rel_x = mb->position.x - ta_padding;
+        size_t click_col = static_cast<size_t>(
+            std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(wrapped[click_line].length)));
+        size_t new_cursor = line_col_to_cursor(click_line, click_col, wrapped);
+        if (new_cursor != es.cursor) {
+            es.cursor = new_cursor;
+            node.dirty = true;
+        }
+    }
+
+    // Recompute wrapped lines after possible value change
+    auto new_wrapped = wrap_lines(
+        std::string_view(field.get().value.data(), field.get().value.size()),
+        text_area_w, cw);
+    auto [cur_line, cur_col] = cursor_to_line_col(es.cursor, new_wrapped);
+    float cursor_y = cur_line * ta_line_height;
+
+    if (cursor_y - es.scroll_y > text_area_h - ta_line_height)
+        es.scroll_y = cursor_y - text_area_h + ta_line_height;
+    if (cursor_y < es.scroll_y)
+        es.scroll_y = cursor_y;
+}
+
 } // namespace detail
 
 // --- Delegate<TextField<T>> method bodies ---
@@ -373,6 +478,12 @@ template <StringLike T>
 void Delegate<TextArea<T>>::record(DrawList& dl, const Field<TextArea<T>>& field,
                                    const WidgetNode& node) {
     detail::text_area_record(dl, field, node);
+}
+
+template <StringLike T>
+void Delegate<TextArea<T>>::handle_input(Field<TextArea<T>>& field, const InputEvent& ev,
+                                         WidgetNode& node) {
+    detail::text_area_handle_input(field, ev, node);
 }
 
 // --- Shared dropdown rendering/input helpers ---
