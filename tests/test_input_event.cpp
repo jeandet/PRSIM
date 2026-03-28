@@ -20,3 +20,19 @@ TEST_CASE("InputEvent variant holds MouseMove") {
     CHECK(move.position.x == doctest::Approx(10.0f));
     CHECK(move.position.y == doctest::Approx(20.0f));
 }
+
+TEST_CASE("TextInput event holds text") {
+    prism::InputEvent ev = prism::TextInput{"abc"};
+    auto* ti = std::get_if<prism::TextInput>(&ev);
+    REQUIRE(ti != nullptr);
+    CHECK(ti->text == "abc");
+}
+
+TEST_CASE("Key constants match SDL keycodes") {
+    CHECK(prism::keys::backspace == 0x08);
+    CHECK(prism::keys::delete_   == 0x7F);
+    CHECK(prism::keys::right     == 0x4000'004F);
+    CHECK(prism::keys::left      == 0x4000'0050);
+    CHECK(prism::keys::home      == 0x4000'004A);
+    CHECK(prism::keys::end       == 0x4000'004D);
+}
