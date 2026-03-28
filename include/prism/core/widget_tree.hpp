@@ -40,95 +40,106 @@ struct WidgetNode {
 // Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
 inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }
 
-// --- Delegate<TextField<T>> method bodies ---
-// These are defined here because they access WidgetNode members (edit_state, dirty)
-// which require the complete type.
+// --- Shared text field helpers (used by TextField and Password delegates) ---
 
-template <StringLike T>
-const TextEditState& Delegate<TextField<T>>::get_edit_state(const WidgetNode& node) {
+namespace detail {
+
+inline const TextEditState& get_text_edit_state(const WidgetNode& node) {
     static const TextEditState default_state;
     if (!node.edit_state.has_value()) return default_state;
     return std::any_cast<const TextEditState&>(node.edit_state);
 }
 
-template <StringLike T>
-TextEditState& Delegate<TextField<T>>::ensure_edit_state(WidgetNode& node) {
+inline TextEditState& ensure_text_edit_state(WidgetNode& node) {
     if (!node.edit_state.has_value())
         node.edit_state = TextEditState{};
     return std::any_cast<TextEditState&>(node.edit_state);
 }
 
-template <StringLike T>
-void Delegate<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
-                                    const WidgetNode& node) {
+inline std::string mask_string(size_t len) {
+    std::string result;
+    result.reserve(len * 3);
+    for (size_t i = 0; i < len; ++i)
+        result += "\xe2\x97\x8f";
+    return result;
+}
+
+constexpr float tf_widget_w = 200.f;
+constexpr float tf_widget_h = 30.f;
+constexpr float tf_padding = 4.f;
+constexpr float tf_font_size = 14.f;
+constexpr float tf_cursor_w = 2.f;
+
+template <typename Sentinel, typename DisplayFn>
+void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNode& node,
+                       DisplayFn display_fn) {
     auto& vs = node_vs(node);
-    auto& tf = field.get();
-    auto& es = get_edit_state(node);
-    float cw = char_width(font_size);
+    auto& sf = field.get();
+    auto& es = get_text_edit_state(node);
+    float cw = char_width(tf_font_size);
 
     auto bg = vs.focused ? Color::rgba(65, 65, 78)
             : vs.hovered ? Color::rgba(55, 55, 68)
             : Color::rgba(45, 45, 55);
-    dl.filled_rect({0, 0, widget_w, widget_h}, bg);
+    dl.filled_rect({0, 0, tf_widget_w, tf_widget_h}, bg);
 
     if (vs.focused)
-        dl.rect_outline({-1, -1, widget_w + 2, widget_h + 2},
+        dl.rect_outline({-1, -1, tf_widget_w + 2, tf_widget_h + 2},
                         Color::rgba(80, 160, 240), 2.0f);
 
-    float text_area_w = widget_w - 2 * padding;
-    dl.clip_push({padding, 0, text_area_w, widget_h});
+    float text_area_w = tf_widget_w - 2 * tf_padding;
+    dl.clip_push({tf_padding, 0, text_area_w, tf_widget_h});
 
-    if (tf.value.empty() && !vs.focused) {
-        dl.text(tf.placeholder, {padding, padding + 2}, font_size,
+    if (sf.value.empty() && !vs.focused) {
+        dl.text(sf.placeholder, {tf_padding, tf_padding + 2}, tf_font_size,
                 Color::rgba(120, 120, 130));
     } else {
-        float text_x = padding - es.scroll_offset;
-        std::string text_str(tf.value.data(), tf.value.size());
-        dl.text(text_str, {text_x, padding + 2}, font_size,
+        float text_x = tf_padding - es.scroll_offset;
+        std::string display_text = display_fn(std::string(sf.value.data(), sf.value.size()));
+        dl.text(display_text, {text_x, tf_padding + 2}, tf_font_size,
                 Color::rgba(220, 220, 220));
     }
 
     if (vs.focused) {
-        float cursor_x = padding + es.cursor * cw - es.scroll_offset;
-        dl.filled_rect({cursor_x, padding, cursor_w, widget_h - 2 * padding},
+        float cursor_x = tf_padding + es.cursor * cw - es.scroll_offset;
+        dl.filled_rect({cursor_x, tf_padding, tf_cursor_w, tf_widget_h - 2 * tf_padding},
                        Color::rgba(220, 220, 240));
     }
 
     dl.clip_pop();
 }
 
-template <StringLike T>
-void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputEvent& ev,
-                                          WidgetNode& node) {
-    auto& es = ensure_edit_state(node);
-    auto tf = field.get();
-    auto len = tf.value.size();
+template <typename Sentinel>
+void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, WidgetNode& node) {
+    auto& es = ensure_text_edit_state(node);
+    auto sf = field.get();
+    auto len = sf.value.size();
 
     if (auto* ti = std::get_if<TextInput>(&ev)) {
         std::string to_insert = ti->text;
-        if (tf.max_length > 0 && len + to_insert.size() > tf.max_length) {
-            size_t room = (len < tf.max_length) ? tf.max_length - len : 0;
+        if (sf.max_length > 0 && len + to_insert.size() > sf.max_length) {
+            size_t room = (len < sf.max_length) ? sf.max_length - len : 0;
             to_insert = to_insert.substr(0, room);
         }
         if (!to_insert.empty()) {
-            std::string v(tf.value.data(), tf.value.size());
+            std::string v(sf.value.data(), sf.value.size());
             v.insert(es.cursor, to_insert);
             es.cursor += to_insert.size();
-            tf.value = T(v);
-            field.set(tf);
+            sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+            field.set(sf);
         }
     } else if (auto* kp = std::get_if<KeyPress>(&ev)) {
         if (kp->key == keys::backspace && es.cursor > 0) {
-            std::string v(tf.value.data(), tf.value.size());
+            std::string v(sf.value.data(), sf.value.size());
             v.erase(es.cursor - 1, 1);
             es.cursor--;
-            tf.value = T(v);
-            field.set(tf);
+            sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+            field.set(sf);
         } else if (kp->key == keys::delete_ && es.cursor < len) {
-            std::string v(tf.value.data(), tf.value.size());
+            std::string v(sf.value.data(), sf.value.size());
             v.erase(es.cursor, 1);
-            tf.value = T(v);
-            field.set(tf);
+            sf.value = std::remove_cvref_t<decltype(sf.value)>(v);
+            field.set(sf);
         } else if (kp->key == keys::left && es.cursor > 0) {
             es.cursor--;
             node.dirty = true;
@@ -143,8 +154,8 @@ void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const Inpu
             node.dirty = true;
         }
     } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-        float cw = char_width(font_size);
-        float rel_x = mb->position.x - padding + es.scroll_offset;
+        float cw = char_width(tf_font_size);
+        float rel_x = mb->position.x - tf_padding + es.scroll_offset;
         size_t pos = static_cast<size_t>(
             std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(len)));
         if (pos != es.cursor) {
@@ -153,14 +164,65 @@ void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const Inpu
         }
     }
 
-    // Keep cursor visible within text area
-    float cw = char_width(font_size);
-    float text_area_w = widget_w - 2 * padding;
+    float cw = char_width(tf_font_size);
+    float text_area_w = tf_widget_w - 2 * tf_padding;
     float cursor_px = es.cursor * cw;
     if (cursor_px - es.scroll_offset > text_area_w)
         es.scroll_offset = cursor_px - text_area_w;
     if (cursor_px < es.scroll_offset)
         es.scroll_offset = cursor_px;
+}
+
+} // namespace detail
+
+// --- Delegate<TextField<T>> method bodies ---
+
+template <StringLike T>
+const TextEditState& Delegate<TextField<T>>::get_edit_state(const WidgetNode& node) {
+    return detail::get_text_edit_state(node);
+}
+
+template <StringLike T>
+TextEditState& Delegate<TextField<T>>::ensure_edit_state(WidgetNode& node) {
+    return detail::ensure_text_edit_state(node);
+}
+
+template <StringLike T>
+void Delegate<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
+                                    const WidgetNode& node) {
+    detail::text_field_record(dl, field, node,
+        [](const std::string& v) { return v; });
+}
+
+template <StringLike T>
+void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputEvent& ev,
+                                          WidgetNode& node) {
+    detail::text_field_handle_input(field, ev, node);
+}
+
+// --- Delegate<Password<T>> method bodies ---
+
+template <StringLike T>
+const TextEditState& Delegate<Password<T>>::get_edit_state(const WidgetNode& node) {
+    return detail::get_text_edit_state(node);
+}
+
+template <StringLike T>
+TextEditState& Delegate<Password<T>>::ensure_edit_state(WidgetNode& node) {
+    return detail::ensure_text_edit_state(node);
+}
+
+template <StringLike T>
+void Delegate<Password<T>>::record(DrawList& dl, const Field<Password<T>>& field,
+                                    const WidgetNode& node) {
+    detail::text_field_record(dl, field, node,
+        [](const std::string& v) { return detail::mask_string(v.size()); });
+}
+
+template <StringLike T>
+void Delegate<Password<T>>::handle_input(Field<Password<T>>& field, const InputEvent& ev,
+                                          WidgetNode& node) {
+    detail::text_field_handle_input(field, ev, node);
 }
 
 // --- Shared dropdown rendering/input helpers ---
