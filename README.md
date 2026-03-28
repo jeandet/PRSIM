@@ -63,11 +63,13 @@ Two observable types share the same core (`.get()`, `.set()`, `.on_change()`):
 
 ```cpp
 struct Settings {
-    prism::Field<std::string> username{"Username", "jeandet"};  // → text input
-    prism::Field<bool>        dark_mode{"Dark Mode", true};      // → checkbox
-    prism::State<std::string> session_token{""};                 // → no widget, still observable
+    prism::Field<std::string> username{"jeandet"};  // → text input
+    prism::Field<bool>        dark_mode{true};       // → checkbox
+    prism::State<std::string> session_token{""};     // → no widget, still observable
 };
 ```
+
+`Field<T>` holds only the value — no display label. The member name via P2996 reflection provides identity. Display labels are a form-layout concern.
 
 Both support equality-guarded `set()` (no spurious notifications) and RAII `Connection` lifetime on `on_change()`.
 
@@ -77,12 +79,12 @@ The type inside `Field<T>` determines which **delegate** renders it. Sentinel ty
 
 ```cpp
 struct Editor {
-    prism::Field<std::string>         title{"Title"};              // → text input (default for StringLike)
-    prism::Field<prism::Label<>>      status{"Status", {"OK"}};    // → read-only label
-    prism::Field<prism::Password<>>   secret{"Password"};          // → masked input
-    prism::Field<prism::Slider<>>     volume{"Volume", {.value = 0.8}};           // → continuous slider
-    prism::Field<prism::Slider<int>>  quality{"Quality", {.value = 3, .min = 1,
-                                               .max = 5, .step = 1}};            // → discrete slider
+    prism::Field<std::string>         title{""};                                    // → text input (default for StringLike)
+    prism::Field<prism::Label<>>      status{{"OK"}};                               // → read-only label
+    prism::Field<prism::Password<>>   secret{""};                                   // → masked input
+    prism::Field<prism::Slider<>>     volume{{.value = 0.8}};                       // → continuous slider
+    prism::Field<prism::Slider<int>>  quality{{.value = 3, .min = 1,
+                                               .max = 5, .step = 1}};              // → discrete slider
 };
 ```
 
@@ -90,7 +92,7 @@ Delegates are resolved at compile time via **concepts**, not concrete types. A d
 
 ```cpp
 // Your own string type works in Label<> if it satisfies StringLike
-prism::Field<prism::Label<MyString>> info{"Info", {my_string}};
+prism::Field<prism::Label<MyString>> info{{my_string}};
 ```
 
 ## Component Model
@@ -99,14 +101,14 @@ Components are plain model structs. Compose by nesting — no inheritance, no ma
 
 ```cpp
 struct Settings {
-    prism::Field<std::string> username{"Username", "jeandet"};
-    prism::Field<bool>        dark_mode{"Dark Mode", true};
+    prism::Field<std::string> username{"jeandet"};
+    prism::Field<bool>        dark_mode{true};
 };
 
 struct Dashboard {
-    Settings settings;                        // nested component
-    prism::Field<int> counter{"Counter", 0};
-    prism::State<int> request_count{0};       // observable, no widget
+    Settings settings;                   // nested component
+    prism::Field<int> counter{0};
+    prism::State<int> request_count{0};  // observable, no widget
 };
 ```
 

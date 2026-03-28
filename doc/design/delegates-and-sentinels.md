@@ -18,12 +18,14 @@ Two subscription APIs:
 
 ```cpp
 struct Dashboard {
-    Field<std::string> username{"Username", "jeandet"};  // → text input widget
-    Field<bool>        dark_mode{"Dark Mode", true};      // → checkbox widget
-    State<int>         request_count{0};                  // → observable, no widget
-    State<std::string> session_token{""};                 // → observable, no widget
+    Field<std::string> username{"jeandet"};   // → text input widget
+    Field<bool>        dark_mode{true};        // → checkbox widget
+    State<int>         request_count{0};       // → observable, no widget
+    State<std::string> session_token{""};      // → observable, no widget
 };
 ```
+
+`Field<T>` holds only the value — no display label. The member name via P2996 reflection provides identity. Display labels (e.g. "Username") are a form-layout concern, not a model concern.
 
 `State<T>` is for values that participate in the signal graph (triggering reactions, cross-component sync) but have no visual representation.
 
@@ -54,12 +56,12 @@ Usage in model structs:
 
 ```cpp
 struct Settings {
-    Field<std::string>           username{"Username"};     // → text input (default for string)
-    Field<Label<>>               status{"Status", {"OK"}}; // → read-only label
-    Field<Password<>>            secret{"Password"};       // → masked text input
-    Field<Slider<>>              volume{"Volume", {.value = 0.8}};
-    Field<Slider<int>>           quality{"Quality", {.value = 3, .min = 1, .max = 5, .step = 1}};
-    Field<Label<MyCustomString>> custom{"Info", {my_string}};  // works with any StringLike type
+    Field<std::string>           username{"jeandet"};                        // → text input (default for string)
+    Field<Label<>>               status{{"OK"}};                             // → read-only label
+    Field<Password<>>            secret{""};                                 // → masked text input
+    Field<Slider<>>              volume{{.value = 0.8}};                     // → continuous slider
+    Field<Slider<int>>           quality{{.value = 3, .min = 1, .max = 5, .step = 1}};  // → discrete slider
+    Field<Label<MyCustomString>> custom{{my_string}};                        // works with any StringLike type
 };
 ```
 
