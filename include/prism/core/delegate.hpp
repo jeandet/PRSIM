@@ -53,6 +53,15 @@ struct TextField {
     bool operator==(const TextField&) const = default;
 };
 
+// Sentinel: masked text field (displays bullets instead of actual text)
+template <StringLike T = std::string>
+struct Password {
+    T value{};
+    std::string placeholder{};
+    size_t max_length = 0;
+    bool operator==(const Password&) const = default;
+};
+
 // Monospace text measurement — single replacement point for future TextMetrics
 inline float char_width(float font_size) { return 0.6f * font_size; }
 
@@ -388,6 +397,21 @@ struct Delegate<TextField<T>> {
     static TextEditState& ensure_edit_state(WidgetNode& node);
     static void record(DrawList& dl, const Field<TextField<T>>& field, const WidgetNode& node);
     static void handle_input(Field<TextField<T>>& field, const InputEvent& ev, WidgetNode& node);
+};
+
+template <StringLike T>
+struct Delegate<Password<T>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+    static constexpr float widget_w = 200.f;
+    static constexpr float widget_h = 30.f;
+    static constexpr float padding = 4.f;
+    static constexpr float font_size = 14.f;
+    static constexpr float cursor_w = 2.f;
+
+    static const TextEditState& get_edit_state(const WidgetNode& node);
+    static TextEditState& ensure_edit_state(WidgetNode& node);
+    static void record(DrawList& dl, const Field<Password<T>>& field, const WidgetNode& node);
+    static void handle_input(Field<Password<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 // ScopedEnum delegate — declared here, defined in widget_tree.hpp
