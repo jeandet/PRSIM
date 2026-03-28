@@ -6,6 +6,7 @@
 struct Settings {
     prism::Field<std::string> username{"jeandet"};
     prism::Field<bool> dark_mode{true};
+    prism::Field<prism::Checkbox> notifications{{.checked = true, .label = "Enable notifications"}};
     prism::Field<prism::Slider<>> volume{{.value = 0.7}};
     prism::Field<prism::TextField<>> search{{.value = "", .placeholder = "Search..."}};
 };
@@ -48,6 +49,10 @@ int main() {
 
         dashboard.settings.dark_mode.observe([](const bool& v) {
             std::cout << "Dark mode: " << (v ? "ON" : "OFF") << "\n";
+        });
+
+        dashboard.settings.notifications.observe([](const prism::Checkbox& cb) {
+            std::cout << "Notifications: " << (cb.checked ? "ON" : "OFF") << "\n";
         });
     });
 }
