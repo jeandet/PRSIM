@@ -309,3 +309,82 @@ TEST_CASE("Enum delegate Up/Down quick-select when closed") {
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
     CHECK(field.get() == Color::Blue);  // wraps back
 }
+
+TEST_CASE("Dropdown<T> renders custom labels") {
+    prism::Field<prism::Dropdown<Color>> field{{
+        .value = Color::Green,
+        .labels = {"Rouge", "Vert", "Bleu"}
+    }};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::Dropdown<Color>>::record(dl, field, node);
+
+    bool has_custom_label = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Vert") has_custom_label = true;
+        }
+    }
+    CHECK(has_custom_label);
+}
+
+TEST_CASE("Dropdown<T> popup shows custom labels") {
+    prism::Field<prism::Dropdown<Color>> field{{
+        .value = Color::Red,
+        .labels = {"Rouge", "Vert", "Bleu"}
+    }};
+    auto node = make_node({.focused = true});
+
+    // Open
+    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+        field, prism::MouseButton{{10, 10}, 1, true}, node);
+
+    // Re-record to populate overlay
+    prism::DrawList dl;
+    node.overlay_draws.clear();
+    prism::Delegate<prism::Dropdown<Color>>::record(dl, field, node);
+
+    bool has_rouge = false, has_vert = false, has_bleu = false;
+    for (auto& cmd : node.overlay_draws.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Rouge") has_rouge = true;
+            if (t->text == "Vert") has_vert = true;
+            if (t->text == "Bleu") has_bleu = true;
+        }
+    }
+    CHECK(has_rouge);
+    CHECK(has_vert);
+    CHECK(has_bleu);
+}
+
+TEST_CASE("Dropdown<T> falls back to reflection labels when labels empty") {
+    prism::Field<prism::Dropdown<Color>> field{{.value = Color::Green}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::Dropdown<Color>>::record(dl, field, node);
+
+    bool has_reflection_label = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Green") has_reflection_label = true;
+        }
+    }
+    CHECK(has_reflection_label);
+}
+
+TEST_CASE("Dropdown<T> selection updates value") {
+    prism::Field<prism::Dropdown<Color>> field{{.value = Color::Red}};
+    auto node = make_node({.focused = true});
+
+    // Open, navigate to Blue, select
+    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+        field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+        field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+        field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+        field, prism::KeyPress{prism::keys::enter, 0}, node);
+
+    CHECK(field.get().value == Color::Blue);
+}
