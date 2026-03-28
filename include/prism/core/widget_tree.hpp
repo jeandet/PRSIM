@@ -29,6 +29,7 @@ struct WidgetNode {
     WidgetVisualState visual_state;
     std::any edit_state;
     DrawList draws;
+    DrawList overlay_draws;
     std::vector<Connection> connections;
     std::vector<WidgetNode> children;
     SenderHub<const InputEvent&> on_input;
@@ -181,6 +182,8 @@ public:
 
     void clear_dirty() { clear_dirty_impl(root_); }
 
+    void close_overlays() { close_overlays_impl(root_); }
+
     [[nodiscard]] std::vector<WidgetId> leaf_ids() const {
         std::vector<WidgetId> ids;
         collect_leaf_ids(root_, ids);
@@ -328,6 +331,15 @@ private:
         for (auto& c : node.children) clear_dirty_impl(c);
     }
 
+    static void close_overlays_impl(WidgetNode& node) {
+        if (!node.overlay_draws.empty()) {
+            node.overlay_draws.clear();
+            node.edit_state.reset();
+            node.dirty = true;
+        }
+        for (auto& c : node.children) close_overlays_impl(c);
+    }
+
     static void collect_leaf_ids(const WidgetNode& node, std::vector<WidgetId>& ids) {
         if (!node.is_container) {
             ids.push_back(node.id);
@@ -356,6 +368,7 @@ private:
             leaf.kind = LayoutNode::Kind::Leaf;
             leaf.id = node.id;
             leaf.draws = node.draws;
+            leaf.overlay_draws = node.overlay_draws;
             layout.children.push_back(std::move(leaf));
         } else {
             for (auto& c : node.children) {
@@ -373,6 +386,7 @@ private:
 
         node.record = [&field](WidgetNode& n) {
             n.draws.clear();
+            n.overlay_draws.clear();
             Delegate<T>::record(n.draws, field, n);
         };
         node.record(node);

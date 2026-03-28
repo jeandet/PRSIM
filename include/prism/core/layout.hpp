@@ -25,6 +25,7 @@ struct LayoutNode {
     SizeHint hint;
     Rect allocated{0, 0, 0, 0};
     DrawList draws;
+    DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
     enum class Kind { Leaf, Row, Column, Spacer } kind = Kind::Leaf;
 };
@@ -143,6 +144,12 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         snap.geometry.push_back({node.id, node.allocated});
         snap.draw_lists.push_back(std::move(node.draws));
         snap.z_order.push_back(idx);
+    }
+
+    if (!node.overlay_draws.empty()) {
+        detail::translate_draw_list(node.overlay_draws, node.allocated.x, node.allocated.y);
+        for (auto& cmd : node.overlay_draws.commands)
+            snap.overlay.commands.push_back(std::move(cmd));
     }
 
     for (auto& child : node.children) {
