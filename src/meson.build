@@ -3,13 +3,17 @@ prism_core_dep = declare_dependency(
   include_directories : prism_inc,
 )
 
-# Software backend: links SDL3
+# Software backend: links SDL3 + SDL3_ttf
 sdl3_dep = dependency('sdl3', fallback : ['sdl3', 'sdl3_dep'])
+sdl3_ttf_dep = dependency('sdl3_ttf', fallback : ['sdl3_ttf', 'sdl3_ttf_dep'])
+
+font_path = meson.project_source_root() / 'assets' / 'fonts' / 'JetBrainsMonoNerdFont-Regular.ttf'
 
 prism_software_backend_lib = library('prism-software-backend',
   'backend.cpp',
   'backends/software_backend.cpp',
-  dependencies : [prism_core_dep, sdl3_dep],
+  dependencies : [prism_core_dep, sdl3_dep, sdl3_ttf_dep],
+  cpp_args : ['-DPRISM_FONT_PATH="' + font_path + '"'],
   install : true,
 )
 
