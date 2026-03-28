@@ -133,3 +133,170 @@ TEST_CASE("TextField record renders focus ring when focused") {
     CHECK(has_outline);
 }
 
+// --- handle_input() tests ---
+
+TEST_CASE("TextField TextInput inserts text at cursor") {
+    prism::Field<prism::TextField<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 1;
+
+    prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"X"}, node);
+    CHECK(field.get().value == "aXb");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
+}
+
+TEST_CASE("TextField TextInput appends at end") {
+    prism::Field<prism::TextField<>> field{{.value = "hi"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"!"}, node);
+    CHECK(field.get().value == "hi!");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
+}
+
+TEST_CASE("TextField backspace deletes char before cursor") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::backspace, 0}, node);
+    CHECK(field.get().value == "ac");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
+}
+
+TEST_CASE("TextField backspace at position 0 is no-op") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::backspace, 0}, node);
+    CHECK(field.get().value == "abc");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
+}
+
+TEST_CASE("TextField delete removes char at cursor") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 1;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::delete_, 0}, node);
+    CHECK(field.get().value == "ac");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
+}
+
+TEST_CASE("TextField delete at end is no-op") {
+    prism::Field<prism::TextField<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::delete_, 0}, node);
+    CHECK(field.get().value == "ab");
+}
+
+TEST_CASE("TextField left arrow moves cursor left") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::left, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
+}
+
+TEST_CASE("TextField left arrow at 0 stays at 0") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::left, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
+}
+
+TEST_CASE("TextField right arrow moves cursor right") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 1;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::right, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
+}
+
+TEST_CASE("TextField right arrow at end stays at end") {
+    prism::Field<prism::TextField<>> field{{.value = "ab"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::right, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
+}
+
+TEST_CASE("TextField Home moves cursor to 0") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::home, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
+}
+
+TEST_CASE("TextField End moves cursor to end") {
+    prism::Field<prism::TextField<>> field{{.value = "abc"}};
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::end, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
+}
+
+TEST_CASE("TextField max_length enforced on insert") {
+    prism::Field<prism::TextField<>> field{{.value = "ab", .max_length = 3}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 2;
+
+    prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"XY"}, node);
+    CHECK(field.get().value == "abX");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
+}
+
+TEST_CASE("TextField max_length blocks insert when full") {
+    prism::Field<prism::TextField<>> field{{.value = "abc", .max_length = 3}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 3;
+
+    prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"X"}, node);
+    CHECK(field.get().value == "abc");
+}
+
+TEST_CASE("TextField click positions cursor") {
+    prism::Field<prism::TextField<>> field{{.value = "abcdef"}};
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+
+    float cw = prism::char_width(14.f);
+    float click_x = 4.f + 2.5f * cw;
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::MouseButton{{click_x, 15}, 1, true}, node);
+    auto cursor = std::any_cast<prism::TextEditState>(node.edit_state).cursor;
+    CHECK((cursor == 2 || cursor == 3));
+}

@@ -96,6 +96,72 @@ void Delegate<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& fie
     dl.clip_pop();
 }
 
+template <StringLike T>
+void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputEvent& ev,
+                                          WidgetNode& node) {
+    auto& es = ensure_edit_state(node);
+    auto tf = field.get();
+    auto len = tf.value.size();
+
+    if (auto* ti = std::get_if<TextInput>(&ev)) {
+        std::string to_insert = ti->text;
+        if (tf.max_length > 0 && len + to_insert.size() > tf.max_length) {
+            size_t room = (len < tf.max_length) ? tf.max_length - len : 0;
+            to_insert = to_insert.substr(0, room);
+        }
+        if (!to_insert.empty()) {
+            std::string v(tf.value.data(), tf.value.size());
+            v.insert(es.cursor, to_insert);
+            es.cursor += to_insert.size();
+            tf.value = T(v);
+            field.set(tf);
+        }
+    } else if (auto* kp = std::get_if<KeyPress>(&ev)) {
+        if (kp->key == keys::backspace && es.cursor > 0) {
+            std::string v(tf.value.data(), tf.value.size());
+            v.erase(es.cursor - 1, 1);
+            es.cursor--;
+            tf.value = T(v);
+            field.set(tf);
+        } else if (kp->key == keys::delete_ && es.cursor < len) {
+            std::string v(tf.value.data(), tf.value.size());
+            v.erase(es.cursor, 1);
+            tf.value = T(v);
+            field.set(tf);
+        } else if (kp->key == keys::left && es.cursor > 0) {
+            es.cursor--;
+            node.dirty = true;
+        } else if (kp->key == keys::right && es.cursor < len) {
+            es.cursor++;
+            node.dirty = true;
+        } else if (kp->key == keys::home && es.cursor > 0) {
+            es.cursor = 0;
+            node.dirty = true;
+        } else if (kp->key == keys::end && es.cursor < len) {
+            es.cursor = len;
+            node.dirty = true;
+        }
+    } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
+        float cw = char_width(font_size);
+        float rel_x = mb->position.x - padding + es.scroll_offset;
+        size_t pos = static_cast<size_t>(
+            std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(len)));
+        if (pos != es.cursor) {
+            es.cursor = pos;
+            node.dirty = true;
+        }
+    }
+
+    // Keep cursor visible within text area
+    float cw = char_width(font_size);
+    float text_area_w = widget_w - 2 * padding;
+    float cursor_px = es.cursor * cw;
+    if (cursor_px - es.scroll_offset > text_area_w)
+        es.scroll_offset = cursor_px - text_area_w;
+    if (cursor_px < es.scroll_offset)
+        es.scroll_offset = cursor_px;
+}
+
 // index_ stores raw pointers into the tree — valid only because the tree
 // is fully built before build_index runs and never mutated after construction.
 class WidgetTree {
