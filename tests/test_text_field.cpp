@@ -288,6 +288,46 @@ TEST_CASE("TextField max_length blocks insert when full") {
     CHECK(field.get().value == "abc");
 }
 
+// --- WidgetTree integration tests ---
+
+struct TextFieldModel {
+    prism::Field<prism::TextField<>> name{{.value = "hi"}};
+    prism::Field<bool> flag{false};
+};
+
+TEST_CASE("TextField in WidgetTree creates focusable leaf") {
+    TextFieldModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+
+    auto focus = tree.focus_order();
+    REQUIRE(focus.size() == 2);
+}
+
+TEST_CASE("TextField dispatch TextInput updates field value") {
+    TextFieldModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    tree.set_focused(focus[0]);
+
+    tree.dispatch(focus[0], prism::KeyPress{prism::keys::end, 0});
+    tree.dispatch(focus[0], prism::TextInput{"X"});
+    CHECK(model.name.get().value == "hiX");
+}
+
+TEST_CASE("TextField dispatch KeyPress backspace updates field value") {
+    TextFieldModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    tree.set_focused(focus[0]);
+
+    tree.dispatch(focus[0], prism::KeyPress{prism::keys::end, 0});
+    tree.dispatch(focus[0], prism::KeyPress{prism::keys::backspace, 0});
+    CHECK(model.name.get().value == "h");
+}
+
+// --- click/cursor tests ---
+
 TEST_CASE("TextField click positions cursor") {
     prism::Field<prism::TextField<>> field{{.value = "abcdef"}};
     auto node = make_node({.focused = true});

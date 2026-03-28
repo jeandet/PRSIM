@@ -79,10 +79,13 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                                 tree.focus_prev();
                             else
                                 tree.focus_next();
-                        } else if (kp->key == keys::space || kp->key == keys::enter) {
-                            if (tree.focused_id() != 0)
-                                tree.dispatch(tree.focused_id(), ev);
+                        } else if (tree.focused_id() != 0) {
+                            tree.dispatch(tree.focused_id(), ev);
                         }
+                    }
+                    if (auto* ti = std::get_if<TextInput>(&ev)) {
+                        if (tree.focused_id() != 0)
+                            tree.dispatch(tree.focused_id(), ev);
                     }
 
                     if (tree.any_dirty() || needs_publish)
