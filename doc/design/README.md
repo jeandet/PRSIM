@@ -73,6 +73,7 @@ graph TB
 |---|---|
 | [components.md](components.md) | `prism::Component` base class — self-wiring reusable UI + logic bundles | **Design only** |
 | [dynamic-node-tree.md](dynamic-node-tree.md) | Runtime `Node` tree — type-erased `Field<T>` + children, same WidgetNode output as reflection | **Design only** |
+| [proxy-widget.md](proxy-widget.md) | Composite foreign renderers (CEF, VTK, mpv, etc.) as regular widgets via shared surfaces | **Concept** |
 | python-bindings | nanobind wrapping, GIL-free Python 3.14+, callback threading |
 | testing-strategy | doctest, synchronous scheduler, headless rendering, visual regression |
 | tracing-profiling | Tracy behind generic macros, trace points at pipeline boundaries |
