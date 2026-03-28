@@ -24,6 +24,7 @@ struct WidgetNode {
     WidgetId id = 0;
     bool dirty = false;
     bool is_container = false;
+    FocusPolicy focus_policy = FocusPolicy::none;
     WidgetVisualState visual_state;
     DrawList draws;
     std::vector<Connection> connections;
@@ -90,6 +91,59 @@ public:
         return {};
     }
 
+    [[nodiscard]] WidgetId focused_id() const { return focused_id_; }
+
+    [[nodiscard]] const std::vector<WidgetId>& focus_order() const { return focus_order_; }
+
+    void set_focused(WidgetId id) {
+        if (id == focused_id_) return;
+        if (std::find(focus_order_.begin(), focus_order_.end(), id) == focus_order_.end()) return;
+        if (auto it = index_.find(focused_id_); it != index_.end()) {
+            it->second->visual_state.focused = false;
+            it->second->dirty = true;
+        }
+        focused_id_ = id;
+        if (auto it = index_.find(focused_id_); it != index_.end()) {
+            it->second->visual_state.focused = true;
+            it->second->dirty = true;
+        }
+    }
+
+    void clear_focus() {
+        if (focused_id_ == 0) return;
+        if (auto it = index_.find(focused_id_); it != index_.end()) {
+            it->second->visual_state.focused = false;
+            it->second->dirty = true;
+        }
+        focused_id_ = 0;
+    }
+
+    void focus_next() {
+        if (focus_order_.empty()) return;
+        if (focused_id_ == 0) {
+            set_focused(focus_order_.front());
+            return;
+        }
+        auto it = std::find(focus_order_.begin(), focus_order_.end(), focused_id_);
+        if (it == focus_order_.end() || ++it == focus_order_.end())
+            set_focused(focus_order_.front());
+        else
+            set_focused(*it);
+    }
+
+    void focus_prev() {
+        if (focus_order_.empty()) return;
+        if (focused_id_ == 0) {
+            set_focused(focus_order_.back());
+            return;
+        }
+        auto it = std::find(focus_order_.begin(), focus_order_.end(), focused_id_);
+        if (it == focus_order_.begin())
+            set_focused(focus_order_.back());
+        else
+            set_focused(*std::prev(it));
+    }
+
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
         refresh_dirty(root_);
 
@@ -111,6 +165,8 @@ private:
     WidgetNode root_;
     WidgetId next_id_ = 1;
     WidgetId hovered_id_ = 0;
+    WidgetId focused_id_ = 0;
+    std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;
 
     void build_index(WidgetNode& node) {
@@ -119,6 +175,8 @@ private:
             node.wire(node);
             node.wire = nullptr;
         }
+        if (!node.is_container && node.focus_policy != FocusPolicy::none)
+            focus_order_.push_back(node.id);
         for (auto& c : node.children)
             build_index(c);
     }
@@ -183,6 +241,7 @@ private:
         WidgetNode node;
         node.id = next_id_++;
         node.is_container = false;
+        node.focus_policy = Delegate<T>::focus_policy;
 
         node.record = [&field](WidgetNode& n) {
             n.draws.clear();
