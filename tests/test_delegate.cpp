@@ -191,3 +191,15 @@ TEST_CASE("Button record differs with visual state") {
     auto c2 = std::get<prism::FilledRect>(dl_pressed.commands[0]).color;
     CHECK(c1.r != c2.r);
 }
+
+TEST_CASE("FocusPolicy: non-interactive delegates are not focusable") {
+    CHECK(prism::Delegate<int>::focus_policy == prism::FocusPolicy::none);
+    CHECK(prism::Delegate<std::string>::focus_policy == prism::FocusPolicy::none);
+    CHECK(prism::Delegate<prism::Label<>>::focus_policy == prism::FocusPolicy::none);
+}
+
+TEST_CASE("FocusPolicy: interactive delegates are focusable") {
+    CHECK(prism::Delegate<bool>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Delegate<prism::Slider<>>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Delegate<prism::Button>::focus_policy == prism::FocusPolicy::tab_and_click);
+}

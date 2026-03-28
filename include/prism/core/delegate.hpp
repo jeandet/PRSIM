@@ -25,6 +25,8 @@ concept StringLike = requires(const T& t) {
     { t.size() } -> std::convertible_to<std::size_t>;
 };
 
+enum class FocusPolicy : uint8_t { none, tab_and_click };
+
 // Sentinel: read-only label
 template <StringLike T = std::string>
 struct Label {
@@ -36,6 +38,8 @@ struct Label {
 // Renders only a filled rect, ignores input.
 template <typename T>
 struct Delegate {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+
     static void record(DrawList& dl, const Field<T>&, const WidgetVisualState& vs) {
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
         dl.filled_rect({0, 0, 200, 30}, bg);
@@ -47,6 +51,8 @@ struct Delegate {
 // StringLike specialization: displays the string value
 template <StringLike T>
 struct Delegate<T> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+
     static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs) {
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
         dl.filled_rect({0, 0, 200, 30}, bg);
@@ -60,6 +66,8 @@ struct Delegate<T> {
 // bool specialization: toggle widget
 template <>
 struct Delegate<bool> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
     static void record(DrawList& dl, const Field<bool>& field, const WidgetVisualState& vs) {
         Color bg;
         if (field.get()) {
@@ -82,6 +90,8 @@ struct Delegate<bool> {
 
 template <StringLike T>
 struct Delegate<Label<T>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+
     static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetVisualState&) {
         dl.filled_rect({0, 0, 200, 24}, Color::rgba(40, 40, 48));
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
@@ -103,6 +113,7 @@ struct Slider {
 
 template <Numeric T>
 struct Delegate<Slider<T>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr float track_w = 200.f;
     static constexpr float track_h = 6.f;
     static constexpr float thumb_w = 12.f;
@@ -154,6 +165,8 @@ struct Button {
 
 template <>
 struct Delegate<Button> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
     static void record(DrawList& dl, const Field<Button>& field, const WidgetVisualState& vs) {
         Color bg = vs.pressed ? Color::rgba(30, 90, 160)
                  : vs.hovered ? Color::rgba(50, 120, 200)
