@@ -630,3 +630,66 @@ TEST_CASE("TextArea: scroll adjusts when cursor goes above viewport") {
 
     CHECK(es.scroll_y == doctest::Approx(0.f));
 }
+
+// --- WidgetTree integration tests ---
+// Models must be at namespace scope so P2996 reflection can access their members.
+
+namespace wt_test {
+
+struct FocusModel {
+    prism::Field<prism::TextArea<>> editor{{.value = "hello"}};
+};
+
+struct GeomModel {
+    prism::Field<prism::TextArea<>> editor{{.value = "line1\nline2", .rows = 4}};
+};
+
+struct EnterModel {
+    prism::Field<prism::TextArea<>> editor{{.value = "ab"}};
+};
+
+} // namespace wt_test
+
+TEST_CASE("TextArea in WidgetTree: focus and dispatch") {
+    wt_test::FocusModel model;
+    prism::WidgetTree tree(model);
+
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 1);
+
+    // Focus the widget
+    tree.set_focused(ids[0]);
+    CHECK(tree.focused_id() == ids[0]);
+
+    // Dispatch a TextInput event — cursor starts at 0, so 'X' is inserted at the front
+    tree.dispatch(ids[0], prism::TextInput{"X"});
+    CHECK(std::string(model.editor.get().value) == "Xhello");
+}
+
+TEST_CASE("TextArea in WidgetTree: snapshot contains correct geometry") {
+    wt_test::GeomModel model;
+    prism::WidgetTree tree(model);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(!snap->geometry.empty());
+
+    // Widget height should reflect rows
+    constexpr float padding = 4.f;
+    constexpr float line_h = 14.f * 1.4f;
+    float expected_h = padding * 2 + 4 * line_h;
+    auto& [wid, rect] = snap->geometry[0];
+    CHECK(rect.h == doctest::Approx(expected_h));
+}
+
+TEST_CASE("TextArea in WidgetTree: Enter creates new line via dispatch") {
+    wt_test::EnterModel model;
+    prism::WidgetTree tree(model);
+
+    auto ids = tree.leaf_ids();
+    tree.set_focused(ids[0]);
+
+    // Dispatch Enter
+    tree.dispatch(ids[0], prism::KeyPress{.key = prism::keys::enter, .mods = 0});
+    auto val = std::string(model.editor.get().value);
+    CHECK(val.find('\n') != std::string::npos);
+}
