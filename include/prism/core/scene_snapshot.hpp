@@ -17,6 +17,7 @@ struct SceneSnapshot {
     std::vector<std::pair<WidgetId, Rect>> geometry;
     std::vector<DrawList> draw_lists;
     std::vector<uint16_t> z_order;
+    DrawList overlay;  // rendered last, on top of everything, no clip
 };
 
 } // namespace prism
