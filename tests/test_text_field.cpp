@@ -300,3 +300,33 @@ TEST_CASE("TextField click positions cursor") {
     auto cursor = std::any_cast<prism::TextEditState>(node.edit_state).cursor;
     CHECK((cursor == 2 || cursor == 3));
 }
+
+TEST_CASE("TextField scroll_offset adjusts when cursor moves past right edge") {
+    prism::Field<prism::TextField<>> field{{.value = "abcdefghijklmnopqrstuvwxyz0123456789"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 35;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::end, 0}, node);
+
+    float cw = prism::char_width(14.f);
+    float text_area_w = 200.f - 2 * 4.f;
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset > 0.f);
+    float cursor_px = 36 * cw; // end key moves cursor to len=36
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset ==
+          doctest::Approx(cursor_px - text_area_w));
+}
+
+TEST_CASE("TextField scroll_offset resets when cursor moves to beginning") {
+    prism::Field<prism::TextField<>> field{{.value = "abcdefghijklmnopqrstuvwxyz0123456789"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+    es.cursor = 35;
+    es.scroll_offset = 100.f;
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::home, 0}, node);
+
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset == 0.f);
+}
