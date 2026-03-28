@@ -3,12 +3,15 @@
 #include <iostream>
 #include <string>
 
+enum class Theme { Light, Dark, System };
+
 struct Settings {
     prism::Field<std::string> username{"jeandet"};
     prism::Field<bool> dark_mode{true};
     prism::Field<prism::Checkbox> notifications{{.checked = true, .label = "Enable notifications"}};
     prism::Field<prism::Slider<>> volume{{.value = 0.7}};
     prism::Field<prism::TextField<>> search{{.value = "", .placeholder = "Search..."}};
+    prism::Field<Theme> theme{Theme::Dark};
 };
 
 struct Dashboard {
