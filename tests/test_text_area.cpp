@@ -5,6 +5,14 @@
 #include <prism/core/field.hpp>
 #include <prism/core/widget_tree.hpp>
 
+namespace {
+prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
+    prism::WidgetNode node;
+    node.visual_state = vs;
+    return node;
+}
+}
+
 // --- wrap_lines tests ---
 
 TEST_CASE("wrap_lines: empty string produces one empty span") {
@@ -165,4 +173,150 @@ TEST_CASE("line_col_to_cursor: empty line returns start") {
     // Line 1 is empty (start=2, length=0)
     size_t cursor = prism::detail::line_col_to_cursor(1, 0, lines);
     CHECK(cursor == 2);
+}
+
+// --- Sentinel tests ---
+
+TEST_CASE("TextArea default-constructs with empty value and rows=6") {
+    prism::TextArea<> ta;
+    CHECK(ta.value.empty());
+    CHECK(ta.placeholder.empty());
+    CHECK(ta.max_length == 0);
+    CHECK(ta.rows == 6);
+}
+
+TEST_CASE("TextArea equality comparison") {
+    prism::TextArea<> a{.value = "hello"};
+    prism::TextArea<> b{.value = "hello"};
+    prism::TextArea<> c{.value = "world"};
+    CHECK(a == b);
+    CHECK(a != c);
+}
+
+TEST_CASE("Delegate<TextArea<>> has tab_and_click focus policy") {
+    CHECK(prism::Delegate<prism::TextArea<>>::focus_policy == prism::FocusPolicy::tab_and_click);
+}
+
+// --- record() tests ---
+
+TEST_CASE("TextArea record produces background rect with correct height") {
+    prism::Field<prism::TextArea<>> field{{.value = "hello"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    REQUIRE(!dl.commands.empty());
+    auto* bg = std::get_if<prism::FilledRect>(&dl.commands[0]);
+    REQUIRE(bg != nullptr);
+    constexpr float padding = 4.f;
+    constexpr float line_h = 14.f * 1.4f;
+    float expected_h = padding * 2 + 6 * line_h;
+    CHECK(bg->rect.h == doctest::Approx(expected_h));
+    CHECK(bg->rect.w == doctest::Approx(200.f));
+}
+
+TEST_CASE("TextArea record with custom rows changes height") {
+    prism::Field<prism::TextArea<>> field{{.value = "hi", .rows = 3}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    auto* bg = std::get_if<prism::FilledRect>(&dl.commands[0]);
+    REQUIRE(bg != nullptr);
+    constexpr float padding = 4.f;
+    constexpr float line_h = 14.f * 1.4f;
+    float expected_h = padding * 2 + 3 * line_h;
+    CHECK(bg->rect.h == doctest::Approx(expected_h));
+}
+
+TEST_CASE("TextArea record shows placeholder when empty and unfocused") {
+    prism::Field<prism::TextArea<>> field{{.placeholder = "Type here..."}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    bool has_placeholder = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Type here...") has_placeholder = true;
+        }
+    }
+    CHECK(has_placeholder);
+}
+
+TEST_CASE("TextArea record shows no placeholder when focused") {
+    prism::Field<prism::TextArea<>> field{{.placeholder = "Type here..."}};
+    prism::DrawList dl;
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    bool has_placeholder = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Type here...") has_placeholder = true;
+        }
+    }
+    CHECK_FALSE(has_placeholder);
+}
+
+TEST_CASE("TextArea record renders multiline text") {
+    prism::Field<prism::TextArea<>> field{{.value = "line1\nline2"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    bool has_line1 = false, has_line2 = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "line1") has_line1 = true;
+            if (t->text == "line2") has_line2 = true;
+        }
+    }
+    CHECK(has_line1);
+    CHECK(has_line2);
+}
+
+TEST_CASE("TextArea record uses clip region") {
+    prism::Field<prism::TextArea<>> field{{.value = "hello"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    bool has_clip_push = false, has_clip_pop = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::ClipPush>(cmd)) has_clip_push = true;
+        if (std::holds_alternative<prism::ClipPop>(cmd)) has_clip_pop = true;
+    }
+    CHECK(has_clip_push);
+    CHECK(has_clip_pop);
+}
+
+TEST_CASE("TextArea record renders focus ring when focused") {
+    prism::Field<prism::TextArea<>> field{{.value = "hi"}};
+    prism::DrawList dl;
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* ro = std::get_if<prism::RectOutline>(&cmd)) {
+            if (ro->color.b > 200) has_outline = true;
+        }
+    }
+    CHECK(has_outline);
+}
+
+TEST_CASE("TextArea record renders cursor when focused") {
+    prism::Field<prism::TextArea<>> field{{.value = "hello"}};
+    prism::DrawList dl;
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextArea<>>::record(dl, field, node);
+
+    int thin_rects = 0;
+    for (auto& cmd : dl.commands) {
+        if (auto* fr = std::get_if<prism::FilledRect>(&cmd)) {
+            if (fr->rect.w == doctest::Approx(2.f)) thin_rects++;
+        }
+    }
+    CHECK(thin_rects >= 1);
 }

@@ -251,6 +251,60 @@ inline TextAreaEditState& ensure_text_area_edit_state(WidgetNode& node) {
     return std::any_cast<TextAreaEditState&>(node.edit_state);
 }
 
+constexpr float ta_widget_w = 200.f;
+constexpr float ta_padding = 4.f;
+constexpr float ta_font_size = 14.f;
+constexpr float ta_line_height = ta_font_size * 1.4f;
+constexpr float ta_cursor_w = 2.f;
+
+template <typename Sentinel>
+void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNode& node) {
+    auto& vs = node_vs(node);
+    auto& sf = field.get();
+    auto& es = get_text_area_edit_state(node);
+    float cw = char_width(ta_font_size);
+    float text_area_w = ta_widget_w - 2 * ta_padding;
+    float text_area_h = sf.rows * ta_line_height;
+    float widget_h = ta_padding * 2 + text_area_h;
+
+    auto bg = vs.focused ? Color::rgba(65, 65, 78)
+            : vs.hovered ? Color::rgba(55, 55, 68)
+            : Color::rgba(45, 45, 55);
+    dl.filled_rect({0, 0, ta_widget_w, widget_h}, bg);
+
+    if (vs.focused)
+        dl.rect_outline({-1, -1, ta_widget_w + 2, widget_h + 2},
+                        Color::rgba(80, 160, 240), 2.0f);
+
+    dl.clip_push({ta_padding, ta_padding, text_area_w, text_area_h});
+
+    auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
+                              text_area_w, cw);
+
+    if (sf.value.empty() && !vs.focused) {
+        dl.text(sf.placeholder, {0, 2}, ta_font_size, Color::rgba(120, 120, 130));
+    } else {
+        for (size_t i = 0; i < wrapped.size(); ++i) {
+            float y = i * ta_line_height - es.scroll_y;
+            if (y + ta_line_height < 0) continue;
+            if (y > text_area_h) break;
+            if (wrapped[i].length > 0) {
+                std::string line_text(sf.value.data() + wrapped[i].start, wrapped[i].length);
+                dl.text(line_text, {0, y + 2}, ta_font_size, Color::rgba(220, 220, 220));
+            }
+        }
+    }
+
+    if (vs.focused) {
+        auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
+        float cx = col * cw;
+        float cy = line * ta_line_height - es.scroll_y;
+        dl.filled_rect({cx, cy, ta_cursor_w, ta_line_height}, Color::rgba(220, 220, 240));
+    }
+
+    dl.clip_pop();
+}
+
 } // namespace detail
 
 // --- Delegate<TextField<T>> method bodies ---
@@ -301,6 +355,24 @@ template <StringLike T>
 void Delegate<Password<T>>::handle_input(Field<Password<T>>& field, const InputEvent& ev,
                                           WidgetNode& node) {
     detail::text_field_handle_input(field, ev, node);
+}
+
+// --- Delegate<TextArea<T>> method bodies ---
+
+template <StringLike T>
+const TextAreaEditState& Delegate<TextArea<T>>::get_edit_state(const WidgetNode& node) {
+    return detail::get_text_area_edit_state(node);
+}
+
+template <StringLike T>
+TextAreaEditState& Delegate<TextArea<T>>::ensure_edit_state(WidgetNode& node) {
+    return detail::ensure_text_area_edit_state(node);
+}
+
+template <StringLike T>
+void Delegate<TextArea<T>>::record(DrawList& dl, const Field<TextArea<T>>& field,
+                                   const WidgetNode& node) {
+    detail::text_area_record(dl, field, node);
 }
 
 // --- Shared dropdown rendering/input helpers ---
