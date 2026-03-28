@@ -370,3 +370,36 @@ TEST_CASE("TextField scroll_offset resets when cursor moves to beginning") {
 
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset == 0.f);
 }
+
+TEST_CASE("TextField operations on empty string are safe") {
+    prism::Field<prism::TextField<>> field{{.value = ""}};
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+
+    // All of these should be no-ops on empty string
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::backspace, 0}, node);
+    CHECK(field.get().value.empty());
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::delete_, 0}, node);
+    CHECK(field.get().value.empty());
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::left, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
+
+    prism::Delegate<prism::TextField<>>::handle_input(
+        field, prism::KeyPress{prism::keys::right, 0}, node);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
+}
+
+TEST_CASE("TextField TextInput on empty field inserts text") {
+    prism::Field<prism::TextField<>> field{{.value = ""}};
+    auto node = make_node({.focused = true});
+    prism::Delegate<prism::TextField<>>::ensure_edit_state(node);
+
+    prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"hello"}, node);
+    CHECK(field.get().value == "hello");
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 5);
+}
