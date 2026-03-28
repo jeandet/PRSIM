@@ -218,7 +218,7 @@ graph LR
 
 - **Phase 1** (done) — MPSC queue, DrawList, SceneSnapshot, SDL3 backend, event-driven loop
 - **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
-- **Phase 3** (next) — Real widget rendering, hit_test→sender routing, concept-based delegate dispatch, `State<T>`, sentinel types (`Label<T>`, `Slider<T>`), built-in widgets (button, label, text field, checkbox, slider)
+- **Phase 3** (in progress) — Real widget rendering, hit_test→sender routing, concept-based delegate dispatch, `State<T>`, sentinel types (`Label<T>`, `Slider<T>`), SDL_Renderer + SDL3_ttf text rendering, built-in widgets (button, label, text field, checkbox, slider)
 - **Phase 4** — Async sender composition, animation, accessibility, data widgets (plot, table)
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
@@ -234,6 +234,7 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Layout Engine](docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) — row/column/spacer, two-pass solver, hit testing
 - [Field/Sender/Widget Spec](docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) — Field<T>, observer pattern, persistent widget tree
 - [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, templated sentinel types, Field vs State
+- [SDL_Renderer Migration](docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) — SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit
 - [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
 
 ## License

@@ -42,6 +42,7 @@ graph TB
 | [scene-snapshot.md](scene-snapshot.md) | SceneSnapshot structure, versioning, dirty repaint model | **Implemented** |
 | [draw-list.md](draw-list.md) | DrawList format, command set, serialisation, extensibility | **Implemented** |
 | [render-backend.md](render-backend.md) | BackendBase vtable, SoftwareBackend, Backend wrapper | **Implemented** |
+| [SDL_Renderer migration](../../docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) | SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit | **Implemented** |
 | [input-events.md](input-events.md) | Input queue, event forwarding, hit testing | **Implemented** |
 | [layout engine](../../docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) | row/column/spacer, two-pass layout solver, hit testing | **Implemented** |
 | [field/sender/widget](../../docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) | Field<T>, SenderHub, WidgetTree, model_app() | **Implemented** |
