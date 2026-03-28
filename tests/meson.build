@@ -20,6 +20,7 @@ headless_tests = {
   'exec' : files('test_exec.cpp'),
   'text_field' : files('test_text_field.cpp'),
   'dropdown' : files('test_dropdown.cpp'),
+  'password' : files('test_password.cpp'),
 }
 
 foreach name, src : headless_tests
