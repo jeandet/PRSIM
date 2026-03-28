@@ -10,13 +10,13 @@ Two field wrapper types exist:
 
 ## Widget Visual State
 
-Every widget node carries a `WidgetVisualState` that tracks interactive feedback:
+Every widget node carries a `WidgetVisualState` that tracks interactive feedback, plus an `std::any edit_state` for ephemeral delegate-managed UI state:
 
 ```cpp
 struct WidgetVisualState {
     bool hovered = false;   // mouse cursor is over widget
     bool pressed = false;   // mouse button held down on widget
-    bool focused = false;   // keyboard focus (future)
+    bool focused = false;   // keyboard focus
 };
 ```
 
@@ -24,9 +24,11 @@ Visual state is managed by the `WidgetTree`:
 - `update_hover(optional<WidgetId>)` — MouseMove → hit_test → set hovered, clear previous
 - `set_pressed(WidgetId, bool)` — MouseButton down/up → set pressed state
 
-The state is passed to delegates:
-- `record(DrawList&, const Field<T>&, const WidgetVisualState&)` — for rendering with hover/press feedback
-- `handle_input(Field<T>&, const InputEvent&, WidgetVisualState&)` — delegates can mutate visual state
+Delegates receive `WidgetNode&` (not `WidgetVisualState&`), giving access to `visual_state`, `edit_state`, and `dirty`:
+- `record(DrawList&, const Field<T>&, const WidgetNode&)` — for rendering with hover/press/focus feedback
+- `handle_input(Field<T>&, const InputEvent&, WidgetNode&)` — delegates can mutate node state
+
+Since `WidgetNode` is forward-declared in `delegate.hpp` (to avoid circular includes with `widget_tree.hpp`), visual state is accessed via `node_vs(node)` helper. Delegates that need the complete `WidgetNode` type (e.g. for `edit_state` access) declare methods in `delegate.hpp` and define them in `widget_tree.hpp`.
 
 ## Field vs State
 
@@ -61,6 +63,13 @@ template <StringLike T = std::string>
 struct Password { T value; };
 
 template <StringLike T = std::string>
+struct TextField {
+    T value;
+    std::string placeholder;
+    size_t max_length = 0;  // 0 = unlimited
+};
+
+template <StringLike T = std::string>
 struct TextArea { T value; };
 
 template <Numeric T = double>
@@ -81,7 +90,8 @@ Usage in model structs:
 
 ```cpp
 struct Settings {
-    Field<std::string>           username{"jeandet"};                        // → text input (default for string)
+    Field<std::string>           username{"jeandet"};                        // → read-only string display
+    Field<TextField<>>           search{{.placeholder = "Search..."}};        // → editable text field
     Field<Label<>>               status{{"OK"}};                             // → read-only label
     Field<Password<>>            secret{""};                                 // → masked text input
     Field<Slider<>>              volume{{.value = 0.8}};                     // → continuous slider
@@ -141,24 +151,24 @@ Delegates are resolved at compile time via concept matching. The delegate is a s
 ```cpp
 // Concept-based delegates — match on traits, not types
 // Each delegate has record() for rendering and handle_input() for interaction.
-// Both receive WidgetVisualState for hover/press/focus feedback.
+// Both receive WidgetNode& for visual state, edit state, and dirty tracking.
 
 template <TextEditable T>
 struct Delegate<T> {
-    static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs);
-    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetVisualState& vs);
+    static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node);
+    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 template <TextDisplayable T>
 struct Delegate<Label<T>> {
-    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetVisualState& vs);
-    static void handle_input(Field<Label<T>>& field, const InputEvent& ev, WidgetVisualState& vs);
+    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetNode& node);
+    static void handle_input(Field<Label<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 template <SliderRenderable T>
 struct Delegate<T> {
-    static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs);
-    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetVisualState& vs);
+    static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node);
+    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node);
 };
 ```
 
@@ -180,10 +190,10 @@ Explicit specialization overrides concept-based resolution:
 ```cpp
 template <>
 struct Delegate<TemperatureKnob> {
-    static void record(DrawList& dl, const Field<TemperatureKnob>& field, const WidgetVisualState& vs) {
+    static void record(DrawList& dl, const Field<TemperatureKnob>& field, const WidgetNode& node) {
         // custom circular knob rendering with hover/press feedback
     }
-    static void handle_input(Field<TemperatureKnob>& field, const InputEvent& ev, WidgetVisualState& vs) {
+    static void handle_input(Field<TemperatureKnob>& field, const InputEvent& ev, WidgetNode& node) {
         // custom input handling
     }
 };
@@ -196,7 +206,7 @@ When no sentinel is used, `Field<T>` uses the default delegate for `T`:
 | `Field<T>` type | Concept matched | Default delegate |
 |---|---|---|
 | `Field<bool>` | `Toggleable` | Checkbox |
-| `Field<std::string>` | `StringLike` | Text input |
+| `Field<std::string>` | `StringLike` | Read-only text display |
 | `Field<int>`, `Field<double>` | `Numeric` | Numeric input / spinner |
 | `Field<Enum>` | `std::is_enum_v` | Dropdown |
 
@@ -205,6 +215,7 @@ Sentinels override these defaults:
 | `Field<Sentinel>` type | Delegate |
 |---|---|
 | `Field<Label<T>>` | Read-only text label |
+| `Field<TextField<T>>` | Single-line editable text field (cursor, scroll, placeholder, max_length) |
 | `Field<Password<T>>` | Masked text input |
 | `Field<TextArea<T>>` | Multiline text editor |
 | `Field<Slider<T>>` | Slider (continuous or discrete based on `step`) |
