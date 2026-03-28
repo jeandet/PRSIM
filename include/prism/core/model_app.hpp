@@ -66,10 +66,14 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                         auto id = hit_test(*current_snap, mb->position);
                         if (id) {
                             tree.set_pressed(*id, mb->pressed);
-                            if (mb->pressed)
+                            if (mb->pressed) {
+                                if (*id != tree.focused_id())
+                                    tree.close_overlays();
                                 tree.set_focused(*id);
+                            }
                             tree.dispatch(*id, ev);
                         } else if (mb->pressed) {
+                            tree.close_overlays();
                             tree.clear_focus();
                         }
                     }
