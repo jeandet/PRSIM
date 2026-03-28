@@ -133,6 +133,10 @@ void SoftwareBackend::render_snapshot(const SceneSnapshot& snap) {
     for (uint16_t idx : snap.z_order) {
         render_draw_list(snap.draw_lists[idx]);
     }
+    if (!snap.overlay.empty()) {
+        SDL_SetRenderClipRect(renderer_, nullptr);
+        render_draw_list(snap.overlay);
+    }
     SDL_RenderPresent(renderer_);
 }
 
