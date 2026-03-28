@@ -27,11 +27,23 @@ struct Label {
 };
 
 // Primary template: default delegate for any Field<T>.
-// Renders a label-only widget, ignores input.
+// Renders only a filled rect, ignores input.
 template <typename T>
 struct Delegate {
     static void record(DrawList& dl, const Field<T>&) {
         dl.filled_rect({0, 0, 200, 30}, Color::rgba(50, 50, 60));
+    }
+
+    static void handle_input(Field<T>&, const InputEvent&) {}
+};
+
+// StringLike specialization: displays the string value
+template <StringLike T>
+struct Delegate<T> {
+    static void record(DrawList& dl, const Field<T>& field) {
+        dl.filled_rect({0, 0, 200, 30}, Color::rgba(50, 50, 60));
+        dl.text(std::string(field.get().data(), field.get().size()),
+                {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
     static void handle_input(Field<T>&, const InputEvent&) {}
