@@ -9,9 +9,10 @@
 namespace prism {
 
 struct BackendConfig {
-    const char* title  = "PRISM";
-    int         width  = 800;
-    int         height = 600;
+    const char* title     = "PRISM";
+    int         width     = 800;
+    int         height    = 600;
+    const char* font_path = nullptr;  // nullptr = use bundled default
 };
 
 class BackendBase {
