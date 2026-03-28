@@ -10,6 +10,12 @@
 
 namespace prism {
 
+struct WidgetVisualState {
+    bool hovered = false;
+    bool pressed = false;
+    bool focused = false;
+};
+
 template <typename T>
 concept Numeric = std::integral<T> || std::floating_point<T>;
 
@@ -30,36 +36,45 @@ struct Label {
 // Renders only a filled rect, ignores input.
 template <typename T>
 struct Delegate {
-    static void record(DrawList& dl, const Field<T>&) {
-        dl.filled_rect({0, 0, 200, 30}, Color::rgba(50, 50, 60));
+    static void record(DrawList& dl, const Field<T>&, const WidgetVisualState& vs) {
+        auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
+        dl.filled_rect({0, 0, 200, 30}, bg);
     }
 
-    static void handle_input(Field<T>&, const InputEvent&) {}
+    static void handle_input(Field<T>&, const InputEvent&, WidgetVisualState&) {}
 };
 
 // StringLike specialization: displays the string value
 template <StringLike T>
 struct Delegate<T> {
-    static void record(DrawList& dl, const Field<T>& field) {
-        dl.filled_rect({0, 0, 200, 30}, Color::rgba(50, 50, 60));
+    static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs) {
+        auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
+        dl.filled_rect({0, 0, 200, 30}, bg);
         dl.text(std::string(field.get().data(), field.get().size()),
                 {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
-    static void handle_input(Field<T>&, const InputEvent&) {}
+    static void handle_input(Field<T>&, const InputEvent&, WidgetVisualState&) {}
 };
 
 // bool specialization: toggle widget
 template <>
 struct Delegate<bool> {
-    static void record(DrawList& dl, const Field<bool>& field) {
-        auto bg = field.get()
-            ? Color::rgba(0, 120, 80)
-            : Color::rgba(50, 50, 60);
+    static void record(DrawList& dl, const Field<bool>& field, const WidgetVisualState& vs) {
+        Color bg;
+        if (field.get()) {
+            bg = vs.pressed ? Color::rgba(0, 100, 65)
+               : vs.hovered ? Color::rgba(0, 140, 95)
+               : Color::rgba(0, 120, 80);
+        } else {
+            bg = vs.pressed ? Color::rgba(40, 40, 48)
+               : vs.hovered ? Color::rgba(60, 60, 72)
+               : Color::rgba(50, 50, 60);
+        }
         dl.filled_rect({0, 0, 200, 30}, bg);
     }
 
-    static void handle_input(Field<bool>& field, const InputEvent& ev) {
+    static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetVisualState&) {
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
             field.set(!field.get());
     }
@@ -67,13 +82,13 @@ struct Delegate<bool> {
 
 template <StringLike T>
 struct Delegate<Label<T>> {
-    static void record(DrawList& dl, const Field<Label<T>>& field) {
+    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetVisualState&) {
         dl.filled_rect({0, 0, 200, 24}, Color::rgba(40, 40, 48));
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
                 {4, 4}, 14, Color::rgba(180, 180, 190));
     }
 
-    static void handle_input(Field<Label<T>>&, const InputEvent&) {}
+    static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetVisualState&) {}
 };
 
 // Sentinel: numeric slider with min/max/step bounds
@@ -98,19 +113,22 @@ struct Delegate<Slider<T>> {
         return static_cast<float>(s.value - s.min) / static_cast<float>(s.max - s.min);
     }
 
-    static void record(DrawList& dl, const Field<Slider<T>>& field) {
+    static void record(DrawList& dl, const Field<Slider<T>>& field, const WidgetVisualState& vs) {
         auto& s = field.get();
         float r = ratio(s);
         float track_y = (widget_h - track_h) / 2.f;
 
-        // Track background
-        dl.filled_rect({0, track_y, track_w, track_h}, Color::rgba(60, 60, 70));
-        // Thumb
+        auto track_bg = vs.hovered ? Color::rgba(70, 70, 82) : Color::rgba(60, 60, 70);
+        dl.filled_rect({0, track_y, track_w, track_h}, track_bg);
+
+        auto thumb_color = vs.pressed ? Color::rgba(0, 120, 180)
+                         : vs.hovered ? Color::rgba(0, 160, 220)
+                         : Color::rgba(0, 140, 200);
         float thumb_x = r * (track_w - thumb_w);
-        dl.filled_rect({thumb_x, 0, thumb_w, widget_h}, Color::rgba(0, 140, 200));
+        dl.filled_rect({thumb_x, 0, thumb_w, widget_h}, thumb_color);
     }
 
-    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev) {
+    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetVisualState&) {
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
             float t = std::clamp(mb->position.x / track_w, 0.f, 1.f);
             auto& s = field.get();
@@ -123,6 +141,33 @@ struct Delegate<Slider<T>> {
                 updated.value = raw;
             }
             field.set(updated);
+        }
+    }
+};
+
+// Sentinel: clickable button with text label
+struct Button {
+    std::string text;
+    uint64_t click_count = 0;
+    bool operator==(const Button&) const = default;
+};
+
+template <>
+struct Delegate<Button> {
+    static void record(DrawList& dl, const Field<Button>& field, const WidgetVisualState& vs) {
+        Color bg = vs.pressed ? Color::rgba(30, 90, 160)
+                 : vs.hovered ? Color::rgba(50, 120, 200)
+                 : Color::rgba(40, 105, 180);
+        dl.filled_rect({0, 0, 200, 32}, bg);
+        dl.rect_outline({0, 0, 200, 32}, Color::rgba(60, 140, 220), 1.0f);
+        dl.text(field.get().text, {8, 7}, 14, Color::rgba(240, 240, 240));
+    }
+
+    static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetVisualState&) {
+        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
+            auto btn = field.get();
+            btn.click_count++;
+            field.set(btn);
         }
     }
 };

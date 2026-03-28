@@ -191,11 +191,86 @@ TEST_CASE("Slider click through WidgetTree dispatch updates value") {
     auto ids = tree.leaf_ids();
     REQUIRE(ids.size() == 3);
 
-    // ids[1] is the slider. Click at x=100 (middle of 200px track) → value ≈ 0.5
     tree.dispatch(ids[1], prism::MouseButton{{100, 15}, 1, true});
     CHECK(model.volume.get().value == doctest::Approx(0.5).epsilon(0.05));
 
-    // Click at x=0 → value ≈ 0.0
     tree.dispatch(ids[1], prism::MouseButton{{0, 15}, 1, true});
     CHECK(model.volume.get().value == doctest::Approx(0.0).epsilon(0.05));
+}
+
+TEST_CASE("update_hover sets hovered state and marks dirty") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    tree.clear_dirty();
+    auto ids = tree.leaf_ids();
+
+    tree.update_hover(ids[0]);
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("update_hover clears previous hover") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+
+    tree.update_hover(ids[0]);
+    tree.clear_dirty();
+
+    tree.update_hover(ids[1]);
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("update_hover with same id is a no-op") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+
+    tree.update_hover(ids[0]);
+    tree.clear_dirty();
+
+    tree.update_hover(ids[0]);
+    CHECK_FALSE(tree.any_dirty());
+}
+
+TEST_CASE("update_hover with nullopt clears hover") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+
+    tree.update_hover(ids[0]);
+    tree.clear_dirty();
+
+    tree.update_hover(std::nullopt);
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("set_pressed marks widget dirty") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+    tree.clear_dirty();
+
+    tree.set_pressed(ids[0], true);
+    CHECK(tree.any_dirty());
+}
+
+struct ButtonModel {
+    prism::Field<prism::Button> action{{"Click me"}};
+    prism::Field<int> count{0};
+};
+
+TEST_CASE("Button in WidgetTree creates leaf") {
+    ButtonModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+}
+
+TEST_CASE("Button click through WidgetTree dispatch increments count") {
+    ButtonModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+
+    CHECK(model.action.get().click_count == 0);
+    tree.dispatch(ids[0], prism::MouseButton{{10, 10}, 1, true});
+    CHECK(model.action.get().click_count == 1);
 }

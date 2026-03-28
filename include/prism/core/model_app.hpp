@@ -59,9 +59,14 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                         h = resize->height;
                         needs_publish = true;
                     }
+                    if (auto* mm = std::get_if<MouseMove>(&ev); mm && current_snap) {
+                        tree.update_hover(hit_test(*current_snap, mm->position));
+                    }
                     if (auto* mb = std::get_if<MouseButton>(&ev); mb && current_snap) {
-                        if (auto id = hit_test(*current_snap, mb->position))
+                        if (auto id = hit_test(*current_snap, mb->position)) {
+                            tree.set_pressed(*id, mb->pressed);
                             tree.dispatch(*id, ev);
+                        }
                     }
 
                     if (tree.any_dirty() || needs_publish)

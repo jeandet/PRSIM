@@ -12,6 +12,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -23,6 +24,7 @@ struct WidgetNode {
     WidgetId id = 0;
     bool dirty = false;
     bool is_container = false;
+    WidgetVisualState visual_state;
     DrawList draws;
     std::vector<Connection> connections;
     std::vector<WidgetNode> children;
@@ -61,6 +63,27 @@ public:
             it->second->on_input.emit(ev);
     }
 
+    void update_hover(std::optional<WidgetId> id) {
+        WidgetId new_id = id.value_or(0);
+        if (new_id == hovered_id_) return;
+        if (auto it = index_.find(hovered_id_); it != index_.end()) {
+            it->second->visual_state.hovered = false;
+            it->second->dirty = true;
+        }
+        hovered_id_ = new_id;
+        if (auto it = index_.find(hovered_id_); it != index_.end()) {
+            it->second->visual_state.hovered = true;
+            it->second->dirty = true;
+        }
+    }
+
+    void set_pressed(WidgetId id, bool pressed) {
+        if (auto it = index_.find(id); it != index_.end()) {
+            it->second->visual_state.pressed = pressed;
+            it->second->dirty = true;
+        }
+    }
+
     [[nodiscard]] Connection connect_input(WidgetId id, std::function<void(const InputEvent&)> cb) {
         if (auto it = index_.find(id); it != index_.end())
             return it->second->on_input.connect(std::move(cb));
@@ -87,6 +110,7 @@ public:
 private:
     WidgetNode root_;
     WidgetId next_id_ = 1;
+    WidgetId hovered_id_ = 0;
     std::unordered_map<WidgetId, WidgetNode*> index_;
 
     void build_index(WidgetNode& node) {
@@ -162,14 +186,14 @@ private:
 
         node.record = [&field](WidgetNode& n) {
             n.draws.clear();
-            Delegate<T>::record(n.draws, field);
+            Delegate<T>::record(n.draws, field, n.visual_state);
         };
         node.record(node);
 
         node.wire = [&field](WidgetNode& n) {
             n.connections.push_back(
-                n.on_input.connect([&field](const InputEvent& ev) {
-                    Delegate<T>::handle_input(field, ev);
+                n.on_input.connect([&field, &n](const InputEvent& ev) {
+                    Delegate<T>::handle_input(field, ev, n.visual_state);
                 })
             );
         };
