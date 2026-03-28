@@ -34,6 +34,30 @@ struct Label {
     bool operator==(const Label&) const = default;
 };
 
+// Concept: type wrapping a StringLike value (for editable text delegates)
+template <typename T>
+concept TextEditable = requires(const T& t) {
+    { t.value } -> StringLike;
+};
+
+// Sentinel: single-line editable text field
+template <StringLike T = std::string>
+struct TextField {
+    T value{};
+    std::string placeholder{};
+    size_t max_length = 0;
+    bool operator==(const TextField&) const = default;
+};
+
+// Monospace text measurement — single replacement point for future TextMetrics
+inline float char_width(float font_size) { return 0.6f * font_size; }
+
+// Ephemeral cursor state for text editing delegates
+struct TextEditState {
+    size_t cursor = 0;
+    float scroll_offset = 0.f;
+};
+
 // WidgetNode is defined in widget_tree.hpp; declared here so delegate
 // signatures can take WidgetNode& without creating a circular include.
 // The accessor below lets delegate bodies reach visual_state without
@@ -213,6 +237,17 @@ struct Delegate<Button> {
             field.set(btn);
         }
     }
+};
+
+template <StringLike T>
+struct Delegate<TextField<T>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
+    static const TextEditState& get_edit_state(const WidgetNode& node);
+    static TextEditState& ensure_edit_state(WidgetNode& node);
+
+    static void record(DrawList& dl, const Field<TextField<T>>& field, const WidgetNode& node);
+    static void handle_input(Field<TextField<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 } // namespace prism

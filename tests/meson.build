@@ -18,6 +18,7 @@ headless_tests = {
   'widget_tree' : files('test_widget_tree.cpp'),
   'delegate' : files('test_delegate.cpp'),
   'exec' : files('test_exec.cpp'),
+  'text_field' : files('test_text_field.cpp'),
 }
 
 foreach name, src : headless_tests
