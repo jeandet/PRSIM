@@ -224,6 +224,7 @@ TEST_CASE("FocusPolicy: interactive delegates are focusable") {
     CHECK(prism::Delegate<bool>::focus_policy == prism::FocusPolicy::tab_and_click);
     CHECK(prism::Delegate<prism::Slider<>>::focus_policy == prism::FocusPolicy::tab_and_click);
     CHECK(prism::Delegate<prism::Button>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Delegate<prism::Checkbox>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 TEST_CASE("Delegate<bool> toggles on Space key") {
