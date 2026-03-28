@@ -21,4 +21,14 @@ using InputEvent = std::variant<
     WindowResize, WindowClose
 >;
 
+namespace keys {
+    inline constexpr int32_t tab   = 0x09;   // matches SDLK_TAB
+    inline constexpr int32_t space = 0x20;   // matches SDLK_SPACE
+    inline constexpr int32_t enter = 0x0D;   // matches SDLK_RETURN
+}
+
+namespace mods {
+    inline constexpr uint16_t shift = 0x0003;  // matches SDL_KMOD_SHIFT
+}
+
 } // namespace prism
