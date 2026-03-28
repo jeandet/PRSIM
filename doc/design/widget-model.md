@@ -1,8 +1,10 @@
 # Widget Model
 
-## Overview
+> **Status: Superseded** by [field/sender/widget spec](../../docs/superpowers/specs/2026-03-27-field-sender-widget-design.md). The `Ui<State>` immediate-mode-style API described here was replaced by the **Model-View-Behavior (MVB)** architecture: models are plain structs with `Field<T>` members, reflection builds the widget tree automatically, and behavior is user-written observer chains.
 
-PRISM's widget model has two layers:
+## Overview (Historical)
+
+PRISM's widget model originally had two layers:
 
 1. **User-facing:** Components are plain functions that call methods on a `Ui<State>` context. No base class, no registration, no lifecycle hooks.
 2. **Internal:** Built-in components use the low-level `DrawList` + `Widget` concept. Users can drop to this level for custom rendering.

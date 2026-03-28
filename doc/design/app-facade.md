@@ -1,8 +1,10 @@
 # App Facade
 
+> **Status: Implemented — secondary API.** The primary entry point is now `prism::model_app()` which drives the MVB architecture. `prism::app<State>()` remains available as a lower-level alternative.
+
 ## Overview
 
-`prism::app<State>()` is the zero-boilerplate entry point. The user provides a state type and a view function. The framework handles everything else: threading, event loop, snapshot building, hit testing, event dispatch.
+`prism::app<State>()` is a zero-boilerplate entry point. The user provides a state type and a view function. The framework handles everything else: threading, event loop, snapshot building, hit testing, event dispatch.
 
 ## Target API
 

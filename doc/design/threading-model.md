@@ -5,9 +5,11 @@
 PRISM uses a strict separation between application threads and the render thread. They never share mutable state. Communication flows through lock-free mechanisms:
 
 - **Atomic cell** — publishes a complete immutable `SceneSnapshot` (latest wins, intermediates dropped)
-- **MPSC queue** — carries `InputEvent` entries from the render thread to the application
+- **stdexec `run_loop`** — the application thread's event loop and scheduler. The render thread schedules input events onto the app thread via `exec::start_detached(schedule(sched) | then(...))`.
 
 Both threads are **event-driven** — they block at OS level when idle and wake only when there is work to do.
+
+> **Note:** The original `mpsc_queue` + `atomic_wait` mechanism for input forwarding was replaced by stdexec `run_loop` scheduling. See [stdexec-integration.md](stdexec-integration.md) for details.
 
 ## Thread Roles
 
@@ -78,5 +80,5 @@ After the app loop exits, it pushes an `SDL_EVENT_USER` to ensure the render thr
 ## Open Questions
 
 - Snapshot pooling/recycling strategy (avoid allocation per frame).
-- Thread pool integration — `std::execution` scheduler vs manual pool.
+- Thread pool integration — stdexec `static_thread_pool` or custom scheduler for parallel tile rasterisation.
 - `request_redraw()` for animation-driven updates without input events.

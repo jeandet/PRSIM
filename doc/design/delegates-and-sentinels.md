@@ -2,11 +2,11 @@
 
 ## Overview
 
-PRISM maps model fields to widgets through **delegates** — compile-time resolved rendering strategies selected by the field's value type. **Sentinel types** are templated wrapper types that carry both a value and its presentation semantics. **Concepts** drive delegate resolution, keeping the system generic and decoupled from specific types.
+In PRISM's **Model-View-Behavior (MVB)** architecture, delegates are the **View** layer — compile-time resolved rendering strategies selected by the field's value type. **Sentinel types** are templated wrapper types that carry both a value and its presentation semantics. **Concepts** drive delegate resolution, keeping the system generic and decoupled from specific types.
 
 Two field wrapper types exist:
-- `Field<T>` — observable + rendered (delegate generates a widget)
-- `State<T>` — observable + invisible (no widget, used for backend state and synchronisation)
+- `Field<T>` — observable + rendered (delegate generates a widget). Part of the **Model** layer.
+- `State<T>` — observable + invisible (no widget, used for backend state and synchronisation). Part of the **Model** layer.
 
 ## Widget Visual State
 
@@ -60,21 +60,25 @@ template <StringLike T = std::string>
 struct Label { T value; };
 
 template <StringLike T = std::string>
-struct Password { T value; };
-
-template <StringLike T = std::string>
 struct TextField {
-    T value;
-    std::string placeholder;
+    T value{};
+    std::string placeholder{};
     size_t max_length = 0;  // 0 = unlimited
 };
 
 template <StringLike T = std::string>
-struct TextArea { T value; };
+struct Password {
+    T value{};
+    std::string placeholder{};
+    size_t max_length = 0;
+};
+
+template <StringLike T = std::string>
+struct TextArea { T value; };  // not yet implemented
 
 template <Numeric T = double>
 struct Slider {
-    T value;
+    T value{};
     T min = T{0};
     T max = T{1};
     T step = T{0};  // 0 = continuous
@@ -84,18 +88,34 @@ struct Button {
     std::string text;
     uint64_t click_count = 0;  // increments on click, observable via on_change()
 };
+
+struct Checkbox {
+    bool checked = false;
+    std::string label{};
+};
+
+template <ScopedEnum T>
+struct Dropdown {
+    T value{};
+    std::vector<std::string> labels{};  // empty = reflection-derived names
+};
 ```
 
 Usage in model structs:
 
 ```cpp
+enum class Theme { Light, Dark, System };
+
 struct Settings {
     Field<std::string>           username{"jeandet"};                        // → read-only string display
     Field<TextField<>>           search{{.placeholder = "Search..."}};        // → editable text field
     Field<Label<>>               status{{"OK"}};                             // → read-only label
-    Field<Password<>>            secret{""};                                 // → masked text input
+    Field<Password<>>            secret{{.placeholder = "API key"}};          // → masked text input
     Field<Slider<>>              volume{{.value = 0.8}};                     // → continuous slider
     Field<Button>                save{{"Save"}};                             // → clickable button
+    Field<bool>                  dark_mode{true};                            // → checkbox (default delegate)
+    Field<Checkbox>              notifications{{.checked = true, .label = "Enable"}};  // → checkbox with label
+    Field<Theme>                 theme{Theme::Dark};                         // → auto-dropdown via reflection
     Field<Slider<int>>           quality{{.value = 3, .min = 1, .max = 5, .step = 1}};  // → discrete slider
     Field<Label<MyCustomString>> custom{{my_string}};                        // works with any StringLike type
 };
@@ -203,23 +223,25 @@ struct Delegate<TemperatureKnob> {
 
 When no sentinel is used, `Field<T>` uses the default delegate for `T`:
 
-| `Field<T>` type | Concept matched | Default delegate |
-|---|---|---|
-| `Field<bool>` | `Toggleable` | Checkbox |
-| `Field<std::string>` | `StringLike` | Read-only text display |
-| `Field<int>`, `Field<double>` | `Numeric` | Numeric input / spinner |
-| `Field<Enum>` | `std::is_enum_v` | Dropdown |
+| `Field<T>` type | Concept matched | Default delegate | Status |
+|---|---|---|---|
+| `Field<bool>` | `Toggleable` | Checkbox | **Implemented** |
+| `Field<std::string>` | `StringLike` | Read-only text display | **Implemented** |
+| `Field<int>`, `Field<double>` | `Numeric` | Filled rect (catch-all fallback) | **Implemented** |
+| `Field<ScopedEnum>` | `ScopedEnum` concept | Auto-dropdown via P2996 `enumerators_of` | **Implemented** |
 
 Sentinels override these defaults:
 
-| `Field<Sentinel>` type | Delegate |
-|---|---|
-| `Field<Label<T>>` | Read-only text label |
-| `Field<TextField<T>>` | Single-line editable text field (cursor, scroll, placeholder, max_length) |
-| `Field<Password<T>>` | Masked text input |
-| `Field<TextArea<T>>` | Multiline text editor |
-| `Field<Slider<T>>` | Slider (continuous or discrete based on `step`) |
-| `Field<Button>` | Clickable button (text label, observable click_count) |
+| `Field<Sentinel>` type | Delegate | Status |
+|---|---|---|
+| `Field<Label<T>>` | Read-only text label | **Implemented** |
+| `Field<TextField<T>>` | Single-line editable text field (cursor, scroll, placeholder, max_length) | **Implemented** |
+| `Field<Password<T>>` | Masked text input (shares `detail::` helpers with TextField) | **Implemented** |
+| `Field<Slider<T>>` | Slider (continuous or discrete based on `step`) | **Implemented** |
+| `Field<Button>` | Clickable button (text label, observable click_count) | **Implemented** |
+| `Field<Checkbox>` | Checkbox box + label text, whole-widget toggle | **Implemented** |
+| `Field<Dropdown<T>>` | Dropdown with custom labels | **Implemented** |
+| `Field<TextArea<T>>` | Multiline text editor | Planned |
 
 ## Reflection Walk
 
@@ -237,8 +259,43 @@ for each member M of Model:
         recurse
 ```
 
+## Shared Implementation Helpers
+
+TextField and Password share their implementation via parameterized `detail::` helpers in `widget_tree.hpp`:
+
+- `detail::text_field_record<Sentinel, DisplayFn>()` — rendering parameterized by a display transform (identity for TextField, masking for Password)
+- `detail::text_field_handle_input<Sentinel>()` — input handling shared identically
+- `detail::mask_string(size_t)` — returns UTF-8 bullet "●" characters
+- `detail::get_text_edit_state()` / `detail::ensure_text_edit_state()` — `TextEditState` access from `WidgetNode::edit_state`
+
+Enum dropdown and `Dropdown<T>` similarly share `detail::dropdown_record()` and `detail::dropdown_handle_input()`.
+
+## Focus Policy
+
+Each delegate declares a compile-time `FocusPolicy`:
+
+```cpp
+enum class FocusPolicy : uint8_t { none, tab_and_click };
+```
+
+- `none` — non-interactive (Label, StringLike, primary catch-all)
+- `tab_and_click` — interactive (bool, Slider, Button, Checkbox, TextField, Password, ScopedEnum, Dropdown)
+
+Tab/Shift+Tab cycles through focusable widgets. Click on a focusable widget sets focus. Focused widgets render a blue focus ring (`RectOutline`, 2px).
+
+## Overlay System
+
+Dropdown popups render via the overlay system:
+
+- `WidgetNode::overlay_draws` — per-widget DrawList for content above all widgets
+- `SceneSnapshot::overlay` — collected during `layout_flatten`, rendered last
+- `SceneSnapshot::overlay_geometry` — `{WidgetId, Rect}` pairs for overlay hit-testing
+- `hit_test()` checks overlay geometry first (on top), then normal widget geometry
+- `WidgetTree::close_overlays()` — clears overlay draws + resets edit_state on click-outside
+
 ## Design Principles
 
+- **Delegates are the View layer** — in MVB terms, delegates handle widget-level input mechanics (e.g. translating a click into a toggle). They are PRISM-internal, not user-written.
 - **Concepts over concrete types** — delegates match traits, not specific types. Custom string/numeric types work if they satisfy the concept.
 - **Type = specification** — the sentinel type carries both the value and its rendering semantics. No runtime metadata, no string annotations.
 - **Templated with defaults** — sentinels are generic (`Label<T = std::string>`) so users can plug in their own types.
@@ -247,6 +304,5 @@ for each member M of Model:
 
 ## Open Questions
 
-- Priority/ordering when multiple concepts match — does `SliderRenderable` win over `Numeric` for a type satisfying both?
 - Should `Delegate` carry layout hints (preferred size, stretch policy) in addition to rendering?
 - Animated transitions between delegate states (e.g., text field gaining focus) — delegate concern or separate animation layer?

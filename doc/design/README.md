@@ -2,33 +2,46 @@
 
 Each document details the design, rationale, and constraints for one subsystem. They are meant to be read before implementing and updated as the design evolves.
 
-## Architecture
+## Architecture — Model-View-Behavior (MVB)
 
-PRISM is a persistent widget tree toolkit with C++26 sender-based observer pattern. `Field<T>` model structs are the core abstraction — simultaneously data, observable, and widget spec. P2996 reflection generates UI from plain structs.
+PRISM follows a **Model-View-Behavior** pattern — three clearly separated layers:
+
+- **Model** — plain structs with `Field<T>` members. Data + change notification. Knows nothing about rendering or input.
+- **View** — `Delegate<T>` specializations. How each field type renders (`record()`) and responds to raw input (`handle_input()`). Per-type, automatic via reflection. This is PRISM-internal.
+- **Behavior** — user-written `on_change()` / `connect()` / `observe()` chains. Application logic (business rules, validation, cross-component coordination) that reacts to field mutations and drives other field mutations.
+
+The key distinction from MVC/MVVM: View and Behavior are not mediated by a controller or view-model. The Model is the single source of truth. Delegates handle widget-level input mechanics (e.g. translating a click into a toggle). Behavior handles domain logic (e.g. "when volume exceeds 0.9, show a warning").
+
+P2996 reflection bridges Model to View automatically — `Field<T>` structs become widgets with zero boilerplate.
 
 ```mermaid
 graph TB
-    subgraph "Model Layer"
+    subgraph "Model"
         F["Field&lt;T&gt; observables"]
         L["List&lt;T&gt; collections"]
-        S["SenderHub + Connection"]
     end
 
-    subgraph "Widget Layer"
+    subgraph "View (automatic)"
+        D["Delegate&lt;T&gt; (record + handle_input)"]
         WT["WidgetTree (persistent)"]
         R["Reflection (P2996)"]
     end
 
-    subgraph "Rendering Layer"
+    subgraph "Behavior (user-written)"
+        B["on_change() / observe() chains"]
+    end
+
+    subgraph "Rendering"
         DL["DrawList"]
         SS["SceneSnapshot"]
         BE["Backend (Software / GPU)"]
     end
 
-    F --> S
-    L --> S
-    S -->|"dirty flag"| WT
+    F -->|"SenderHub"| D
+    F -->|"SenderHub"| B
+    B -->|"field.set()"| F
     R -->|"build from struct"| WT
+    D -->|"dirty flag"| WT
     WT -->|"layout + flatten"| SS
     SS -->|"atomic swap"| BE
     DL --> SS
@@ -49,7 +62,7 @@ graph TB
 | [input routing](../../docs/superpowers/specs/2026-03-27-input-routing-design.md) | hit_test → dispatch → on_input SenderHub → field mutation | **Implemented** |
 | [app-facade.md](app-facade.md) | `prism::app<State>()` + `Ui<State>` retained entry point | **Implemented** — secondary API |
 | [styling.md](styling.md) | Theme as data, context propagation, per-instance overrides | Draft |
-| [delegates-and-sentinels.md](delegates-and-sentinels.md) | Delegate<T> + WidgetVisualState, Label/Slider/Button sentinels | **Implemented** |
+| [delegates-and-sentinels.md](delegates-and-sentinels.md) | Delegate<T> + WidgetVisualState, all sentinels (Label/Slider/Button/Checkbox/TextField/Password/Dropdown), overlay system | **Implemented** |
 | [stdexec integration](stdexec-integration.md) | run_loop event loops, prism::then/on pipe adaptors, AppContext | **Implemented** |
 | [widget-model.md](widget-model.md) | Persistent widgets from Field<T> via reflection | **Superseded** by field/sender/widget spec |
 | [reactivity.md](reactivity.md) | Sender/observer pattern, Field<T> change propagation | **Superseded** by field/sender/widget spec |
@@ -58,6 +71,7 @@ graph TB
 
 | Document | Subsystem |
 |---|---|
+| [components.md](components.md) | `prism::Component` base class — self-wiring reusable UI + logic bundles | **Design only** |
 | python-bindings | nanobind wrapping, GIL-free Python 3.14+, callback threading |
 | testing-strategy | doctest, synchronous scheduler, headless rendering, visual regression |
 | tracing-profiling | Tracy behind generic macros, trace points at pipeline boundaries |

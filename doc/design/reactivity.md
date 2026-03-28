@@ -1,10 +1,10 @@
 # Reactivity — State Management & Event Dispatch
 
-## Overview
+> **Status: Superseded** by [field/sender/widget spec](../../docs/superpowers/specs/2026-03-27-field-sender-widget-design.md). The architecture has evolved from MVU to **Model-View-Behavior (MVB)**. See [README.md](README.md) for the current architecture description.
 
-PRISM uses MVU (Model-View-Update) as its primary architecture. The user's state struct is the single source of truth. The view is a pure function of state. Event handlers mutate state, and the framework re-renders.
+## Overview (Historical)
 
-The signal/observable/binding system described below is the **internal mechanism** the framework uses to track state changes and optimise re-rendering. It is not the primary user-facing API — users write `.on_X()` handlers on components.
+This document originally described an MVU (Model-View-Update) approach. PRISM now uses **MVB** — Model (`Field<T>` structs), View (`Delegate<T>` rendering, automatic via reflection), Behavior (user-written `on_change()` / `observe()` chains). The observer/sender pattern described below evolved into `SenderHub` + `prism::then` / `prism::on` pipe composition with stdexec schedulers.
 
 ## User-Facing API: .on_X() Handlers
 
