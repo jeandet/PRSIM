@@ -203,3 +203,45 @@ TEST_CASE("FocusPolicy: interactive delegates are focusable") {
     CHECK(prism::Delegate<prism::Slider<>>::focus_policy == prism::FocusPolicy::tab_and_click);
     CHECK(prism::Delegate<prism::Button>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
+
+TEST_CASE("Delegate<bool> toggles on Space key") {
+    prism::Field<bool> field{false};
+    prism::WidgetVisualState vs;
+    prism::Delegate<bool>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, vs);
+    CHECK(field.get() == true);
+}
+
+TEST_CASE("Delegate<bool> toggles on Enter key") {
+    prism::Field<bool> field{false};
+    prism::WidgetVisualState vs;
+    prism::Delegate<bool>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, vs);
+    CHECK(field.get() == true);
+}
+
+TEST_CASE("Delegate<bool> ignores other keys") {
+    prism::Field<bool> field{false};
+    prism::WidgetVisualState vs;
+    prism::Delegate<bool>::handle_input(field, prism::KeyPress{0x41, 0}, vs);  // 'A'
+    CHECK(field.get() == false);
+}
+
+TEST_CASE("Button activates on Space key") {
+    prism::Field<prism::Button> field{{"Go"}};
+    prism::WidgetVisualState vs;
+    prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, vs);
+    CHECK(field.get().click_count == 1);
+}
+
+TEST_CASE("Button activates on Enter key") {
+    prism::Field<prism::Button> field{{"Go"}};
+    prism::WidgetVisualState vs;
+    prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, vs);
+    CHECK(field.get().click_count == 1);
+}
+
+TEST_CASE("Button ignores other keys") {
+    prism::Field<prism::Button> field{{"Go"}};
+    prism::WidgetVisualState vs;
+    prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{0x41, 0}, vs);
+    CHECK(field.get().click_count == 0);
+}

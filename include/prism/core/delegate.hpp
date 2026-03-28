@@ -83,8 +83,12 @@ struct Delegate<bool> {
     }
 
     static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetVisualState&) {
-        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
+        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
             field.set(!field.get());
+        } else if (auto* kp = std::get_if<KeyPress>(&ev);
+                   kp && (kp->key == keys::space || kp->key == keys::enter)) {
+            field.set(!field.get());
+        }
     }
 };
 
@@ -177,7 +181,13 @@ struct Delegate<Button> {
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetVisualState&) {
-        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
+        bool activate = false;
+        if (auto* mb = std::get_if<MouseButton>(&ev))
+            activate = mb->pressed;
+        else if (auto* kp = std::get_if<KeyPress>(&ev))
+            activate = (kp->key == keys::space || kp->key == keys::enter);
+
+        if (activate) {
             auto btn = field.get();
             btn.click_count++;
             field.set(btn);
