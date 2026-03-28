@@ -95,9 +95,9 @@ Delegates are resolved at compile time via **concepts**, not concrete types. A d
 prism::Field<prism::Label<MyString>> info{{my_string}};
 ```
 
-## Component Model
+## Composition by Nesting
 
-Components are plain model structs. Compose by nesting — no inheritance, no macros:
+Models are plain structs. Compose by nesting — no inheritance, no macros:
 
 ```cpp
 struct Settings {
@@ -106,7 +106,7 @@ struct Settings {
 };
 
 struct Dashboard {
-    Settings settings;                   // nested component
+    Settings settings;                   // nested group
     prism::Field<int> counter{0};
     prism::State<int> request_count{0};  // observable, no widget
 };
@@ -238,6 +238,7 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, templated sentinel types, Field vs State
 - [SDL_Renderer Migration](docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) — SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit
 - [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
+- [Components](doc/design/components.md) — `prism::Component` base class, self-wiring reusable UI + logic bundles (design only)
 
 ## License
 
