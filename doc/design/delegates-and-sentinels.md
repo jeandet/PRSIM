@@ -241,7 +241,7 @@ Sentinels override these defaults:
 | `Field<Button>` | Clickable button (text label, observable click_count) | **Implemented** |
 | `Field<Checkbox>` | Checkbox box + label text, whole-widget toggle | **Implemented** |
 | `Field<Dropdown<T>>` | Dropdown with custom labels | **Implemented** |
-| `Field<TextArea<T>>` | Multiline text editor | Planned |
+| `Field<TextArea<T>>` | Multiline text editor (character wrap, vertical scroll, Up/Down navigation, configurable rows) | **Implemented** |
 
 ## Reflection Walk
 
