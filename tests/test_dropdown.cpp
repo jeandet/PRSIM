@@ -388,3 +388,66 @@ TEST_CASE("Dropdown<T> selection updates value") {
 
     CHECK(field.get().value == Color::Blue);
 }
+
+struct DropdownModel {
+    prism::Field<Color> color{Color::Red};
+    prism::Field<bool> flag{false};
+};
+
+TEST_CASE("Enum dropdown in WidgetTree creates focusable leaf") {
+    DropdownModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+
+    auto focus = tree.focus_order();
+    REQUIRE(focus.size() == 2);
+}
+
+TEST_CASE("Enum dropdown dispatch selects value") {
+    DropdownModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    tree.set_focused(focus[0]);
+
+    // Quick-select with Down key
+    tree.dispatch(focus[0], prism::KeyPress{prism::keys::down, 0});
+    CHECK(model.color.get() == Color::Green);
+}
+
+TEST_CASE("Open dropdown produces overlay in snapshot") {
+    DropdownModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    tree.set_focused(focus[0]);
+
+    // Open dropdown
+    tree.dispatch(focus[0], prism::KeyPress{prism::keys::space, 0});
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK_FALSE(snap->overlay.empty());
+}
+
+TEST_CASE("Closed dropdown has empty overlay in snapshot") {
+    DropdownModel model;
+    prism::WidgetTree tree(model);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK(snap->overlay.empty());
+}
+
+TEST_CASE("close_overlays resets open dropdown") {
+    DropdownModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    tree.set_focused(focus[0]);
+
+    // Open
+    tree.dispatch(focus[0], prism::KeyPress{prism::keys::space, 0});
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    CHECK_FALSE(snap1->overlay.empty());
+
+    // Close overlays
+    tree.close_overlays();
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    CHECK(snap2->overlay.empty());
+}
