@@ -211,7 +211,6 @@ inline std::vector<LineSpan> wrap_lines(std::string_view text, float text_area_w
 
         if (nl == std::string_view::npos) break;
         pos = nl + 1;
-        if (pos == text.size() + 1) break;
     }
 
     if (result.empty()) result.push_back({0, 0});
@@ -310,6 +309,7 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
     auto& es = ensure_text_area_edit_state(node);
     auto sf = field.get();
     auto len = sf.value.size();
+    es.cursor = std::min(es.cursor, len);  // clamp if value changed externally
     float cw = char_width(ta_font_size);
     float text_area_w = ta_widget_w - 2 * ta_padding;
     float text_area_h = sf.rows * ta_line_height;

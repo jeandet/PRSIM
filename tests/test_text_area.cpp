@@ -84,6 +84,27 @@ TEST_CASE("wrap_lines: exact fit does not wrap") {
     CHECK(lines[0].length == 5);
 }
 
+TEST_CASE("wrap_lines: bare newline produces two empty spans") {
+    float cw = prism::char_width(14.f);
+    float text_w = 200.f - 2 * 4.f;
+    auto lines = prism::detail::wrap_lines("\n", text_w, cw);
+    REQUIRE(lines.size() == 2);
+    CHECK(lines[0].start == 0);
+    CHECK(lines[0].length == 0);
+    CHECK(lines[1].start == 1);
+    CHECK(lines[1].length == 0);
+}
+
+TEST_CASE("wrap_lines: two bare newlines produce three empty spans") {
+    float cw = prism::char_width(14.f);
+    float text_w = 200.f - 2 * 4.f;
+    auto lines = prism::detail::wrap_lines("\n\n", text_w, cw);
+    REQUIRE(lines.size() == 3);
+    CHECK(lines[0].length == 0);
+    CHECK(lines[1].length == 0);
+    CHECK(lines[2].length == 0);
+}
+
 TEST_CASE("wrap_lines: mixed newlines and wrapping") {
     float cw = prism::char_width(14.f);
     float text_w = 3.f * cw;  // wrap at 3 chars
@@ -692,4 +713,21 @@ TEST_CASE("TextArea in WidgetTree: Enter creates new line via dispatch") {
     tree.dispatch(ids[0], prism::KeyPress{.key = prism::keys::enter, .mods = 0});
     auto val = std::string(model.editor.get().value);
     CHECK(val.find('\n') != std::string::npos);
+}
+
+TEST_CASE("TextArea: cursor clamped when value shortened externally") {
+    prism::Field<prism::TextArea<>> field{{.value = "abcdef"}};
+    auto node = make_node({.focused = true});
+    auto& es = prism::Delegate<prism::TextArea<>>::ensure_edit_state(node);
+    es.cursor = 6;  // at end
+
+    // Externally shorten the value
+    field.set({.value = "ab"});
+
+    // Next input should not crash — cursor gets clamped
+    prism::InputEvent ev = prism::TextInput{"X"};
+    prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
+
+    CHECK(std::string(field.get().value) == "abX");
+    CHECK(es.cursor == 3);
 }
