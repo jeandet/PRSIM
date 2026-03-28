@@ -156,3 +156,156 @@ TEST_CASE("Enum delegate closed popup has no overlay draws") {
     prism::Delegate<Color>::record(dl, field, node);
     CHECK(node.overlay_draws.empty());
 }
+
+TEST_CASE("Enum delegate click opens popup") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == true);
+    CHECK(es.highlighted == 0);  // Red is index 0
+}
+
+TEST_CASE("Enum delegate click opens with current selection highlighted") {
+    prism::Field<Color> field{Color::Blue};
+    auto node = make_node({.focused = true});
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.highlighted == 2);  // Blue is index 2
+}
+
+TEST_CASE("Enum delegate Space opens popup") {
+    prism::Field<Color> field{Color::Green};
+    auto node = make_node({.focused = true});
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == true);
+    CHECK(es.highlighted == 1);
+}
+
+TEST_CASE("Enum delegate Enter opens popup") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == true);
+}
+
+TEST_CASE("Enum delegate Down navigates when open") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    // Open
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.highlighted == 0);
+
+    // Down
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    CHECK(es.highlighted == 1);
+
+    // Down again
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    CHECK(es.highlighted == 2);
+
+    // Down wraps
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    CHECK(es.highlighted == 0);
+}
+
+TEST_CASE("Enum delegate Up navigates when open") {
+    prism::Field<Color> field{Color::Blue};
+    auto node = make_node({.focused = true});
+
+    // Open
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.highlighted == 2);
+
+    // Up
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    CHECK(es.highlighted == 1);
+
+    // Up wraps
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    CHECK(es.highlighted == 0);
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    CHECK(es.highlighted == 2);
+}
+
+TEST_CASE("Enum delegate Enter selects highlighted option") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    // Open, navigate to Blue (index 2), select
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+
+    CHECK(field.get() == Color::Blue);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == false);
+}
+
+TEST_CASE("Enum delegate Escape closes without changing") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::escape, 0}, node);
+
+    CHECK(field.get() == Color::Red);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == false);
+}
+
+TEST_CASE("Enum delegate click on option selects and closes") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    // Open
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+
+    // Click on second option (Green, index 1)
+    // y = widget_h + 1 * option_h + half = 30 + 28 + 14 = mid of Green row
+    float click_y = 30.f + 1 * 28.f + 14.f;
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, click_y}, 1, true}, node);
+
+    CHECK(field.get() == Color::Green);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == false);
+}
+
+TEST_CASE("Enum delegate click outside popup closes without changing") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    // Open
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+
+    // Click outside popup area (below all options: y = 30 + 3*28 + 10 = 124)
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 124}, 1, true}, node);
+
+    CHECK(field.get() == Color::Red);
+    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    CHECK(es.open == false);
+}
+
+TEST_CASE("Enum delegate Up/Down quick-select when closed") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    CHECK(field.get() == Color::Green);
+
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    CHECK(field.get() == Color::Blue);
+
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    CHECK(field.get() == Color::Red);  // wraps
+
+    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    CHECK(field.get() == Color::Blue);  // wraps back
+}
