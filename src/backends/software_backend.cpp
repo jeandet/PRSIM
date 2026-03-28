@@ -53,6 +53,7 @@ void SoftwareBackend::run(std::function<void(const InputEvent&)> event_cb) {
 
     ready_.store(true, std::memory_order_release);
     ready_.notify_one();
+    SDL_StartTextInput(window_);
 
     while (running_.load(std::memory_order_relaxed)) {
         SDL_Event ev;
@@ -87,6 +88,9 @@ void SoftwareBackend::run(std::function<void(const InputEvent&)> event_cb) {
                 break;
             case SDL_EVENT_KEY_UP:
                 event_cb(KeyRelease{static_cast<int32_t>(ev.key.key), ev.key.mod});
+                break;
+            case SDL_EVENT_TEXT_INPUT:
+                event_cb(TextInput{ev.text.text});
                 break;
             case SDL_EVENT_USER:
                 break;
