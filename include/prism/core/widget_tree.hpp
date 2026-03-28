@@ -10,6 +10,7 @@
 #include <prism/core/scene_snapshot.hpp>
 #include <prism/core/state.hpp>
 
+#include <any>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -26,6 +27,7 @@ struct WidgetNode {
     bool is_container = false;
     FocusPolicy focus_policy = FocusPolicy::none;
     WidgetVisualState visual_state;
+    std::any edit_state;
     DrawList draws;
     std::vector<Connection> connections;
     std::vector<WidgetNode> children;
@@ -33,6 +35,9 @@ struct WidgetNode {
     std::function<void(WidgetNode&)> wire;
     std::function<void(WidgetNode&)> record;
 };
+
+// Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
+inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }
 
 // index_ stores raw pointers into the tree — valid only because the tree
 // is fully built before build_index runs and never mutated after construction.
@@ -245,14 +250,14 @@ private:
 
         node.record = [&field](WidgetNode& n) {
             n.draws.clear();
-            Delegate<T>::record(n.draws, field, n.visual_state);
+            Delegate<T>::record(n.draws, field, n);
         };
         node.record(node);
 
         node.wire = [&field](WidgetNode& n) {
             n.connections.push_back(
                 n.on_input.connect([&field, &n](const InputEvent& ev) {
-                    Delegate<T>::handle_input(field, ev, n.visual_state);
+                    Delegate<T>::handle_input(field, ev, n);
                 })
             );
         };

@@ -34,18 +34,28 @@ struct Label {
     bool operator==(const Label&) const = default;
 };
 
+// WidgetNode is defined in widget_tree.hpp; declared here so delegate
+// signatures can take WidgetNode& without creating a circular include.
+// The accessor below lets delegate bodies reach visual_state without
+// needing the complete type in this header.
+struct WidgetNode;
+
+// Declared here, defined in widget_tree.hpp (after WidgetNode is complete).
+const WidgetVisualState& node_vs(const WidgetNode& n);
+
 // Primary template: default delegate for any Field<T>.
 // Renders only a filled rect, ignores input.
 template <typename T>
 struct Delegate {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<T>&, const WidgetVisualState& vs) {
+    static void record(DrawList& dl, const Field<T>&, const WidgetNode& node) {
+        auto& vs = node_vs(node);
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
         dl.filled_rect({0, 0, 200, 30}, bg);
     }
 
-    static void handle_input(Field<T>&, const InputEvent&, WidgetVisualState&) {}
+    static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
 };
 
 // StringLike specialization: displays the string value
@@ -53,14 +63,15 @@ template <StringLike T>
 struct Delegate<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs) {
+    static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node) {
+        auto& vs = node_vs(node);
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
         dl.filled_rect({0, 0, 200, 30}, bg);
         dl.text(std::string(field.get().data(), field.get().size()),
                 {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
-    static void handle_input(Field<T>&, const InputEvent&, WidgetVisualState&) {}
+    static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
 };
 
 // bool specialization: toggle widget
@@ -68,7 +79,8 @@ template <>
 struct Delegate<bool> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<bool>& field, const WidgetVisualState& vs) {
+    static void record(DrawList& dl, const Field<bool>& field, const WidgetNode& node) {
+        auto& vs = node_vs(node);
         Color bg;
         if (field.get()) {
             bg = vs.pressed ? Color::rgba(0, 100, 65)
@@ -84,7 +96,7 @@ struct Delegate<bool> {
             dl.rect_outline({-1, -1, 202, 32}, Color::rgba(80, 160, 240), 2.0f);
     }
 
-    static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetVisualState&) {
+    static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetNode&) {
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
             field.set(!field.get());
         } else if (auto* kp = std::get_if<KeyPress>(&ev);
@@ -98,13 +110,13 @@ template <StringLike T>
 struct Delegate<Label<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetVisualState&) {
+    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetNode&) {
         dl.filled_rect({0, 0, 200, 24}, Color::rgba(40, 40, 48));
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
                 {4, 4}, 14, Color::rgba(180, 180, 190));
     }
 
-    static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetVisualState&) {}
+    static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetNode&) {}
 };
 
 // Sentinel: numeric slider with min/max/step bounds
@@ -130,7 +142,8 @@ struct Delegate<Slider<T>> {
         return static_cast<float>(s.value - s.min) / static_cast<float>(s.max - s.min);
     }
 
-    static void record(DrawList& dl, const Field<Slider<T>>& field, const WidgetVisualState& vs) {
+    static void record(DrawList& dl, const Field<Slider<T>>& field, const WidgetNode& node) {
+        auto& vs = node_vs(node);
         auto& s = field.get();
         float r = ratio(s);
         float track_y = (widget_h - track_h) / 2.f;
@@ -147,7 +160,7 @@ struct Delegate<Slider<T>> {
             dl.rect_outline({-1, -1, track_w + 2, widget_h + 2}, Color::rgba(80, 160, 240), 2.0f);
     }
 
-    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetVisualState&) {
+    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetNode&) {
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
             float t = std::clamp(mb->position.x / track_w, 0.f, 1.f);
             auto& s = field.get();
@@ -175,7 +188,8 @@ template <>
 struct Delegate<Button> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<Button>& field, const WidgetVisualState& vs) {
+    static void record(DrawList& dl, const Field<Button>& field, const WidgetNode& node) {
+        auto& vs = node_vs(node);
         Color bg = vs.pressed ? Color::rgba(30, 90, 160)
                  : vs.hovered ? Color::rgba(50, 120, 200)
                  : Color::rgba(40, 105, 180);
@@ -186,7 +200,7 @@ struct Delegate<Button> {
             dl.rect_outline({-2, -2, 204, 36}, Color::rgba(80, 160, 240), 2.0f);
     }
 
-    static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetVisualState&) {
+    static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {
         bool activate = false;
         if (auto* mb = std::get_if<MouseButton>(&ev))
             activate = mb->pressed;
