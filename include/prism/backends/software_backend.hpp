@@ -2,13 +2,11 @@
 
 #include <prism/core/backend.hpp>
 
+#include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
+
 #include <atomic>
 #include <vector>
-
-struct SDL_Window;
-struct SDL_Renderer;
-struct SDL_FRect;
-typedef struct _TTF_Font TTF_Font;
 
 namespace prism {
 
@@ -31,7 +29,7 @@ private:
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     TTF_Font* font_ = nullptr;
-    std::vector<SDL_FRect> clip_stack_;
+    std::vector<SDL_Rect> clip_stack_;
     std::atomic<bool> running_{true};
     std::atomic<bool> ready_{false};
     std::atomic<std::shared_ptr<const SceneSnapshot>> snapshot_;
