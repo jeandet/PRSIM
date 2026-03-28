@@ -87,6 +87,14 @@ TEST_CASE("Field::observe multiple observers") {
     CHECK(r2 == 5);
 }
 
+TEST_CASE("Field pipe: on_change() | prism::then(f)") {
+    prism::Field<int> f{0};
+    int received = -1;
+    auto conn = f.on_change() | prism::then([&](const int& v) { received = v; });
+    f.set(42);
+    CHECK(received == 42);
+}
+
 TEST_CASE("Field with bool") {
     prism::Field<bool> f{false};
     bool toggled = false;

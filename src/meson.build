@@ -1,6 +1,9 @@
-# Core: header-only, no external dependencies
+# Core: header-only + stdexec (header-only P2300 implementation)
+stdexec_dep = dependency('stdexec', fallback : ['stdexec', 'stdexec_dep'])
+
 prism_core_dep = declare_dependency(
   include_directories : prism_inc,
+  dependencies : [stdexec_dep],
 )
 
 # Software backend: links SDL3 + SDL3_ttf

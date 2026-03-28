@@ -1,85 +1,95 @@
 #pragma once
 
 #include <prism/core/backend.hpp>
+#include <prism/core/exec.hpp>
 #include <prism/core/hit_test.hpp>
 #include <prism/core/input_event.hpp>
-#include <prism/core/mpsc_queue.hpp>
 #include <prism/core/widget_tree.hpp>
 
-#include <atomic>
 #include <cstdint>
 #include <thread>
 #include <variant>
 
 namespace prism {
 
+class AppContext {
+public:
+    using scheduler_type = decltype(std::declval<stdexec::run_loop>().get_scheduler());
+
+    explicit AppContext(scheduler_type s) : sched_(s) {}
+    scheduler_type scheduler() const { return sched_; }
+
+private:
+    scheduler_type sched_;
+};
+
 template <typename Model>
-void model_app(Backend backend, BackendConfig cfg, Model& model) {
-    mpsc_queue<InputEvent> input_queue;
-    std::atomic<bool> running{true};
-    std::atomic<bool> input_pending{false};
-
-    std::thread backend_thread([&] {
-        backend.run([&](const InputEvent& ev) {
-            input_queue.push(ev);
-            input_pending.store(true, std::memory_order_release);
-            input_pending.notify_one();
-        });
-    });
-
-    backend.wait_ready();
+void model_app(Backend backend, BackendConfig cfg, Model& model,
+               std::function<void(AppContext&)> setup = nullptr) {
+    stdexec::run_loop loop;
+    auto sched = loop.get_scheduler();
 
     WidgetTree tree(model);
     int w = cfg.width, h = cfg.height;
     uint64_t version = 0;
 
-    auto publish = [&]() -> std::shared_ptr<const SceneSnapshot> {
-        auto snap = std::shared_ptr<const SceneSnapshot>(
+    std::shared_ptr<const SceneSnapshot> current_snap;
+
+    auto publish = [&] {
+        current_snap = std::shared_ptr<const SceneSnapshot>(
             tree.build_snapshot(w, h, ++version));
-        backend.submit(snap);
+        backend.submit(current_snap);
         backend.wake();
         tree.clear_dirty();
-        return snap;
     };
 
-    auto current_snap = publish();
+    std::thread backend_thread([&] {
+        backend.run([&](const InputEvent& ev) {
+            exec::start_detached(
+                stdexec::schedule(sched)
+                | stdexec::then([&, ev] {
+                    if (std::holds_alternative<WindowClose>(ev)) {
+                        loop.finish();
+                        return;
+                    }
 
-    while (running.load(std::memory_order_relaxed)) {
-        input_pending.wait(false, std::memory_order_acquire);
-        input_pending.store(false, std::memory_order_relaxed);
+                    bool needs_publish = false;
+                    if (auto* resize = std::get_if<WindowResize>(&ev)) {
+                        w = resize->width;
+                        h = resize->height;
+                        needs_publish = true;
+                    }
+                    if (auto* mb = std::get_if<MouseButton>(&ev); mb && current_snap) {
+                        if (auto id = hit_test(*current_snap, mb->position))
+                            tree.dispatch(*id, ev);
+                    }
 
-        bool needs_rebuild = false;
+                    if (tree.any_dirty() || needs_publish)
+                        publish();
+                })
+            );
+        });
+    });
 
-        while (auto ev = input_queue.pop()) {
-            if (std::holds_alternative<WindowClose>(*ev)) {
-                running.store(false, std::memory_order_relaxed);
-                break;
-            }
-            if (auto* resize = std::get_if<WindowResize>(&*ev)) {
-                w = resize->width;
-                h = resize->height;
-                needs_rebuild = true;
-            }
-            if (auto* mb = std::get_if<MouseButton>(&*ev); mb && current_snap) {
-                if (auto id = hit_test(*current_snap, mb->position))
-                    tree.dispatch(*id, *ev);
-            }
-        }
+    backend.wait_ready();
+    publish();
 
-        if (!running.load(std::memory_order_relaxed)) break;
-
-        if (tree.any_dirty() || needs_rebuild)
-            current_snap = publish();
+    if (setup) {
+        auto ctx = AppContext(sched);
+        setup(ctx);
     }
+
+    loop.run();
 
     backend.quit();
     backend_thread.join();
 }
 
 template <typename Model>
-void model_app(std::string_view title, Model& model) {
+void model_app(std::string_view title, Model& model,
+               std::function<void(AppContext&)> setup = nullptr) {
     BackendConfig cfg{.title = title.data(), .width = 800, .height = 600};
-    model_app(Backend::software(cfg), cfg, model);
+    model_app(Backend::software(cfg), cfg, model, std::move(setup));
 }
 
 } // namespace prism

@@ -2,11 +2,10 @@
 
 #include <prism/core/backend.hpp>
 #include <prism/core/draw_list.hpp>
+#include <prism/core/exec.hpp>
 #include <prism/core/input_event.hpp>
-#include <prism/core/mpsc_queue.hpp>
 #include <prism/core/scene_snapshot.hpp>
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -73,58 +72,50 @@ public:
     App& operator=(const App&) = delete;
 
     void quit() {
-        running_.store(false, std::memory_order_relaxed);
-        input_pending_.store(true, std::memory_order_release);
-        input_pending_.notify_one();
-        backend_.quit();
+        quit_requested_ = true;
+        if (loop_) loop_->finish();
     }
 
     void run(std::function<void(Frame&)> on_frame) {
-        running_.store(true, std::memory_order_relaxed);
-
-        std::thread backend_thread([this] {
-            backend_.run([this](const InputEvent& ev) {
-                input_queue_.push(ev);
-                input_pending_.store(true, std::memory_order_release);
-                input_pending_.notify_one();
-            });
-        });
-
-        backend_.wait_ready();
+        stdexec::run_loop loop;
+        loop_ = &loop;
+        auto sched = loop.get_scheduler();
 
         Frame frame;
         uint64_t version = 0;
         int w = config_.width;
         int h = config_.height;
 
-        frame.reset(w, h);
-        on_frame(frame);
-        backend_.submit(frame.take_snapshot(++version));
-        backend_.wake();
-
-        while (running_.load(std::memory_order_relaxed)) {
-            input_pending_.wait(false, std::memory_order_acquire);
-            input_pending_.store(false, std::memory_order_relaxed);
-
-            while (auto ev = input_queue_.pop()) {
-                if (std::holds_alternative<WindowClose>(*ev)) {
-                    running_.store(false, std::memory_order_relaxed);
-                    break;
-                }
-                if (auto* resize = std::get_if<WindowResize>(&*ev)) {
-                    w = resize->width;
-                    h = resize->height;
-                }
-            }
-
-            if (!running_.load(std::memory_order_relaxed)) break;
-
+        auto publish = [&] {
             frame.reset(w, h);
             on_frame(frame);
             backend_.submit(frame.take_snapshot(++version));
             backend_.wake();
-        }
+        };
 
+        std::thread backend_thread([&] {
+            backend_.run([&](const InputEvent& ev) {
+                exec::start_detached(
+                    stdexec::schedule(sched)
+                    | stdexec::then([&, ev] {
+                        if (std::holds_alternative<WindowClose>(ev)) {
+                            loop.finish();
+                            return;
+                        }
+                        if (auto* resize = std::get_if<WindowResize>(&ev)) {
+                            w = resize->width;
+                            h = resize->height;
+                        }
+                        publish();
+                    })
+                );
+            });
+        });
+
+        backend_.wait_ready();
+        publish();
+        loop.run();
+        loop_ = nullptr;
         backend_.quit();
         backend_thread.join();
     }
@@ -132,9 +123,8 @@ public:
 private:
     Backend backend_;
     BackendConfig config_;
-    mpsc_queue<InputEvent> input_queue_;
-    std::atomic<bool> running_{false};
-    std::atomic<bool> input_pending_{false};
+    stdexec::run_loop* loop_ = nullptr;
+    bool quit_requested_ = false;
 };
 
 } // namespace prism

@@ -124,6 +124,33 @@ TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
     CHECK(snap_count.load() >= 2);
 }
 
+TEST_CASE("model_app setup callback receives scheduler") {
+    bool setup_called = false;
+
+    struct SetupBackend final : public prism::BackendBase {
+        void run(std::function<void(const prism::InputEvent&)> cb) override {
+            cb(prism::WindowClose{});
+        }
+        void submit(std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    TestModel model;
+    prism::model_app(
+        prism::Backend{std::make_unique<SetupBackend>()},
+        prism::BackendConfig{.width = 800, .height = 600},
+        model,
+        [&](prism::AppContext& ctx) {
+            setup_called = true;
+            auto sched = ctx.scheduler();
+            (void)sched;
+        }
+    );
+
+    CHECK(setup_called);
+}
+
 #include <prism/core/delegate.hpp>
 
 struct SliderClickModel {

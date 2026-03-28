@@ -2,12 +2,11 @@
 
 #include <prism/core/app.hpp>
 #include <prism/core/backend.hpp>
+#include <prism/core/exec.hpp>
 #include <prism/core/input_event.hpp>
 #include <prism/core/layout.hpp>
-#include <prism/core/mpsc_queue.hpp>
 #include <prism/core/scene_snapshot.hpp>
 
-#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -137,56 +136,45 @@ private:
 template <typename State>
 void app(Backend backend, BackendConfig cfg, State initial,
          std::function<void(Ui<State>&)> view, UpdateFn<State> update = {}) {
-    mpsc_queue<InputEvent> input_queue;
-    std::atomic<bool> running{true};
-    std::atomic<bool> input_pending{false};
-
-    std::thread backend_thread([&] {
-        backend.run([&](const InputEvent& ev) {
-            input_queue.push(ev);
-            input_pending.store(true, std::memory_order_release);
-            input_pending.notify_one();
-        });
-    });
-
-    backend.wait_ready();
+    stdexec::run_loop loop;
+    auto sched = loop.get_scheduler();
 
     State state = std::move(initial);
     Frame frame;
     int w = cfg.width, h = cfg.height;
     uint64_t version = 0;
 
-    AppAccess::reset(frame, w, h);
-    Ui<State> ui(state, frame);
-    view(ui);
-    backend.submit(ui.take_snapshot(w, h, ++version));
-    backend.wake();
-
-    while (running.load(std::memory_order_relaxed)) {
-        input_pending.wait(false, std::memory_order_acquire);
-        input_pending.store(false, std::memory_order_relaxed);
-
-        while (auto ev = input_queue.pop()) {
-            if (std::holds_alternative<WindowClose>(*ev)) {
-                running.store(false, std::memory_order_relaxed);
-                break;
-            }
-            if (auto* resize = std::get_if<WindowResize>(&*ev)) {
-                w = resize->width;
-                h = resize->height;
-            }
-            if (update) { update(state, *ev); }
-        }
-
+    auto publish = [&] {
         AppAccess::reset(frame, w, h);
-        Ui<State> ui2(state, frame);
-        view(ui2);
-
-        if (!running.load(std::memory_order_relaxed)) break;
-
-        backend.submit(ui2.take_snapshot(w, h, ++version));
+        Ui<State> ui(state, frame);
+        view(ui);
+        backend.submit(ui.take_snapshot(w, h, ++version));
         backend.wake();
-    }
+    };
+
+    std::thread backend_thread([&] {
+        backend.run([&](const InputEvent& ev) {
+            exec::start_detached(
+                stdexec::schedule(sched)
+                | stdexec::then([&, ev] {
+                    if (std::holds_alternative<WindowClose>(ev)) {
+                        loop.finish();
+                        return;
+                    }
+                    if (auto* resize = std::get_if<WindowResize>(&ev)) {
+                        w = resize->width;
+                        h = resize->height;
+                    }
+                    if (update) { update(state, ev); }
+                    publish();
+                })
+            );
+        });
+    });
+
+    backend.wait_ready();
+    publish();
+    loop.run();
 
     backend.quit();
     backend_thread.join();

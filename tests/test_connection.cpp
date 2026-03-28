@@ -58,6 +58,36 @@ TEST_CASE("SenderHub with no args") {
     CHECK(calls == 2);
 }
 
+TEST_CASE("pipe: hub | prism::then(f) fires on emit") {
+    prism::SenderHub<int> hub;
+    int received = -1;
+    auto conn = hub | prism::then([&](int v) { received = v; });
+    hub.emit(42);
+    CHECK(received == 42);
+}
+
+TEST_CASE("pipe: Connection disconnects on destruction") {
+    prism::SenderHub<int> hub;
+    int received = 0;
+    {
+        auto conn = hub | prism::then([&](int v) { received = v; });
+        hub.emit(1);
+        CHECK(received == 1);
+    }
+    hub.emit(2);
+    CHECK(received == 1);
+}
+
+TEST_CASE("pipe: multiple pipes on same hub") {
+    prism::SenderHub<int> hub;
+    int a = 0, b = 0;
+    auto c1 = hub | prism::then([&](int v) { a = v; });
+    auto c2 = hub | prism::then([&](int v) { b = v; });
+    hub.emit(7);
+    CHECK(a == 7);
+    CHECK(b == 7);
+}
+
 TEST_CASE("Receiver can disconnect itself during emit") {
     prism::SenderHub<> hub;
     int calls = 0;

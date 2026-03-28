@@ -73,4 +73,20 @@ private:
     }
 };
 
+// Pipe adaptor: hub | prism::then(f) → Connection
+template <typename F>
+struct Then {
+    F fn;
+};
+
+template <typename F>
+auto then(F&& fn) {
+    return Then<std::decay_t<F>>{std::forward<F>(fn)};
+}
+
+template <typename... Args, typename F>
+[[nodiscard]] Connection operator|(SenderHub<Args...>& hub, Then<F> adaptor) {
+    return hub.connect(std::move(adaptor.fn));
+}
+
 } // namespace prism
