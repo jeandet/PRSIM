@@ -378,3 +378,23 @@ TEST_CASE("focus_next on model with no focusable widgets is no-op") {
     tree.focus_next();
     CHECK(tree.focused_id() == 0);
 }
+
+TEST_CASE("Space dispatched to focused bool toggles it") {
+    FocusModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+
+    tree.set_focused(focus[0]);  // bool toggle
+    tree.dispatch(tree.focused_id(), prism::KeyPress{prism::keys::space, 0});
+    CHECK(model.toggle.get() == true);
+}
+
+TEST_CASE("Enter dispatched to focused Button increments click_count") {
+    FocusModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+
+    tree.set_focused(focus[2]);  // Button
+    tree.dispatch(tree.focused_id(), prism::KeyPress{prism::keys::enter, 0});
+    CHECK(model.btn.get().click_count == 1);
+}
