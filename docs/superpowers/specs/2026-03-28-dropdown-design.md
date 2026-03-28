@@ -106,6 +106,7 @@ struct SceneSnapshot {
     std::vector<DrawList> draw_lists;
     std::vector<uint16_t> z_order;
     DrawList overlay;  // rendered last, on top of everything, no clip
+    std::vector<std::pair<WidgetId, Rect>> overlay_geometry;  // hit-test regions for overlays
 };
 ```
 
@@ -118,7 +119,7 @@ struct WidgetNode {
 };
 ```
 
-`build_snapshot` collects all non-empty `overlay_draws` into `SceneSnapshot::overlay` after the main layout pass, translating draw commands to absolute coordinates (same offset as the widget's geometry).
+`build_snapshot` collects all non-empty `overlay_draws` into `SceneSnapshot::overlay` after the main layout pass, translating draw commands to absolute coordinates (same offset as the widget's geometry). It also records `{WidgetId, bounding_box}` in `overlay_geometry` for hit-testing.
 
 ### Backend change
 
@@ -165,6 +166,8 @@ Click-outside detection for popup close: when a `MouseButton` press hits no widg
 
 - `WidgetTree::close_overlays()` — iterates nodes with non-empty `overlay_draws`, resets their `DropdownEditState::open` to false, clears `overlay_draws`, marks dirty.
 - Called in `model_app` before dispatching a click to a different widget.
+
+Overlay hit-testing: `hit_test()` checks `overlay_geometry` first (overlays render on top), so clicks on popup options route to the dropdown owner, not the widget underneath. Mouse coordinates are converted to widget-local via `localize_mouse()` before dispatch.
 
 ## Testing
 
