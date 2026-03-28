@@ -9,7 +9,6 @@ enum class Color { Red, Green, Blue };
 enum class Size { Small, Medium, Large, XLarge };
 
 namespace {
-[[maybe_unused]]
 prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
     prism::WidgetNode node;
     node.visual_state = vs;
@@ -79,4 +78,81 @@ TEST_CASE("Delegate<ScopedEnum> has tab_and_click focus policy") {
 
 TEST_CASE("Delegate<Dropdown<T>> has tab_and_click focus policy") {
     CHECK(prism::Delegate<prism::Dropdown<Color>>::focus_policy == prism::FocusPolicy::tab_and_click);
+}
+
+TEST_CASE("Enum delegate record produces background and current label") {
+    prism::Field<Color> field{Color::Green};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<Color>::record(dl, field, node);
+
+    CHECK_FALSE(dl.empty());
+    bool has_label = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Green") has_label = true;
+        }
+    }
+    CHECK(has_label);
+}
+
+TEST_CASE("Enum delegate record shows arrow indicator") {
+    prism::Field<Color> field{Color::Red};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<Color>::record(dl, field, node);
+
+    bool has_arrow = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "\xe2\x96\xbe") has_arrow = true;  // ▾
+        }
+    }
+    CHECK(has_arrow);
+}
+
+TEST_CASE("Enum delegate renders focus ring when focused") {
+    prism::Field<Color> field{Color::Red};
+    prism::DrawList dl;
+    auto node = make_node({.focused = true});
+    prism::Delegate<Color>::record(dl, field, node);
+
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+    }
+    CHECK(has_outline);
+}
+
+TEST_CASE("Enum delegate open popup produces overlay draws") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+
+    // Open the dropdown
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+
+    // Re-record to populate overlay
+    prism::DrawList dl;
+    node.overlay_draws.clear();
+    prism::Delegate<Color>::record(dl, field, node);
+
+    CHECK_FALSE(node.overlay_draws.empty());
+
+    // Should have text for each enum option
+    int option_count = 0;
+    for (auto& cmd : node.overlay_draws.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Red" || t->text == "Green" || t->text == "Blue")
+                option_count++;
+        }
+    }
+    CHECK(option_count == 3);
+}
+
+TEST_CASE("Enum delegate closed popup has no overlay draws") {
+    prism::Field<Color> field{Color::Red};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<Color>::record(dl, field, node);
+    CHECK(node.overlay_draws.empty());
 }

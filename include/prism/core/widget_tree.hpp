@@ -163,6 +163,192 @@ void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const Inpu
         es.scroll_offset = cursor_px;
 }
 
+// --- Shared dropdown rendering/input helpers ---
+
+namespace detail {
+
+struct DropdownLabelResolver {
+    std::function<std::string(size_t)> label_at;
+    size_t count;
+};
+
+inline const DropdownEditState& get_dropdown_state(const WidgetNode& node) {
+    static const DropdownEditState default_state;
+    if (!node.edit_state.has_value()) return default_state;
+    return std::any_cast<const DropdownEditState&>(node.edit_state);
+}
+
+inline DropdownEditState& ensure_dropdown_state(WidgetNode& node) {
+    if (!node.edit_state.has_value())
+        node.edit_state = DropdownEditState{};
+    return std::any_cast<DropdownEditState&>(node.edit_state);
+}
+
+constexpr float dd_widget_w = 200.f;
+constexpr float dd_widget_h = 30.f;
+constexpr float dd_padding = 8.f;
+constexpr float dd_font_size = 14.f;
+constexpr float dd_option_h = 28.f;
+
+inline void dropdown_record(DrawList& dl, WidgetNode& node,
+                            const std::string& current_label,
+                            const DropdownLabelResolver& resolver) {
+    auto& vs = node_vs(node);
+    auto& es = get_dropdown_state(node);
+
+    auto bg = es.open    ? Color::rgba(65, 65, 78)
+            : vs.hovered ? Color::rgba(55, 55, 68)
+            : Color::rgba(45, 45, 55);
+    dl.filled_rect({0, 0, dd_widget_w, dd_widget_h}, bg);
+
+    dl.text(current_label, {dd_padding, 7}, dd_font_size, Color::rgba(220, 220, 220));
+
+    dl.text("\xe2\x96\xbe", {dd_widget_w - 20, 7}, dd_font_size, Color::rgba(160, 160, 170));
+
+    if (vs.focused)
+        dl.rect_outline({-1, -1, dd_widget_w + 2, dd_widget_h + 2},
+                        Color::rgba(80, 160, 240), 2.0f);
+
+    node.overlay_draws.clear();
+    if (es.open) {
+        float popup_h = resolver.count * dd_option_h;
+        node.overlay_draws.filled_rect(
+            {0, dd_widget_h, dd_widget_w, popup_h},
+            Color::rgba(50, 50, 62));
+        node.overlay_draws.rect_outline(
+            {0, dd_widget_h, dd_widget_w, popup_h},
+            Color::rgba(80, 80, 95), 1.0f);
+
+        for (size_t i = 0; i < resolver.count; ++i) {
+            float y = dd_widget_h + i * dd_option_h;
+            if (i == es.highlighted) {
+                node.overlay_draws.filled_rect(
+                    {0, y, dd_widget_w, dd_option_h},
+                    Color::rgba(60, 100, 180));
+            }
+            node.overlay_draws.text(
+                resolver.label_at(i),
+                {dd_padding, y + 6}, dd_font_size,
+                i == es.highlighted ? Color::rgba(255, 255, 255)
+                                    : Color::rgba(200, 200, 210));
+        }
+    }
+}
+
+inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
+                                  size_t current_index, size_t count,
+                                  std::function<void(size_t)> select) {
+    auto& es = ensure_dropdown_state(node);
+    bool changed = false;
+
+    if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
+        if (es.open) {
+            float rel_y = mb->position.y - dd_widget_h;
+            if (rel_y >= 0 && rel_y < count * dd_option_h
+                && mb->position.x >= 0 && mb->position.x < dd_widget_w) {
+                size_t idx = static_cast<size_t>(rel_y / dd_option_h);
+                select(idx);
+                changed = true;
+            }
+            es.open = false;
+            node.dirty = true;
+        } else {
+            es.open = true;
+            es.highlighted = current_index;
+            node.dirty = true;
+        }
+    } else if (auto* kp = std::get_if<KeyPress>(&ev)) {
+        if (es.open) {
+            if (kp->key == keys::down) {
+                es.highlighted = (es.highlighted + 1) % count;
+                node.dirty = true;
+            } else if (kp->key == keys::up) {
+                es.highlighted = (es.highlighted + count - 1) % count;
+                node.dirty = true;
+            } else if (kp->key == keys::enter) {
+                select(es.highlighted);
+                es.open = false;
+                node.dirty = true;
+                changed = true;
+            } else if (kp->key == keys::escape) {
+                es.open = false;
+                node.dirty = true;
+            }
+        } else {
+            if (kp->key == keys::space || kp->key == keys::enter) {
+                es.open = true;
+                es.highlighted = current_index;
+                node.dirty = true;
+            } else if (kp->key == keys::down) {
+                size_t next = (current_index + 1) % count;
+                select(next);
+                changed = true;
+            } else if (kp->key == keys::up) {
+                size_t prev = (current_index + count - 1) % count;
+                select(prev);
+                changed = true;
+            }
+        }
+    }
+    return changed;
+}
+
+} // namespace detail
+
+// --- Delegate<ScopedEnum T> method bodies ---
+
+template <ScopedEnum T>
+    requires (!TextEditable<T>)
+void Delegate<T>::record(DrawList& dl, const Field<T>& field, const WidgetNode& node) {
+    size_t idx = enum_index(field.get());
+    std::string label = enum_label<T>(idx);
+    detail::DropdownLabelResolver resolver{
+        .label_at = [](size_t i) { return enum_label<T>(i); },
+        .count = enum_count<T>()
+    };
+    detail::dropdown_record(dl, const_cast<WidgetNode&>(node), label, resolver);
+}
+
+template <ScopedEnum T>
+    requires (!TextEditable<T>)
+void Delegate<T>::handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node) {
+    size_t current = enum_index(field.get());
+    constexpr size_t count = enum_count<T>();
+    detail::dropdown_handle_input(ev, node, current, count,
+        [&](size_t idx) { field.set(enum_from_index<T>(idx)); });
+}
+
+// --- Delegate<Dropdown<T>> method bodies ---
+
+template <ScopedEnum T>
+void Delegate<Dropdown<T>>::record(DrawList& dl, const Field<Dropdown<T>>& field,
+                                    const WidgetNode& node) {
+    auto& dd = field.get();
+    size_t idx = enum_index(dd.value);
+    bool has_custom = !dd.labels.empty();
+    std::string label = has_custom ? dd.labels[idx] : enum_label<T>(idx);
+    detail::DropdownLabelResolver resolver{
+        .label_at = [&dd, has_custom](size_t i) -> std::string {
+            return has_custom ? dd.labels[i] : enum_label<T>(i);
+        },
+        .count = enum_count<T>()
+    };
+    detail::dropdown_record(dl, const_cast<WidgetNode&>(node), label, resolver);
+}
+
+template <ScopedEnum T>
+void Delegate<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputEvent& ev,
+                                          WidgetNode& node) {
+    auto dd = field.get();
+    size_t current = enum_index(dd.value);
+    constexpr size_t count = enum_count<T>();
+    detail::dropdown_handle_input(ev, node, current, count,
+        [&](size_t idx) {
+            dd.value = enum_from_index<T>(idx);
+            field.set(dd);
+        });
+}
+
 // index_ stores raw pointers into the tree — valid only because the tree
 // is fully built before build_index runs and never mutated after construction.
 class WidgetTree {
