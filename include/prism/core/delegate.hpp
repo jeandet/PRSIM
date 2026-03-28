@@ -240,6 +240,36 @@ struct Delegate<Button> {
     }
 };
 
+// Sentinel: checkbox with label
+struct Checkbox {
+    bool checked = false;
+    std::string label;
+    bool operator==(const Checkbox&) const = default;
+};
+
+// Shared checkbox box rendering for Delegate<bool> and Delegate<Checkbox>
+inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
+                           const WidgetVisualState& vs) {
+    constexpr float box_size = 16.f;
+    constexpr float border = 1.5f;
+
+    if (checked) {
+        auto fill = vs.pressed  ? Color::rgba(0, 100, 170)
+                  : vs.hovered  ? Color::rgba(0, 140, 220)
+                  :               Color::rgba(0, 120, 200);
+        dl.filled_rect({x, y, box_size, box_size}, fill);
+        dl.text("\xe2\x9c\x93", {x + 2, y + 1}, 13, Color::rgba(255, 255, 255)); // checkmark
+    } else {
+        auto fill = vs.pressed  ? Color::rgba(35, 35, 42)
+                  : vs.hovered  ? Color::rgba(55, 55, 65)
+                  :               Color::rgba(45, 45, 55);
+        dl.filled_rect({x, y, box_size, box_size}, fill);
+    }
+    dl.rect_outline({x, y, box_size, box_size},
+                    vs.hovered ? Color::rgba(120, 120, 135) : Color::rgba(90, 90, 105),
+                    border);
+}
+
 template <StringLike T>
 struct Delegate<TextField<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
