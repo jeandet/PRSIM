@@ -6,8 +6,11 @@
 
 #include <algorithm>
 #include <any>
+#include <meta>
 #include <string>
+#include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace prism {
 
@@ -57,6 +60,69 @@ inline float char_width(float font_size) { return 0.6f * font_size; }
 struct TextEditState {
     size_t cursor = 0;
     float scroll_offset = 0.f;
+};
+
+// Concept: scoped enum type
+template <typename T>
+concept ScopedEnum = std::is_scoped_enum_v<T>;
+
+// Reflection helpers for scoped enums
+template <ScopedEnum T>
+consteval size_t enum_count() {
+    return std::meta::enumerators_of(^^T).size();
+}
+
+template <ScopedEnum T>
+std::string enum_label(size_t index) {
+    static constexpr auto enums = std::define_static_array(
+        std::meta::enumerators_of(^^T));
+    std::string result;
+    size_t i = 0;
+    template for (constexpr auto e : enums) {
+        if (i == index) result = std::string(std::meta::identifier_of(e));
+        ++i;
+    }
+    return result;
+}
+
+template <ScopedEnum T>
+constexpr size_t enum_index(T value) {
+    static constexpr auto enums = std::define_static_array(
+        std::meta::enumerators_of(^^T));
+    size_t result = 0, i = 0;
+    template for (constexpr auto e : enums) {
+        if ([:e:] == value) result = i;
+        ++i;
+    }
+    return result;
+}
+
+template <ScopedEnum T>
+T enum_from_index(size_t index) {
+    static constexpr auto enums = std::define_static_array(
+        std::meta::enumerators_of(^^T));
+    T result{};
+    size_t i = 0;
+    template for (constexpr auto e : enums) {
+        if (i == index) result = [:e:];
+        ++i;
+    }
+    return result;
+}
+
+// Sentinel: dropdown with optional custom labels
+template <ScopedEnum T>
+struct Dropdown {
+    T value{};
+    std::vector<std::string> labels{};  // empty = use reflection
+    bool operator==(const Dropdown&) const = default;
+};
+
+// Ephemeral state for open dropdown popup
+struct DropdownEditState {
+    bool open = false;
+    size_t highlighted = 0;
+    Rect popup_rect{};
 };
 
 // WidgetNode is defined in widget_tree.hpp; declared here so delegate
@@ -322,6 +388,24 @@ struct Delegate<TextField<T>> {
     static TextEditState& ensure_edit_state(WidgetNode& node);
     static void record(DrawList& dl, const Field<TextField<T>>& field, const WidgetNode& node);
     static void handle_input(Field<TextField<T>>& field, const InputEvent& ev, WidgetNode& node);
+};
+
+// ScopedEnum delegate — declared here, defined in widget_tree.hpp
+template <ScopedEnum T>
+    requires (!TextEditable<T>)
+struct Delegate<T> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
+    static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node);
+    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node);
+};
+
+template <ScopedEnum T>
+struct Delegate<Dropdown<T>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
+    static void record(DrawList& dl, const Field<Dropdown<T>>& field, const WidgetNode& node);
+    static void handle_input(Field<Dropdown<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 } // namespace prism
