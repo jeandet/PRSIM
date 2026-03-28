@@ -8,6 +8,26 @@ Two field wrapper types exist:
 - `Field<T>` — observable + rendered (delegate generates a widget)
 - `State<T>` — observable + invisible (no widget, used for backend state and synchronisation)
 
+## Widget Visual State
+
+Every widget node carries a `WidgetVisualState` that tracks interactive feedback:
+
+```cpp
+struct WidgetVisualState {
+    bool hovered = false;   // mouse cursor is over widget
+    bool pressed = false;   // mouse button held down on widget
+    bool focused = false;   // keyboard focus (future)
+};
+```
+
+Visual state is managed by the `WidgetTree`:
+- `update_hover(optional<WidgetId>)` — MouseMove → hit_test → set hovered, clear previous
+- `set_pressed(WidgetId, bool)` — MouseButton down/up → set pressed state
+
+The state is passed to delegates:
+- `record(DrawList&, const Field<T>&, const WidgetVisualState&)` — for rendering with hover/press feedback
+- `handle_input(Field<T>&, const InputEvent&, WidgetVisualState&)` — delegates can mutate visual state
+
 ## Field vs State
 
 Both share the same observable core (`.get()`, `.set()`, `.on_change()`, `.observe()`). The only difference: reflection emits a widget for `Field<T>` and skips `State<T>`.
@@ -50,6 +70,11 @@ struct Slider {
     T max = T{1};
     T step = T{0};  // 0 = continuous
 };
+
+struct Button {
+    std::string text;
+    uint64_t click_count = 0;  // increments on click, observable via on_change()
+};
 ```
 
 Usage in model structs:
@@ -60,6 +85,7 @@ struct Settings {
     Field<Label<>>               status{{"OK"}};                             // → read-only label
     Field<Password<>>            secret{""};                                 // → masked text input
     Field<Slider<>>              volume{{.value = 0.8}};                     // → continuous slider
+    Field<Button>                save{{"Save"}};                             // → clickable button
     Field<Slider<int>>           quality{{.value = 3, .min = 1, .max = 5, .step = 1}};  // → discrete slider
     Field<Label<MyCustomString>> custom{{my_string}};                        // works with any StringLike type
 };
@@ -114,19 +140,25 @@ Delegates are resolved at compile time via concept matching. The delegate is a s
 
 ```cpp
 // Concept-based delegates — match on traits, not types
+// Each delegate has record() for rendering and handle_input() for interaction.
+// Both receive WidgetVisualState for hover/press/focus feedback.
+
 template <TextEditable T>
 struct Delegate<T> {
-    static void render(DrawList& dl, const Context& ctx, Field<T>& field);
+    static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs);
+    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetVisualState& vs);
 };
 
 template <TextDisplayable T>
 struct Delegate<Label<T>> {
-    static void render(DrawList& dl, const Context& ctx, Field<Label<T>>& field);
+    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetVisualState& vs);
+    static void handle_input(Field<Label<T>>& field, const InputEvent& ev, WidgetVisualState& vs);
 };
 
 template <SliderRenderable T>
 struct Delegate<T> {
-    static void render(DrawList& dl, const Context& ctx, Field<T>& field);
+    static void record(DrawList& dl, const Field<T>& field, const WidgetVisualState& vs);
+    static void handle_input(Field<T>& field, const InputEvent& ev, WidgetVisualState& vs);
 };
 ```
 
@@ -148,8 +180,11 @@ Explicit specialization overrides concept-based resolution:
 ```cpp
 template <>
 struct Delegate<TemperatureKnob> {
-    static void render(DrawList& dl, const Context& ctx, Field<TemperatureKnob>& field) {
-        // custom circular knob rendering
+    static void record(DrawList& dl, const Field<TemperatureKnob>& field, const WidgetVisualState& vs) {
+        // custom circular knob rendering with hover/press feedback
+    }
+    static void handle_input(Field<TemperatureKnob>& field, const InputEvent& ev, WidgetVisualState& vs) {
+        // custom input handling
     }
 };
 ```
@@ -173,6 +208,7 @@ Sentinels override these defaults:
 | `Field<Password<T>>` | Masked text input |
 | `Field<TextArea<T>>` | Multiline text editor |
 | `Field<Slider<T>>` | Slider (continuous or discrete based on `step`) |
+| `Field<Button>` | Clickable button (text label, observable click_count) |
 
 ## Reflection Walk
 

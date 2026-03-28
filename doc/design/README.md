@@ -49,7 +49,7 @@ graph TB
 | [input routing](../../docs/superpowers/specs/2026-03-27-input-routing-design.md) | hit_test → dispatch → on_input SenderHub → field mutation | **Implemented** |
 | [app-facade.md](app-facade.md) | `prism::app<State>()` + `Ui<State>` retained entry point | **Implemented** — secondary API |
 | [styling.md](styling.md) | Theme as data, context propagation, per-instance overrides | Draft |
-| [delegates-and-sentinels.md](delegates-and-sentinels.md) | Delegate<T> dispatch, Label<T>/Slider<T> sentinels, State<T> | **Implemented** |
+| [delegates-and-sentinels.md](delegates-and-sentinels.md) | Delegate<T> + WidgetVisualState, Label/Slider/Button sentinels | **Implemented** |
 | [stdexec integration](stdexec-integration.md) | run_loop event loops, prism::then/on pipe adaptors, AppContext | **Implemented** |
 | [widget-model.md](widget-model.md) | Persistent widgets from Field<T> via reflection | **Superseded** by field/sender/widget spec |
 | [reactivity.md](reactivity.md) | Sender/observer pattern, Field<T> change propagation | **Superseded** by field/sender/widget spec |
