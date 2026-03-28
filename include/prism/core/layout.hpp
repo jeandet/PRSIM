@@ -148,6 +148,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
 
     if (!node.overlay_draws.empty()) {
         detail::translate_draw_list(node.overlay_draws, node.allocated.x, node.allocated.y);
+        snap.overlay_geometry.push_back({node.id, node.overlay_draws.bounding_box()});
         for (auto& cmd : node.overlay_draws.commands)
             snap.overlay.commands.push_back(std::move(cmd));
     }

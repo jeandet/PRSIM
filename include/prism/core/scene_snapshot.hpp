@@ -18,6 +18,7 @@ struct SceneSnapshot {
     std::vector<DrawList> draw_lists;
     std::vector<uint16_t> z_order;
     DrawList overlay;  // rendered last, on top of everything, no clip
+    std::vector<std::pair<WidgetId, Rect>> overlay_geometry;  // hit-test regions for overlays
 };
 
 } // namespace prism

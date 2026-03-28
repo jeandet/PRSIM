@@ -71,7 +71,8 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                                     tree.close_overlays();
                                 tree.set_focused(*id);
                             }
-                            tree.dispatch(*id, ev);
+                            auto rect = find_widget_rect(*current_snap, *id);
+                            tree.dispatch(*id, rect ? localize_mouse(ev, *rect) : ev);
                         } else if (mb->pressed) {
                             tree.close_overlays();
                             tree.clear_focus();

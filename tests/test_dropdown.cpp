@@ -3,6 +3,7 @@
 
 #include <prism/core/delegate.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/hit_test.hpp>
 #include <prism/core/widget_tree.hpp>
 
 enum class Color { Red, Green, Blue };
@@ -433,6 +434,44 @@ TEST_CASE("Closed dropdown has empty overlay in snapshot") {
 
     auto snap = tree.build_snapshot(800, 600, 1);
     CHECK(snap->overlay.empty());
+}
+
+TEST_CASE("hit_test on overlay popup returns dropdown widget, not widget below") {
+    DropdownModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    auto dropdown_id = focus[0];  // Color dropdown
+    auto checkbox_id = focus[1];  // bool checkbox
+
+    tree.set_focused(dropdown_id);
+
+    // Open the dropdown popup
+    tree.dispatch(dropdown_id, prism::KeyPress{prism::keys::space, 0});
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE_FALSE(snap->overlay.empty());
+
+    // Find the dropdown and checkbox geometry
+    std::optional<prism::Rect> dd_rect, cb_rect;
+    for (auto& [id, rect] : snap->geometry) {
+        if (id == dropdown_id) dd_rect = rect;
+        if (id == checkbox_id) cb_rect = rect;
+    }
+    REQUIRE(dd_rect.has_value());
+    REQUIRE(cb_rect.has_value());
+
+    // The popup starts at dd_rect.y + 30 (dd_widget_h) and extends down,
+    // overlapping the checkbox below. Click in the popup area.
+    float popup_y = dd_rect->y + 30.f + 14.f;  // middle of first option
+    float popup_x = dd_rect->x + 10.f;
+
+    // This point should be within the checkbox's geometry too
+    CHECK(cb_rect->contains({popup_x, popup_y}));
+
+    // But hit_test should return the dropdown (overlay takes priority)
+    auto hit = prism::hit_test(*snap, {popup_x, popup_y});
+    REQUIRE(hit.has_value());
+    CHECK(*hit == dropdown_id);
 }
 
 TEST_CASE("close_overlays resets open dropdown") {

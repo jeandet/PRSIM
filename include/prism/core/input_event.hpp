@@ -42,4 +42,20 @@ namespace mods {
     inline constexpr uint16_t shift = 0x0003;  // matches SDL_KMOD_SHIFT
 }
 
+inline InputEvent localize_mouse(const InputEvent& ev, Rect widget_rect) {
+    if (auto* mb = std::get_if<MouseButton>(&ev)) {
+        auto local = *mb;
+        local.position.x -= widget_rect.x;
+        local.position.y -= widget_rect.y;
+        return local;
+    }
+    if (auto* mm = std::get_if<MouseMove>(&ev)) {
+        auto local = *mm;
+        local.position.x -= widget_rect.x;
+        local.position.y -= widget_rect.y;
+        return local;
+    }
+    return ev;
+}
+
 } // namespace prism
