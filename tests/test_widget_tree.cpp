@@ -8,13 +8,13 @@
 #include <string>
 
 struct SimpleModel {
-    prism::Field<int> count{"Count", 0};
-    prism::Field<std::string> name{"Name", "hi"};
+    prism::Field<int> count{0};
+    prism::Field<std::string> name{"hi"};
 };
 
 struct NestedModel {
     SimpleModel inner;
-    prism::Field<bool> flag{"Flag", false};
+    prism::Field<bool> flag{false};
 };
 
 TEST_CASE("WidgetTree creates one leaf per Field") {
@@ -101,8 +101,8 @@ TEST_CASE("WidgetTree dispatch to unknown id is a no-op") {
 }
 
 struct BoolModel {
-    prism::Field<bool> flag{"Flag", false};
-    prism::Field<int> count{"Count", 0};
+    prism::Field<bool> flag{false};
+    prism::Field<int> count{0};
 };
 
 TEST_CASE("Field<bool> toggles on MouseButton dispatch") {
@@ -146,9 +146,9 @@ TEST_CASE("Field<bool> toggle produces different draws on re-record") {
 #include <prism/core/state.hpp>
 
 struct ModelWithState {
-    prism::Field<int> visible{"Vis", 0};
+    prism::Field<int> visible{0};
     prism::State<int> hidden{0};
-    prism::Field<bool> flag{"Flag", false};
+    prism::Field<bool> flag{false};
 };
 
 TEST_CASE("WidgetTree skips State<T> members") {
@@ -166,9 +166,9 @@ TEST_CASE("State<T> change does not dirty the widget tree") {
 }
 
 struct SentinelModel {
-    prism::Field<prism::Label<>> status{"Status", {"OK"}};
-    prism::Field<prism::Slider<>> volume{"Volume", {.value = 0.5}};
-    prism::Field<bool> enabled{"Enabled", true};
+    prism::Field<prism::Label<>> status{{"OK"}};
+    prism::Field<prism::Slider<>> volume{{.value = 0.5}};
+    prism::Field<bool> enabled{true};
 };
 
 TEST_CASE("WidgetTree with sentinel types creates correct leaf count") {

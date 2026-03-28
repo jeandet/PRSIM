@@ -10,13 +10,13 @@
 #include <string>
 
 struct TestModel {
-    prism::Field<int> count{"Count", 42};
-    prism::Field<std::string> name{"Name", "hello"};
+    prism::Field<int> count{42};
+    prism::Field<std::string> name{"hello"};
 };
 
 struct NestedTestModel {
     TestModel inner;
-    prism::Field<bool> flag{"Flag", false};
+    prism::Field<bool> flag{false};
 };
 
 TEST_CASE("model_app runs and produces a snapshot") {
@@ -76,7 +76,7 @@ TEST_CASE("model_app with nested model") {
 }
 
 struct ClickTestModel {
-    prism::Field<bool> toggle{"Toggle", false};
+    prism::Field<bool> toggle{false};
 };
 
 TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
@@ -127,7 +127,7 @@ TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
 #include <prism/core/delegate.hpp>
 
 struct SliderClickModel {
-    prism::Field<prism::Slider<>> volume{"Volume", {.value = 0.0}};
+    prism::Field<prism::Slider<>> volume{{.value = 0.0}};
 };
 
 TEST_CASE("model_app routes click to Slider and updates value") {

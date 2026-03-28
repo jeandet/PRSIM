@@ -30,10 +30,8 @@ struct Label {
 // Renders a label-only widget, ignores input.
 template <typename T>
 struct Delegate {
-    static void record(DrawList& dl, const Field<T>& field) {
-        auto label_text = std::string(field.label);
+    static void record(DrawList& dl, const Field<T>&) {
         dl.filled_rect({0, 0, 200, 30}, Color::rgba(50, 50, 60));
-        dl.text(std::move(label_text), {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
     static void handle_input(Field<T>&, const InputEvent&) {}
@@ -43,12 +41,10 @@ struct Delegate {
 template <>
 struct Delegate<bool> {
     static void record(DrawList& dl, const Field<bool>& field) {
-        auto label_text = std::string(field.label);
         auto bg = field.get()
             ? Color::rgba(0, 120, 80)
             : Color::rgba(50, 50, 60);
         dl.filled_rect({0, 0, 200, 30}, bg);
-        dl.text(std::move(label_text), {4, 4}, 14, Color::rgba(220, 220, 220));
     }
 
     static void handle_input(Field<bool>& field, const InputEvent& ev) {
@@ -100,8 +96,6 @@ struct Delegate<Slider<T>> {
         // Thumb
         float thumb_x = r * (track_w - thumb_w);
         dl.filled_rect({thumb_x, 0, thumb_w, widget_h}, Color::rgba(0, 140, 200));
-        // Label
-        dl.text(std::string(field.label), {track_w + 8, 4}, 14, Color::rgba(200, 200, 210));
     }
 
     static void handle_input(Field<Slider<T>>& field, const InputEvent& ev) {

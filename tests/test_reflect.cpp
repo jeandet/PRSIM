@@ -8,13 +8,13 @@
 #include <vector>
 
 struct Simple {
-    prism::Field<int> x{"X", 1};
-    prism::Field<std::string> name{"Name", "hi"};
+    prism::Field<int> x{1};
+    prism::Field<std::string> name{"hi"};
 };
 
 struct Nested {
     Simple inner;
-    prism::Field<bool> flag{"Flag", false};
+    prism::Field<bool> flag{false};
 };
 
 struct Empty {};
@@ -37,15 +37,16 @@ TEST_CASE("for_each_field visits all Field<T> members") {
     CHECK(count == 2);
 }
 
-TEST_CASE("for_each_field gives access to field label and value") {
+TEST_CASE("for_each_field gives access to field value") {
     Simple s;
-    std::vector<std::string> labels;
+    std::vector<int> values;
     prism::for_each_field(s, [&](auto& field) {
-        labels.push_back(field.label);
+        using F = std::remove_cvref_t<decltype(field)>;
+        if constexpr (std::is_same_v<F, prism::Field<int>>)
+            values.push_back(field.get());
     });
-    CHECK(labels.size() == 2);
-    CHECK(labels[0] == "X");
-    CHECK(labels[1] == "Name");
+    CHECK(values.size() == 1);
+    CHECK(values[0] == 1);
 }
 
 TEST_CASE("is_component_v detects structs containing Field<T>") {
@@ -74,7 +75,7 @@ TEST_CASE("for_each_member visits fields and sub-components") {
 #include <prism/core/state.hpp>
 
 struct ModelWithState {
-    prism::Field<int> visible{"Vis", 0};
+    prism::Field<int> visible{0};
     prism::State<int> hidden{0};
 };
 

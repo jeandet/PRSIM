@@ -4,15 +4,15 @@
 #include <string>
 
 struct Settings {
-    prism::Field<std::string> username{"Username", "jeandet"};
-    prism::Field<bool> dark_mode{"Dark Mode", true};
-    prism::Field<prism::Slider<>> volume{"Volume", {.value = 0.7}};
+    prism::Field<std::string> username{"jeandet"};
+    prism::Field<bool> dark_mode{true};
+    prism::Field<prism::Slider<>> volume{{.value = 0.7}};
 };
 
 struct Dashboard {
     Settings settings;
-    prism::Field<prism::Label<>> status{"Status", {"All systems go"}};
-    prism::Field<int> counter{"Counter", 0};
+    prism::Field<prism::Label<>> status{{"All systems go"}};
+    prism::Field<int> counter{0};
     prism::State<int> request_count{0};
 };
 

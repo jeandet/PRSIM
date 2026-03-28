@@ -9,14 +9,14 @@
 #include <string>
 
 TEST_CASE("Delegate<bool> record produces draws") {
-    prism::Field<bool> field{"Toggle", false};
+    prism::Field<bool> field{false};
     prism::DrawList dl;
     prism::Delegate<bool>::record(dl, field);
     CHECK_FALSE(dl.empty());
 }
 
 TEST_CASE("Delegate<bool> record changes with value") {
-    prism::Field<bool> field{"Toggle", false};
+    prism::Field<bool> field{false};
 
     prism::DrawList dl1;
     prism::Delegate<bool>::record(dl1, field);
@@ -32,32 +32,32 @@ TEST_CASE("Delegate<bool> record changes with value") {
 }
 
 TEST_CASE("Delegate<bool> handle_input toggles on press") {
-    prism::Field<bool> field{"Toggle", false};
+    prism::Field<bool> field{false};
     prism::Delegate<bool>::handle_input(field, prism::MouseButton{{0, 0}, 1, true});
     CHECK(field.get() == true);
 }
 
 TEST_CASE("Delegate<bool> handle_input ignores release") {
-    prism::Field<bool> field{"Toggle", false};
+    prism::Field<bool> field{false};
     prism::Delegate<bool>::handle_input(field, prism::MouseButton{{0, 0}, 1, false});
     CHECK(field.get() == false);
 }
 
 TEST_CASE("Default Delegate record produces draws for int") {
-    prism::Field<int> field{"Count", 42};
+    prism::Field<int> field{42};
     prism::DrawList dl;
     prism::Delegate<int>::record(dl, field);
     CHECK_FALSE(dl.empty());
 }
 
 TEST_CASE("Default Delegate handle_input is a no-op for int") {
-    prism::Field<int> field{"Count", 42};
+    prism::Field<int> field{42};
     prism::Delegate<int>::handle_input(field, prism::MouseButton{{0, 0}, 1, true});
     CHECK(field.get() == 42);
 }
 
 TEST_CASE("Label sentinel renders as read-only text") {
-    prism::Field<prism::Label<>> field{"Status", {"All systems go"}};
+    prism::Field<prism::Label<>> field{{"All systems go"}};
     prism::DrawList dl;
     prism::Delegate<prism::Label<>>::record(dl, field);
     CHECK(dl.size() >= 1);
@@ -72,22 +72,22 @@ TEST_CASE("Label sentinel renders as read-only text") {
 }
 
 TEST_CASE("Label sentinel ignores input") {
-    prism::Field<prism::Label<>> field{"Status", {"OK"}};
+    prism::Field<prism::Label<>> field{{"OK"}};
     prism::Delegate<prism::Label<>>::handle_input(field, prism::MouseButton{{0, 0}, 1, true});
     CHECK(field.get().value == "OK");  // unchanged
 }
 
 TEST_CASE("Slider sentinel renders track and thumb") {
-    prism::Field<prism::Slider<>> field{"Volume", {.value = 0.5}};
+    prism::Field<prism::Slider<>> field{{.value = 0.5}};
     prism::DrawList dl;
     prism::Delegate<prism::Slider<>>::record(dl, field);
-    // Expect at least: track rect, thumb rect, label text
-    CHECK(dl.size() >= 3);
+    // Expect at least: track rect, thumb rect
+    CHECK(dl.size() >= 2);
 }
 
 TEST_CASE("Slider sentinel renders thumb position proportional to value") {
-    prism::Field<prism::Slider<>> field_lo{"Vol", {.value = 0.0}};
-    prism::Field<prism::Slider<>> field_hi{"Vol", {.value = 1.0}};
+    prism::Field<prism::Slider<>> field_lo{{.value = 0.0}};
+    prism::Field<prism::Slider<>> field_hi{{.value = 1.0}};
 
     prism::DrawList dl_lo, dl_hi;
     prism::Delegate<prism::Slider<>>::record(dl_lo, field_lo);
@@ -100,8 +100,8 @@ TEST_CASE("Slider sentinel renders thumb position proportional to value") {
 }
 
 TEST_CASE("Slider<int> with step snaps value") {
-    prism::Field<prism::Slider<int>> field{"Quality", {.value = 3, .min = 1, .max = 5, .step = 1}};
+    prism::Field<prism::Slider<int>> field{{.value = 3, .min = 1, .max = 5, .step = 1}};
     prism::DrawList dl;
     prism::Delegate<prism::Slider<int>>::record(dl, field);
-    CHECK(dl.size() >= 3);
+    CHECK(dl.size() >= 2);
 }

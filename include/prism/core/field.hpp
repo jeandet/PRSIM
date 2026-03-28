@@ -9,12 +9,11 @@ namespace prism {
 
 template <typename T>
 struct Field {
-    const char* label = "";
+    static constexpr bool is_prism_field = true;
     T value{};
 
     Field() = default;
-    Field(const char* lbl) : label(lbl) {}
-    Field(const char* lbl, T init) : label(lbl), value(std::move(init)) {}
+    Field(T init) : value(std::move(init)) {}
 
     const T& get() const { return value; }
     operator const T&() const { return value; }
