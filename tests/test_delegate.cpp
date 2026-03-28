@@ -316,3 +316,99 @@ TEST_CASE("Button renders focus ring when focused") {
     }
     CHECK(outline_count >= 2);  // existing border + focus ring
 }
+
+TEST_CASE("Checkbox default construction") {
+    prism::Checkbox cb;
+    CHECK(cb.checked == false);
+    CHECK(cb.label.empty());
+}
+
+TEST_CASE("Checkbox sentinel renders box and label") {
+    prism::Field<prism::Checkbox> field{{.label = "Dark mode"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::Checkbox>::record(dl, field, node);
+    CHECK_FALSE(dl.empty());
+    bool has_label = false;
+    for (auto& cmd : dl.commands) {
+        if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
+            if (t->text == "Dark mode") has_label = true;
+        }
+    }
+    CHECK(has_label);
+}
+
+TEST_CASE("Checkbox renders checkmark when checked") {
+    prism::Field<prism::Checkbox> field{{.checked = true, .label = "On"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Delegate<prism::Checkbox>::record(dl, field, node);
+    int text_count = 0;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::TextCmd>(cmd)) text_count++;
+    }
+    CHECK(text_count >= 2);  // checkmark + label
+}
+
+TEST_CASE("Checkbox toggle via mouse click") {
+    prism::Field<prism::Checkbox> field{{.label = "Toggle me"}};
+    auto node = make_node();
+    CHECK(field.get().checked == false);
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{{0, 0}, 1, true}, node);
+    CHECK(field.get().checked == true);
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{{0, 0}, 1, true}, node);
+    CHECK(field.get().checked == false);
+}
+
+TEST_CASE("Checkbox ignores mouse release") {
+    prism::Field<prism::Checkbox> field{{.label = "X"}};
+    auto node = make_node();
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{{0, 0}, 1, false}, node);
+    CHECK(field.get().checked == false);
+}
+
+TEST_CASE("Checkbox toggle via Space key") {
+    prism::Field<prism::Checkbox> field{{.label = "X"}};
+    auto node = make_node();
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    CHECK(field.get().checked == true);
+}
+
+TEST_CASE("Checkbox toggle via Enter key") {
+    prism::Field<prism::Checkbox> field{{.label = "X"}};
+    auto node = make_node();
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    CHECK(field.get().checked == true);
+}
+
+TEST_CASE("Checkbox ignores other keys") {
+    prism::Field<prism::Checkbox> field{{.label = "X"}};
+    auto node = make_node();
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::KeyPress{0x41, 0}, node);
+    CHECK(field.get().checked == false);
+}
+
+TEST_CASE("Checkbox focus policy is tab_and_click") {
+    CHECK(prism::Delegate<prism::Checkbox>::focus_policy == prism::FocusPolicy::tab_and_click);
+}
+
+TEST_CASE("Checkbox renders focus ring when focused") {
+    prism::Field<prism::Checkbox> field{{.label = "X"}};
+    auto node = make_node({.focused = true});
+    prism::DrawList dl;
+    prism::Delegate<prism::Checkbox>::record(dl, field, node);
+    bool has_outline = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
+    }
+    CHECK(has_outline);
+}
+
+TEST_CASE("Checkbox observer fires on toggle") {
+    prism::Field<prism::Checkbox> field{{.label = "X"}};
+    auto node = make_node();
+    int fire_count = 0;
+    auto conn = field.on_change().connect([&](const prism::Checkbox&) { fire_count++; });
+    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{{0, 0}, 1, true}, node);
+    CHECK(fire_count == 1);
+}

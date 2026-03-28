@@ -129,6 +129,45 @@ inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
                     border);
 }
 
+template <>
+struct Delegate<Checkbox> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+    static constexpr float widget_w = 200.f, widget_h = 30.f;
+    static constexpr float box_size = 16.f;
+
+    static void record(DrawList& dl, const Field<Checkbox>& field, const WidgetNode& node) {
+        auto& vs = node_vs(node);
+        auto& cb = field.get();
+
+        auto bg = vs.hovered ? Color::rgba(55, 55, 65) : Color::rgba(45, 45, 55);
+        dl.filled_rect({0, 0, widget_w, widget_h}, bg);
+
+        float box_y = (widget_h - box_size) / 2.f;
+        draw_check_box(dl, 8, box_y, cb.checked, vs);
+
+        if (!cb.label.empty())
+            dl.text(cb.label, {32, 7}, 14, Color::rgba(220, 220, 220));
+
+        if (vs.focused)
+            dl.rect_outline({-1, -1, widget_w + 2, widget_h + 2},
+                            Color::rgba(80, 160, 240), 2.0f);
+    }
+
+    static void handle_input(Field<Checkbox>& field, const InputEvent& ev, WidgetNode&) {
+        bool activate = false;
+        if (auto* mb = std::get_if<MouseButton>(&ev))
+            activate = mb->pressed;
+        else if (auto* kp = std::get_if<KeyPress>(&ev))
+            activate = (kp->key == keys::space || kp->key == keys::enter);
+
+        if (activate) {
+            auto cb = field.get();
+            cb.checked = !cb.checked;
+            field.set(cb);
+        }
+    }
+};
+
 // bool specialization: toggle widget
 template <>
 struct Delegate<bool> {
