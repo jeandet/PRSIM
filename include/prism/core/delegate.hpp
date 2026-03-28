@@ -62,6 +62,16 @@ struct Password {
     bool operator==(const Password&) const = default;
 };
 
+// Sentinel: multiline text editor with character wrapping
+template <StringLike T = std::string>
+struct TextArea {
+    T value{};
+    std::string placeholder{};
+    size_t max_length = 0;   // 0 = unlimited
+    size_t rows = 6;         // visible lines, determines widget height
+    bool operator==(const TextArea&) const = default;
+};
+
 // Monospace text measurement — single replacement point for future TextMetrics
 inline float char_width(float font_size) { return 0.6f * font_size; }
 
@@ -69,6 +79,12 @@ inline float char_width(float font_size) { return 0.6f * font_size; }
 struct TextEditState {
     size_t cursor = 0;
     float scroll_offset = 0.f;
+};
+
+// Ephemeral cursor state for multiline text editing
+struct TextAreaEditState {
+    size_t cursor = 0;
+    float scroll_y = 0.f;
 };
 
 // Concept: scoped enum type
@@ -412,6 +428,21 @@ struct Delegate<Password<T>> {
     static TextEditState& ensure_edit_state(WidgetNode& node);
     static void record(DrawList& dl, const Field<Password<T>>& field, const WidgetNode& node);
     static void handle_input(Field<Password<T>>& field, const InputEvent& ev, WidgetNode& node);
+};
+
+template <StringLike T>
+struct Delegate<TextArea<T>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+    static constexpr float widget_w = 200.f;
+    static constexpr float padding = 4.f;
+    static constexpr float font_size = 14.f;
+    static constexpr float line_height = font_size * 1.4f;
+    static constexpr float cursor_w = 2.f;
+
+    static const TextAreaEditState& get_edit_state(const WidgetNode& node);
+    static TextAreaEditState& ensure_edit_state(WidgetNode& node);
+    static void record(DrawList& dl, const Field<TextArea<T>>& field, const WidgetNode& node);
+    static void handle_input(Field<TextArea<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 // ScopedEnum delegate — declared here, defined in widget_tree.hpp
