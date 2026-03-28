@@ -36,3 +36,9 @@ TEST_CASE("Key constants match SDL keycodes") {
     CHECK(prism::keys::home      == 0x4000'004A);
     CHECK(prism::keys::end       == 0x4000'004D);
 }
+
+TEST_CASE("Arrow and Escape key constants match SDL keycodes") {
+    CHECK(prism::keys::up      == 0x4000'0052);
+    CHECK(prism::keys::down    == 0x4000'0051);
+    CHECK(prism::keys::escape  == 0x1B);
+}

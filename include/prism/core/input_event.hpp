@@ -33,6 +33,9 @@ namespace keys {
     inline constexpr int32_t left      = 0x4000'0050;  // matches SDLK_LEFT
     inline constexpr int32_t home      = 0x4000'004A;  // matches SDLK_HOME
     inline constexpr int32_t end       = 0x4000'004D;  // matches SDLK_END
+    inline constexpr int32_t up        = 0x4000'0052;  // matches SDLK_UP
+    inline constexpr int32_t down      = 0x4000'0051;  // matches SDLK_DOWN
+    inline constexpr int32_t escape    = 0x1B;          // matches SDLK_ESCAPE
 }
 
 namespace mods {
