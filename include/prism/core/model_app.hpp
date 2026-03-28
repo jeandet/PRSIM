@@ -63,9 +63,25 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                         tree.update_hover(hit_test(*current_snap, mm->position));
                     }
                     if (auto* mb = std::get_if<MouseButton>(&ev); mb && current_snap) {
-                        if (auto id = hit_test(*current_snap, mb->position)) {
+                        auto id = hit_test(*current_snap, mb->position);
+                        if (id) {
                             tree.set_pressed(*id, mb->pressed);
+                            if (mb->pressed)
+                                tree.set_focused(*id);
                             tree.dispatch(*id, ev);
+                        } else if (mb->pressed) {
+                            tree.clear_focus();
+                        }
+                    }
+                    if (auto* kp = std::get_if<KeyPress>(&ev)) {
+                        if (kp->key == keys::tab) {
+                            if (kp->mods & mods::shift)
+                                tree.focus_prev();
+                            else
+                                tree.focus_next();
+                        } else if (kp->key == keys::space || kp->key == keys::enter) {
+                            if (tree.focused_id() != 0)
+                                tree.dispatch(tree.focused_id(), ev);
                         }
                     }
 
