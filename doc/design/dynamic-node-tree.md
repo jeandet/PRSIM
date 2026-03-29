@@ -90,9 +90,11 @@ Populates the `WidgetId → WidgetNode*` lookup map for hit testing and input ro
 
 `ViewBuilder` targets a `Node&` and maintains a `std::vector<Node*>` stack:
 
-- `widget(field)` → calls `node_leaf<T>(field)`, appends to current container
-- `component(model)` → calls `build_node_tree(model)`, appends children
-- `row(fn)` / `column(fn)` → push container Node with LayoutKind, call fn, pop
+- `vstack(args...)` → variadic, auto-dispatches each arg via `field_type`/`component_type` concepts
+- `hstack(args...)` → same, but wraps in a Row container
+- `hstack(fn)` / `vstack(fn)` → lambda overloads for mixed content (spacer, canvas inside)
+- `widget(field)` → low-level: calls `node_leaf<T>(field)`, appends to current container
+- `component(model)` → low-level: calls `build_node_tree(model)`, appends children
 - `canvas(model)` → calls `node_canvas(model)`, returns `CanvasHandle`
 - `spacer()` → appends spacer Node
 
@@ -100,7 +102,7 @@ Populates the `WidgetId → WidgetNode*` lookup map for hit testing and input ro
 
 ## Traits (No Reflection Required)
 
-`include/prism/core/traits.hpp` provides `is_field_v<T>` and `is_state_v<T>` via pure SFINAE — no reflection dependency. These are used by `build_node_tree` on the reflection path to classify struct members.
+`include/prism/core/traits.hpp` provides `is_field_v<T>`, `is_state_v<T>`, `field_type`, and `component_type` via pure SFINAE/concepts — no reflection dependency. The concepts drive `vstack`/`hstack` variadic dispatch. The traits are used by `build_node_tree` on the reflection path to classify struct members.
 
 ## Enum Support
 

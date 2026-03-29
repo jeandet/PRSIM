@@ -136,7 +136,20 @@ graph TD
     S --> DM["dark_mode : Field&lt;bool&gt;"]
 ```
 
-On C++26, P2996 reflection walks the struct members automatically — `Field<T>` gets a widget, `State<T>` is skipped, nested structs recurse. On C++23, each model provides a `view()` method that describes the same tree manually. Both paths produce identical output through an intermediate `Node` layer. No registration, no moc, no string-based identity.
+On C++26, P2996 reflection walks the struct members automatically — `Field<T>` gets a widget, `State<T>` is skipped, nested structs recurse. On C++23, each model provides a `view()` method using `vstack`/`hstack`:
+
+```cpp
+struct Dashboard {
+    Settings settings;
+    prism::Field<int> counter{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack(settings, counter);   // Fields and nested components in one call
+    }
+};
+```
+
+Both paths produce identical output through an intermediate `Node` layer. No registration, no moc, no string-based identity.
 
 ## Three Entry Points
 
