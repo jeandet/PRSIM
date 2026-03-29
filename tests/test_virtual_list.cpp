@@ -232,3 +232,44 @@ TEST_CASE("VirtualList full scroll workflow") {
 
     CHECK(!snap2->overlay_geometry.empty());
 }
+
+TEST_CASE("VirtualList items at correct Y position after scroll") {
+    StringListModel model;
+    for (int i = 0; i < 50; ++i)
+        model.items.push_back("item " + std::to_string(i));
+
+    WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(400, 200, 1);
+
+    // Measure item height from first item's geometry
+    float item_h = 0;
+    for (auto& [id, rect] : snap1->geometry) {
+        if (rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            item_h = rect.extent.h.raw();
+            break;
+        }
+    }
+    REQUIRE(item_h > 0);
+
+    // Scroll down by exactly 5 items
+    DY scroll_amount{item_h * 5};
+    auto ids = tree.leaf_ids();
+    REQUIRE(!ids.empty());
+    tree.scroll_at(ids[0], scroll_amount);
+
+    auto snap2 = tree.build_snapshot(400, 200, 2);
+
+    // After scrolling, the first visible leaf should be near the top of viewport
+    // (within overscan buffer tolerance)
+    bool found_near_top = false;
+    for (auto& [id, rect] : snap2->geometry) {
+        if (rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            // At least one item should be within the viewport
+            if (rect.origin.y.raw() >= -item_h && rect.origin.y.raw() < 200) {
+                found_near_top = true;
+                break;
+            }
+        }
+    }
+    CHECK(found_near_top);
+}

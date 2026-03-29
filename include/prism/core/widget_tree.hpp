@@ -1606,6 +1606,8 @@ private:
                 container.scroll_offset = vls->scroll_offset;
                 container.scroll_content_h = Height{
                     static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
+                container.vlist_visible_start = vls->visible_start.raw();
+                container.vlist_item_height = vls->item_height.raw();
             }
             for (auto& c : node.children)
                 build_layout(c, container);

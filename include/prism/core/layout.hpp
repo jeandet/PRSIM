@@ -28,8 +28,10 @@ struct LayoutNode {
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
     enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList } kind = Kind::Leaf;
-    DY scroll_offset{0};        // only for Kind::Scroll
+    DY scroll_offset{0};        // only for Kind::Scroll and VirtualList
     Height scroll_content_h{0}; // total content height, for scrollbar rendering
+    size_t vlist_visible_start = 0;  // first materialized item index (VirtualList only)
+    float vlist_item_height = 0;     // uniform item height (VirtualList only)
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
@@ -123,11 +125,26 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
 inline void layout_arrange(LayoutNode& node, Rect available) {
     node.allocated = available;
 
-    if (node.kind == LayoutNode::Kind::Scroll || node.kind == LayoutNode::Kind::VirtualList) {
+    if (node.kind == LayoutNode::Kind::VirtualList) {
+        float item_h = node.vlist_item_height;
+        if (item_h <= 0 && !node.children.empty())
+            item_h = node.children[0].hint.preferred;
+        float start_y = available.origin.y.raw()
+            + static_cast<float>(node.vlist_visible_start) * item_h;
+        for (auto& child : node.children) {
+            layout_arrange(child, {
+                Point{available.origin.x, Y{start_y}},
+                Size{available.extent.w, Height{item_h}}
+            });
+            start_y += item_h;
+        }
+        return;
+    }
+
+    if (node.kind == LayoutNode::Kind::Scroll) {
         float viewport_h = available.extent.h.raw();
         float offset = 0;
         for (auto& child : node.children) {
-            // Expanders inside a scroll get the viewport height as fallback
             float main_size = child.hint.expand
                 ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
             layout_arrange(child, {
