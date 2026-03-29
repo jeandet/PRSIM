@@ -90,20 +90,20 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
                         Color::rgba(80, 160, 240), 2.0f);
 
     float text_area_w = tf_widget_w - 2 * tf_padding;
-    dl.clip_push({tf_padding, 0, text_area_w, tf_widget_h});
+    dl.clip_push({tf_padding, 0}, {text_area_w, tf_widget_h});
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, {tf_padding, tf_padding + 2}, tf_font_size,
+        dl.text(sf.placeholder, {0, tf_padding + 2}, tf_font_size,
                 Color::rgba(120, 120, 130));
     } else {
-        float text_x = tf_padding - es.scroll_offset;
+        float text_x = -es.scroll_offset;
         std::string display_text = display_fn(std::string(sf.value.data(), sf.value.size()));
         dl.text(display_text, {text_x, tf_padding + 2}, tf_font_size,
                 Color::rgba(220, 220, 220));
     }
 
     if (vs.focused) {
-        float cursor_x = tf_padding + es.cursor * cw - es.scroll_offset;
+        float cursor_x = es.cursor * cw - es.scroll_offset;
         dl.filled_rect({cursor_x, tf_padding, tf_cursor_w, tf_widget_h - 2 * tf_padding},
                        Color::rgba(220, 220, 240));
     }
