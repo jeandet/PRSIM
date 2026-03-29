@@ -37,6 +37,7 @@ struct WidgetNode {
     SenderHub<const InputEvent&> on_input;
     std::function<void(WidgetNode&)> wire;
     std::function<void(WidgetNode&)> record;
+    enum class LayoutKind : uint8_t { Default, Row, Column, Spacer } layout_kind = LayoutKind::Default;
 };
 
 // Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
