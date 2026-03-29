@@ -176,3 +176,42 @@ TEST_CASE("view() with component(): sub-component fields are reactive") {
     model.sub.x.set(99);
     CHECK(tree.any_dirty());
 }
+
+// ── Task 8: recursive view() — sub-component with its own view() ─────────────
+
+struct SubWithView {
+    prism::Field<int> x{0};
+    prism::Field<int> y{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.row([&] {
+            vb.widget(y);
+            vb.widget(x);
+        });
+    }
+};
+
+struct ParentWithViewedSub {
+    SubWithView sub;
+    prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.component(sub);
+        vb.widget(flag);
+    }
+};
+
+TEST_CASE("component() delegates to sub-component's view()") {
+    ParentWithViewedSub model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 3);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap != nullptr);
+    CHECK(snap->geometry.size() == 3);
+
+    // Sub-component used row layout: its two widgets should share same y
+    auto& [id0, r0] = snap->geometry[0];
+    auto& [id1, r1] = snap->geometry[1];
+    CHECK(r0.origin.y.raw() == r1.origin.y.raw());
+}
