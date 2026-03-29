@@ -789,7 +789,8 @@ public:
         refresh_dirty(root_);
 
         LayoutNode layout;
-        layout.kind = LayoutNode::Kind::Column;
+        layout.kind = (root_.layout_kind == WidgetNode::LayoutKind::Row)
+            ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
         layout.id = root_.id;
         build_layout(root_, layout);
 
@@ -872,18 +873,34 @@ private:
         return false;
     }
 
-    static void build_layout(WidgetNode& node, LayoutNode& layout) {
+    static void build_layout(WidgetNode& node, LayoutNode& parent) {
+        using LK = WidgetNode::LayoutKind;
+
         if (!node.is_container) {
-            LayoutNode leaf;
-            leaf.kind = LayoutNode::Kind::Leaf;
-            leaf.id = node.id;
-            leaf.draws = node.draws;
-            leaf.overlay_draws = node.overlay_draws;
-            layout.children.push_back(std::move(leaf));
-        } else {
-            for (auto& c : node.children) {
-                build_layout(c, layout);
+            if (node.layout_kind == LK::Spacer) {
+                LayoutNode spacer;
+                spacer.kind = LayoutNode::Kind::Spacer;
+                spacer.id = node.id;
+                parent.children.push_back(std::move(spacer));
+            } else {
+                LayoutNode leaf;
+                leaf.kind = LayoutNode::Kind::Leaf;
+                leaf.id = node.id;
+                leaf.draws = node.draws;
+                leaf.overlay_draws = node.overlay_draws;
+                parent.children.push_back(std::move(leaf));
             }
+        } else if (node.layout_kind == LK::Row || node.layout_kind == LK::Column) {
+            LayoutNode container;
+            container.kind = (node.layout_kind == LK::Row)
+                ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
+            container.id = node.id;
+            for (auto& c : node.children)
+                build_layout(c, container);
+            parent.children.push_back(std::move(container));
+        } else {
+            for (auto& c : node.children)
+                build_layout(c, parent);
         }
     }
 
