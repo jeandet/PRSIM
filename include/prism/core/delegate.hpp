@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <any>
+#if __cpp_impl_reflection
 #include <meta>
+#endif
 #include <string>
 #include <type_traits>
 #include <variant>
@@ -30,6 +32,8 @@ concept StringLike = requires(const T& t) {
 };
 
 enum class FocusPolicy : uint8_t { none, tab_and_click };
+
+enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas };
 
 // Sentinel: read-only label
 template <StringLike T = std::string>
@@ -91,7 +95,9 @@ struct TextAreaEditState {
 template <typename T>
 concept ScopedEnum = std::is_scoped_enum_v<T>;
 
-// Reflection helpers for scoped enums
+// Enum introspection helpers for scoped enums
+#if __cpp_impl_reflection
+
 template <ScopedEnum T>
 consteval size_t enum_count() {
     return std::meta::enumerators_of(^^T).size();
@@ -134,6 +140,33 @@ T enum_from_index(size_t index) {
     }
     return result;
 }
+
+#else
+
+#include <magic_enum/magic_enum.hpp>
+
+template <ScopedEnum T>
+constexpr size_t enum_count() {
+    return magic_enum::enum_count<T>();
+}
+
+template <ScopedEnum T>
+std::string enum_label(size_t index) {
+    auto values = magic_enum::enum_values<T>();
+    return std::string(magic_enum::enum_name(values[index]));
+}
+
+template <ScopedEnum T>
+constexpr size_t enum_index(T value) {
+    return magic_enum::enum_index(value).value();
+}
+
+template <ScopedEnum T>
+T enum_from_index(size_t index) {
+    return magic_enum::enum_values<T>()[index];
+}
+
+#endif
 
 // Sentinel: dropdown with optional custom labels
 template <ScopedEnum T>
