@@ -14,6 +14,16 @@ struct Settings {
     prism::Field<prism::TextField<>> search{{.value = "", .placeholder = "Search..."}};
     prism::Field<Theme> theme{Theme::Dark};
     prism::Field<prism::Password<>> api_key{{.placeholder = "API key"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(username);
+        vb.widget(dark_mode);
+        vb.widget(notifications);
+        vb.widget(volume);
+        vb.widget(search);
+        vb.widget(theme);
+        vb.widget(api_key);
+    }
 };
 
 struct Waveform {
@@ -73,6 +83,15 @@ struct Dashboard {
     prism::Field<prism::Button> increment{{"Increment"}};
     prism::Field<int> counter{0};
     prism::State<int> request_count{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.component(settings);
+        vb.component(waveform);
+        vb.widget(status);
+        vb.widget(notes);
+        vb.widget(increment);
+        vb.widget(counter);
+    }
 };
 
 int main() {
