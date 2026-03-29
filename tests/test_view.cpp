@@ -349,6 +349,46 @@ TEST_CASE("canvas record() receives allocated bounds from layout") {
     CHECK(fr->rect.extent.h.raw() > 0);
 }
 
+// ── Task 4: canvas dirty tracking via depends_on ─────────────────────────────
+
+TEST_CASE("canvas depends_on triggers dirty on field change") {
+    DrawingCanvasModel model;
+    prism::WidgetTree tree(model);
+
+    tree.clear_dirty();
+    CHECK_FALSE(tree.any_dirty());
+
+    model.value.set(99);
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("canvas depends_on supports multiple fields") {
+    struct MultiDepCanvas {
+        prism::Field<int> x{0};
+        prism::Field<int> y{0};
+
+        void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+            dl.filled_rect(bounds, prism::Color::rgba(0, 0, 0));
+        }
+
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.canvas(*this).depends_on(x).depends_on(y);
+        }
+    };
+
+    MultiDepCanvas model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 1);
+
+    tree.clear_dirty();
+    model.x.set(1);
+    CHECK(tree.any_dirty());
+
+    tree.clear_dirty();
+    model.y.set(2);
+    CHECK(tree.any_dirty());
+}
+
 TEST_CASE("canvas node expands to fill remaining space") {
     CanvasModel model;
     prism::WidgetTree tree(model);
