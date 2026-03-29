@@ -7,6 +7,10 @@
 
 #include <string>
 
+namespace {
+prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }
+}
+
 struct SimpleModel {
     prism::Field<int> count{0};
     prism::Field<std::string> name{"hi"};
@@ -74,7 +78,7 @@ TEST_CASE("WidgetTree dispatch emits on correct widget on_input") {
         received = true;
     });
 
-    tree.dispatch(ids[2], prism::MouseButton{{50, 15}, 1, true});
+    tree.dispatch(ids[2], prism::MouseButton{P(50, 15), 1, true});
     CHECK(received);
 }
 
@@ -97,7 +101,7 @@ TEST_CASE("WidgetTree dispatch to unknown id is a no-op") {
     SimpleModel model;
     prism::WidgetTree tree(model);
     // Should not crash
-    tree.dispatch(9999, prism::MouseButton{{0, 0}, 1, true});
+    tree.dispatch(9999, prism::MouseButton{P(0, 0), 1, true});
 }
 
 struct BoolModel {
@@ -112,9 +116,9 @@ TEST_CASE("Field<bool> toggles on MouseButton dispatch") {
     REQUIRE(ids.size() == 2);
 
     CHECK(model.flag.get() == false);
-    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, true});
+    tree.dispatch(ids[0], prism::MouseButton{P(50, 15), 1, true});
     CHECK(model.flag.get() == true);
-    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, true});
+    tree.dispatch(ids[0], prism::MouseButton{P(50, 15), 1, true});
     CHECK(model.flag.get() == false);
 }
 
@@ -123,7 +127,7 @@ TEST_CASE("Field<bool> ignores mouse release") {
     prism::WidgetTree tree(model);
     auto ids = tree.leaf_ids();
 
-    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, false});
+    tree.dispatch(ids[0], prism::MouseButton{P(50, 15), 1, false});
     CHECK(model.flag.get() == false);
 }
 
@@ -135,7 +139,7 @@ TEST_CASE("Field<bool> toggle produces different draws on re-record") {
     tree.clear_dirty();
 
     auto ids = tree.leaf_ids();
-    tree.dispatch(ids[0], prism::MouseButton{{50, 15}, 1, true});
+    tree.dispatch(ids[0], prism::MouseButton{P(50, 15), 1, true});
     CHECK(tree.any_dirty());
 
     auto snap2 = tree.build_snapshot(800, 600, 2);
@@ -191,10 +195,10 @@ TEST_CASE("Slider click through WidgetTree dispatch updates value") {
     auto ids = tree.leaf_ids();
     REQUIRE(ids.size() == 3);
 
-    tree.dispatch(ids[1], prism::MouseButton{{100, 15}, 1, true});
+    tree.dispatch(ids[1], prism::MouseButton{P(100, 15), 1, true});
     CHECK(model.volume.get().value == doctest::Approx(0.5).epsilon(0.05));
 
-    tree.dispatch(ids[1], prism::MouseButton{{0, 15}, 1, true});
+    tree.dispatch(ids[1], prism::MouseButton{P(0, 15), 1, true});
     CHECK(model.volume.get().value == doctest::Approx(0.0).epsilon(0.05));
 }
 
@@ -271,7 +275,7 @@ TEST_CASE("Button click through WidgetTree dispatch increments count") {
     auto ids = tree.leaf_ids();
 
     CHECK(model.action.get().click_count == 0);
-    tree.dispatch(ids[0], prism::MouseButton{{10, 10}, 1, true});
+    tree.dispatch(ids[0], prism::MouseButton{P(10, 10), 1, true});
     CHECK(model.action.get().click_count == 1);
 }
 
@@ -313,7 +317,7 @@ TEST_CASE("set_focused on non-focusable widget is no-op") {
     FocusModel model;
     prism::WidgetTree tree(model);
     auto ids = tree.leaf_ids();
-    tree.set_focused(ids[0]);  // Label — not focusable
+    tree.set_focused(ids[0]);  // Label -- not focusable
     CHECK(tree.focused_id() == 0);
 }
 
@@ -362,7 +366,7 @@ TEST_CASE("focus_prev cycles backward through focusable widgets") {
     prism::WidgetTree tree(model);
     auto focus = tree.focus_order();
 
-    tree.focus_prev();  // no focus → last
+    tree.focus_prev();  // no focus -> last
     CHECK(tree.focused_id() == focus[2]);
     tree.focus_prev();
     CHECK(tree.focused_id() == focus[1]);
@@ -373,7 +377,7 @@ TEST_CASE("focus_prev cycles backward through focusable widgets") {
 }
 
 TEST_CASE("focus_next on model with no focusable widgets is no-op") {
-    SimpleModel model;  // Field<int> + Field<string> — both non-focusable
+    SimpleModel model;  // Field<int> + Field<string> -- both non-focusable
     prism::WidgetTree tree(model);
     tree.focus_next();
     CHECK(tree.focused_id() == 0);

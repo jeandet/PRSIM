@@ -1,5 +1,7 @@
 #pragma once
 
+#include <prism/core/types.hpp>
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -15,24 +17,6 @@ struct Color {
     static constexpr Color rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
     {
         return {r, g, b, a};
-    }
-};
-
-struct Point {
-    float x, y;
-};
-
-struct Size {
-    float w, h;
-};
-
-struct Rect {
-    float x, y, w, h;
-
-    [[nodiscard]] Point center() const { return {x + w / 2, y + h / 2}; }
-
-    [[nodiscard]] bool contains(Point p) const {
-        return p.x >= x && p.x < x + w && p.y >= y && p.y < y + h;
     }
 };
 
@@ -68,29 +52,31 @@ struct DrawList {
     void filled_rect(Rect r, Color c)
     {
         auto o = current_offset();
-        commands.emplace_back(FilledRect{{r.x + o.x, r.y + o.y, r.w, r.h}, c});
+        commands.emplace_back(FilledRect{
+            {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c});
     }
 
     void rect_outline(Rect r, Color c, float thickness = 1.0f)
     {
         auto o = current_offset();
-        commands.emplace_back(RectOutline{{r.x + o.x, r.y + o.y, r.w, r.h}, c, thickness});
+        commands.emplace_back(RectOutline{
+            {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, thickness});
     }
 
     void text(std::string s, Point origin, float size, Color c)
     {
         auto o = current_offset();
         commands.emplace_back(
-            TextCmd{std::move(s), {origin.x + o.x, origin.y + o.y}, size, c});
+            TextCmd{std::move(s), Point{origin.x + o.dx, origin.y + o.dy}, size, c});
     }
 
     void clip_push(Point origin, Size extent)
     {
         auto o = current_offset();
-        float abs_x = o.x + origin.x;
-        float abs_y = o.y + origin.y;
-        origin_stack_.push_back({abs_x, abs_y});
-        commands.emplace_back(ClipPush{{abs_x, abs_y, extent.w, extent.h}});
+        X abs_x = origin.x + o.dx;
+        Y abs_y = origin.y + o.dy;
+        origin_stack_.push_back(Offset{DX{abs_x.raw()}, DY{abs_y.raw()}});
+        commands.emplace_back(ClipPush{{Point{abs_x, abs_y}, extent}});
     }
 
 
@@ -110,34 +96,35 @@ struct DrawList {
     [[nodiscard]] std::size_t size() const { return commands.size(); }
 
     [[nodiscard]] Rect bounding_box() const {
-        if (commands.empty()) return {0, 0, 0, 0};
+        if (commands.empty()) return {Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
         float min_x = std::numeric_limits<float>::max();
         float min_y = std::numeric_limits<float>::max();
         float max_x = std::numeric_limits<float>::lowest();
         float max_y = std::numeric_limits<float>::lowest();
         auto expand = [&](Rect r) {
-            min_x = std::min(min_x, r.x);
-            min_y = std::min(min_y, r.y);
-            max_x = std::max(max_x, r.x + r.w);
-            max_y = std::max(max_y, r.y + r.h);
+            min_x = std::min(min_x, r.origin.x.raw());
+            min_y = std::min(min_y, r.origin.y.raw());
+            max_x = std::max(max_x, r.origin.x.raw() + r.extent.w.raw());
+            max_y = std::max(max_y, r.origin.y.raw() + r.extent.h.raw());
         };
         for (const auto& cmd : commands) {
             std::visit([&](const auto& c) {
                 if constexpr (requires { c.rect; })
                     expand(c.rect);
                 else if constexpr (requires { c.origin; })
-                    expand({c.origin.x, c.origin.y, 0, c.size});
+                    expand({c.origin, Size{Width{0}, Height{c.size}}});
             }, cmd);
         }
-        return {min_x, min_y, max_x - min_x, max_y - min_y};
+        return {Point{X{min_x}, Y{min_y}},
+                Size{Width{max_x - min_x}, Height{max_y - min_y}}};
     }
 
   private:
-    std::vector<Point> origin_stack_;
+    std::vector<Offset> origin_stack_;
 
-    [[nodiscard]] Point current_offset() const
+    [[nodiscard]] Offset current_offset() const
     {
-        return origin_stack_.empty() ? Point{0.f, 0.f} : origin_stack_.back();
+        return origin_stack_.empty() ? Offset{DX{0.f}, DY{0.f}} : origin_stack_.back();
     }
 };
 

@@ -10,7 +10,7 @@ namespace prism {
 
 struct MouseMove   { Point position; };
 struct MouseButton { Point position; uint8_t button; bool pressed; };
-struct MouseScroll { Point position; float dx, dy; };
+struct MouseScroll { Point position; DX dx; DY dy; };
 struct KeyPress    { int32_t key; uint16_t mods; };
 struct KeyRelease  { int32_t key; uint16_t mods; };
 struct TextInput   { std::string text; };
@@ -43,16 +43,15 @@ namespace mods {
 }
 
 inline InputEvent localize_mouse(const InputEvent& ev, Rect widget_rect) {
+    Offset off{DX{widget_rect.origin.x.raw()}, DY{widget_rect.origin.y.raw()}};
     if (auto* mb = std::get_if<MouseButton>(&ev)) {
         auto local = *mb;
-        local.position.x -= widget_rect.x;
-        local.position.y -= widget_rect.y;
+        local.position = local.position - off;
         return local;
     }
     if (auto* mm = std::get_if<MouseMove>(&ev)) {
         auto local = *mm;
-        local.position.x -= widget_rect.x;
-        local.position.y -= widget_rect.y;
+        local.position = local.position - off;
         return local;
     }
     return ev;

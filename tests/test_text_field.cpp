@@ -11,6 +11,7 @@ prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
     node.visual_state = vs;
     return node;
 }
+prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }
 }
 
 TEST_CASE("TextField default-constructs with empty value") {
@@ -100,7 +101,7 @@ TEST_CASE("TextField record shows cursor when focused") {
     int thin_rects = 0;
     for (auto& cmd : dl.commands) {
         if (auto* fr = std::get_if<prism::FilledRect>(&cmd)) {
-            if (fr->rect.w <= 3.f) thin_rects++;
+            if (fr->rect.extent.w.raw() <= 3.f) thin_rects++;
         }
     }
     CHECK(thin_rects >= 1);
@@ -336,7 +337,7 @@ TEST_CASE("TextField click positions cursor") {
     float cw = prism::char_width(14.f);
     float click_x = 4.f + 2.5f * cw;
     prism::Delegate<prism::TextField<>>::handle_input(
-        field, prism::MouseButton{{click_x, 15}, 1, true}, node);
+        field, prism::MouseButton{P(click_x, 15), 1, true}, node);
     auto cursor = std::any_cast<prism::TextEditState>(node.edit_state).cursor;
     CHECK((cursor == 2 || cursor == 3));
 }

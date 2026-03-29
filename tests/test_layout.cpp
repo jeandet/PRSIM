@@ -3,10 +3,16 @@
 
 #include <prism/core/layout.hpp>
 
+namespace {
+prism::Rect R(float x, float y, float w, float h) {
+    return {prism::Point{prism::X{x}, prism::Y{y}}, prism::Size{prism::Width{w}, prism::Height{h}}};
+}
+}
+
 TEST_CASE("leaf node measure uses draw list bounding box") {
     prism::LayoutNode leaf;
     leaf.kind = prism::LayoutNode::Kind::Leaf;
-    leaf.draws.filled_rect({0, 0, 120, 40}, prism::Color::rgba(255, 0, 0));
+    leaf.draws.filled_rect(R(0, 0, 120, 40), prism::Color::rgba(255, 0, 0));
 
     prism::layout_measure(leaf, prism::LayoutAxis::Horizontal);
 
@@ -30,11 +36,11 @@ TEST_CASE("row measure sums children preferred widths") {
 
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode b;
     b.kind = prism::LayoutNode::Kind::Leaf;
-    b.draws.filled_rect({0, 0, 60, 80}, prism::Color::rgba(0, 255, 0));
+    b.draws.filled_rect(R(0, 0, 60, 80), prism::Color::rgba(0, 255, 0));
 
     row.children.push_back(std::move(a));
     row.children.push_back(std::move(b));
@@ -51,11 +57,11 @@ TEST_CASE("column measure sums children preferred heights") {
 
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode b;
     b.kind = prism::LayoutNode::Kind::Leaf;
-    b.draws.filled_rect({0, 0, 60, 80}, prism::Color::rgba(0, 255, 0));
+    b.draws.filled_rect(R(0, 0, 60, 80), prism::Color::rgba(0, 255, 0));
 
     col.children.push_back(std::move(a));
     col.children.push_back(std::move(b));
@@ -72,26 +78,26 @@ TEST_CASE("arrange row distributes width to children") {
 
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode b;
     b.kind = prism::LayoutNode::Kind::Leaf;
-    b.draws.filled_rect({0, 0, 60, 80}, prism::Color::rgba(0, 255, 0));
+    b.draws.filled_rect(R(0, 0, 60, 80), prism::Color::rgba(0, 255, 0));
 
     row.children.push_back(std::move(a));
     row.children.push_back(std::move(b));
 
     prism::layout_measure(row, prism::LayoutAxis::Horizontal);
-    prism::layout_arrange(row, {0, 0, 400, 300});
+    prism::layout_arrange(row, R(0, 0, 400, 300));
 
-    CHECK(row.allocated.x == 0);
-    CHECK(row.allocated.w == 400);
-    CHECK(row.children[0].allocated.x == 0);
-    CHECK(row.children[0].allocated.w == 100);
-    CHECK(row.children[0].allocated.h == 300);  // stretch cross-axis
-    CHECK(row.children[1].allocated.x == 100);
-    CHECK(row.children[1].allocated.w == 60);
-    CHECK(row.children[1].allocated.h == 300);
+    CHECK(row.allocated.origin.x.raw() == 0);
+    CHECK(row.allocated.extent.w.raw() == 400);
+    CHECK(row.children[0].allocated.origin.x.raw() == 0);
+    CHECK(row.children[0].allocated.extent.w.raw() == 100);
+    CHECK(row.children[0].allocated.extent.h.raw() == 300);  // stretch cross-axis
+    CHECK(row.children[1].allocated.origin.x.raw() == 100);
+    CHECK(row.children[1].allocated.extent.w.raw() == 60);
+    CHECK(row.children[1].allocated.extent.h.raw() == 300);
 }
 
 TEST_CASE("arrange row with spacer distributes remaining space") {
@@ -100,28 +106,28 @@ TEST_CASE("arrange row with spacer distributes remaining space") {
 
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode sp;
     sp.kind = prism::LayoutNode::Kind::Spacer;
 
     prism::LayoutNode b;
     b.kind = prism::LayoutNode::Kind::Leaf;
-    b.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(0, 255, 0));
+    b.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(0, 255, 0));
 
     row.children.push_back(std::move(a));
     row.children.push_back(std::move(sp));
     row.children.push_back(std::move(b));
 
     prism::layout_measure(row, prism::LayoutAxis::Horizontal);
-    prism::layout_arrange(row, {0, 0, 500, 200});
+    prism::layout_arrange(row, R(0, 0, 500, 200));
 
-    CHECK(row.children[0].allocated.x == 0);
-    CHECK(row.children[0].allocated.w == 100);
-    CHECK(row.children[1].allocated.x == 100);
-    CHECK(row.children[1].allocated.w == 300);  // 500 - 100 - 100
-    CHECK(row.children[2].allocated.x == 400);
-    CHECK(row.children[2].allocated.w == 100);
+    CHECK(row.children[0].allocated.origin.x.raw() == 0);
+    CHECK(row.children[0].allocated.extent.w.raw() == 100);
+    CHECK(row.children[1].allocated.origin.x.raw() == 100);
+    CHECK(row.children[1].allocated.extent.w.raw() == 300);  // 500 - 100 - 100
+    CHECK(row.children[2].allocated.origin.x.raw() == 400);
+    CHECK(row.children[2].allocated.extent.w.raw() == 100);
 }
 
 TEST_CASE("arrange column distributes height to children") {
@@ -130,27 +136,27 @@ TEST_CASE("arrange column distributes height to children") {
 
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
-    a.draws.filled_rect({0, 0, 100, 40}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 40), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode b;
     b.kind = prism::LayoutNode::Kind::Leaf;
-    b.draws.filled_rect({0, 0, 60, 60}, prism::Color::rgba(0, 255, 0));
+    b.draws.filled_rect(R(0, 0, 60, 60), prism::Color::rgba(0, 255, 0));
 
     col.children.push_back(std::move(a));
     col.children.push_back(std::move(b));
 
     prism::layout_measure(col, prism::LayoutAxis::Vertical);
-    prism::layout_arrange(col, {10, 20, 300, 400});
+    prism::layout_arrange(col, R(10, 20, 300, 400));
 
-    CHECK(col.allocated.x == 10);
-    CHECK(col.allocated.y == 20);
-    CHECK(col.children[0].allocated.x == 10);
-    CHECK(col.children[0].allocated.y == 20);
-    CHECK(col.children[0].allocated.w == 300);  // stretch cross-axis
-    CHECK(col.children[0].allocated.h == 40);
-    CHECK(col.children[1].allocated.x == 10);
-    CHECK(col.children[1].allocated.y == 60);   // 20 + 40
-    CHECK(col.children[1].allocated.h == 60);
+    CHECK(col.allocated.origin.x.raw() == 10);
+    CHECK(col.allocated.origin.y.raw() == 20);
+    CHECK(col.children[0].allocated.origin.x.raw() == 10);
+    CHECK(col.children[0].allocated.origin.y.raw() == 20);
+    CHECK(col.children[0].allocated.extent.w.raw() == 300);  // stretch cross-axis
+    CHECK(col.children[0].allocated.extent.h.raw() == 40);
+    CHECK(col.children[1].allocated.origin.x.raw() == 10);
+    CHECK(col.children[1].allocated.origin.y.raw() == 60);   // 20 + 40
+    CHECK(col.children[1].allocated.extent.h.raw() == 60);
 }
 
 TEST_CASE("arrange nested: column inside row") {
@@ -159,7 +165,7 @@ TEST_CASE("arrange nested: column inside row") {
 
     prism::LayoutNode left;
     left.kind = prism::LayoutNode::Kind::Leaf;
-    left.draws.filled_rect({0, 0, 200, 100}, prism::Color::rgba(255, 0, 0));
+    left.draws.filled_rect(R(0, 0, 200, 100), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode sp;
     sp.kind = prism::LayoutNode::Kind::Spacer;
@@ -169,11 +175,11 @@ TEST_CASE("arrange nested: column inside row") {
 
     prism::LayoutNode ca;
     ca.kind = prism::LayoutNode::Kind::Leaf;
-    ca.draws.filled_rect({0, 0, 100, 40}, prism::Color::rgba(0, 0, 255));
+    ca.draws.filled_rect(R(0, 0, 100, 40), prism::Color::rgba(0, 0, 255));
 
     prism::LayoutNode cb;
     cb.kind = prism::LayoutNode::Kind::Leaf;
-    cb.draws.filled_rect({0, 0, 100, 40}, prism::Color::rgba(0, 255, 0));
+    cb.draws.filled_rect(R(0, 0, 100, 40), prism::Color::rgba(0, 255, 0));
 
     col.children.push_back(std::move(ca));
     col.children.push_back(std::move(cb));
@@ -183,21 +189,21 @@ TEST_CASE("arrange nested: column inside row") {
     row.children.push_back(std::move(col));
 
     prism::layout_measure(row, prism::LayoutAxis::Horizontal);
-    prism::layout_arrange(row, {0, 0, 800, 600});
+    prism::layout_arrange(row, R(0, 0, 800, 600));
 
     // left: 200px, spacer: 800-200-100=500, col: 100px
-    CHECK(row.children[0].allocated.x == 0);
-    CHECK(row.children[0].allocated.w == 200);
-    CHECK(row.children[1].allocated.x == 200);
-    CHECK(row.children[1].allocated.w == 500);
-    CHECK(row.children[2].allocated.x == 700);
-    CHECK(row.children[2].allocated.w == 100);
+    CHECK(row.children[0].allocated.origin.x.raw() == 0);
+    CHECK(row.children[0].allocated.extent.w.raw() == 200);
+    CHECK(row.children[1].allocated.origin.x.raw() == 200);
+    CHECK(row.children[1].allocated.extent.w.raw() == 500);
+    CHECK(row.children[2].allocated.origin.x.raw() == 700);
+    CHECK(row.children[2].allocated.extent.w.raw() == 100);
     // column children within the column
-    CHECK(row.children[2].children[0].allocated.x == 700);
-    CHECK(row.children[2].children[0].allocated.y == 0);
-    CHECK(row.children[2].children[0].allocated.h == 40);
-    CHECK(row.children[2].children[1].allocated.y == 40);
-    CHECK(row.children[2].children[1].allocated.h == 40);
+    CHECK(row.children[2].children[0].allocated.origin.x.raw() == 700);
+    CHECK(row.children[2].children[0].allocated.origin.y.raw() == 0);
+    CHECK(row.children[2].children[0].allocated.extent.h.raw() == 40);
+    CHECK(row.children[2].children[1].allocated.origin.y.raw() == 40);
+    CHECK(row.children[2].children[1].allocated.extent.h.raw() == 40);
 }
 
 TEST_CASE("flatten produces per-widget geometry and draw lists") {
@@ -208,18 +214,18 @@ TEST_CASE("flatten produces per-widget geometry and draw lists") {
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
     a.id = 1;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode b;
     b.kind = prism::LayoutNode::Kind::Leaf;
     b.id = 2;
-    b.draws.filled_rect({0, 0, 60, 80}, prism::Color::rgba(0, 255, 0));
+    b.draws.filled_rect(R(0, 0, 60, 80), prism::Color::rgba(0, 255, 0));
 
     row.children.push_back(std::move(a));
     row.children.push_back(std::move(b));
 
     prism::layout_measure(row, prism::LayoutAxis::Horizontal);
-    prism::layout_arrange(row, {0, 0, 400, 300});
+    prism::layout_arrange(row, R(0, 0, 400, 300));
 
     prism::SceneSnapshot snap;
     snap.version = 1;
@@ -231,12 +237,12 @@ TEST_CASE("flatten produces per-widget geometry and draw lists") {
     CHECK(snap.z_order.size() == 2);
 
     CHECK(snap.geometry[0].first == 1);
-    CHECK(snap.geometry[0].second.x == 0);
-    CHECK(snap.geometry[0].second.w == 100);
+    CHECK(snap.geometry[0].second.origin.x.raw() == 0);
+    CHECK(snap.geometry[0].second.extent.w.raw() == 100);
 
     CHECK(snap.geometry[1].first == 2);
-    CHECK(snap.geometry[1].second.x == 100);
-    CHECK(snap.geometry[1].second.w == 60);
+    CHECK(snap.geometry[1].second.origin.x.raw() == 100);
+    CHECK(snap.geometry[1].second.extent.w.raw() == 60);
 }
 
 TEST_CASE("flatten translates draw commands to absolute coordinates") {
@@ -247,28 +253,28 @@ TEST_CASE("flatten translates draw commands to absolute coordinates") {
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
     a.id = 1;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     row.children.push_back(std::move(a));
 
     prism::layout_measure(row, prism::LayoutAxis::Horizontal);
-    prism::layout_arrange(row, {30, 40, 400, 300});
+    prism::layout_arrange(row, R(30, 40, 400, 300));
 
     prism::SceneSnapshot snap;
     snap.version = 1;
     prism::layout_flatten(row, snap);
 
     CHECK(snap.geometry.size() == 1);
-    CHECK(snap.geometry[0].second.x == 30);
-    CHECK(snap.geometry[0].second.y == 40);
+    CHECK(snap.geometry[0].second.origin.x.raw() == 30);
+    CHECK(snap.geometry[0].second.origin.y.raw() == 40);
 
     // The draw command should be translated
     auto& dl = snap.draw_lists[0];
     CHECK(dl.commands.size() == 1);
     auto* fr = std::get_if<prism::FilledRect>(&dl.commands[0]);
     REQUIRE(fr != nullptr);
-    CHECK(fr->rect.x == 30);
-    CHECK(fr->rect.y == 40);
+    CHECK(fr->rect.origin.x.raw() == 30);
+    CHECK(fr->rect.origin.y.raw() == 40);
 }
 
 TEST_CASE("flatten skips spacers and empty containers") {
@@ -279,7 +285,7 @@ TEST_CASE("flatten skips spacers and empty containers") {
     prism::LayoutNode a;
     a.kind = prism::LayoutNode::Kind::Leaf;
     a.id = 1;
-    a.draws.filled_rect({0, 0, 100, 50}, prism::Color::rgba(255, 0, 0));
+    a.draws.filled_rect(R(0, 0, 100, 50), prism::Color::rgba(255, 0, 0));
 
     prism::LayoutNode sp;
     sp.kind = prism::LayoutNode::Kind::Spacer;
@@ -289,7 +295,7 @@ TEST_CASE("flatten skips spacers and empty containers") {
     row.children.push_back(std::move(sp));
 
     prism::layout_measure(row, prism::LayoutAxis::Horizontal);
-    prism::layout_arrange(row, {0, 0, 400, 300});
+    prism::layout_arrange(row, R(0, 0, 400, 300));
 
     prism::SceneSnapshot snap;
     snap.version = 1;

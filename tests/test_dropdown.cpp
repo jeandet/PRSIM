@@ -15,6 +15,7 @@ prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
     node.visual_state = vs;
     return node;
 }
+prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }
 }
 
 TEST_CASE("ScopedEnum concept matches scoped enums") {
@@ -106,7 +107,7 @@ TEST_CASE("Enum delegate record shows arrow indicator") {
     bool has_arrow = false;
     for (auto& cmd : dl.commands) {
         if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
-            if (t->text == "\xe2\x96\xbe") has_arrow = true;  // ▾
+            if (t->text == "\xe2\x96\xbe") has_arrow = true;
         }
     }
     CHECK(has_arrow);
@@ -130,7 +131,7 @@ TEST_CASE("Enum delegate open popup produces overlay draws") {
     auto node = make_node({.focused = true});
 
     // Open the dropdown
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Re-record to populate overlay
     prism::DrawList dl;
@@ -161,7 +162,7 @@ TEST_CASE("Enum delegate closed popup has no overlay draws") {
 TEST_CASE("Enum delegate click opens popup") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
     auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
     CHECK(es.open == true);
     CHECK(es.highlighted == 0);  // Red is index 0
@@ -170,7 +171,7 @@ TEST_CASE("Enum delegate click opens popup") {
 TEST_CASE("Enum delegate click opens with current selection highlighted") {
     prism::Field<Color> field{Color::Blue};
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
     auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
     CHECK(es.highlighted == 2);  // Blue is index 2
 }
@@ -267,12 +268,12 @@ TEST_CASE("Enum delegate click on option selects and closes") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Click on second option (Green, index 1)
     // y = widget_h + 1 * option_h + half = 30 + 28 + 14 = mid of Green row
     float click_y = 30.f + 1 * 28.f + 14.f;
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, click_y}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
 
     CHECK(field.get() == Color::Green);
     auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
@@ -284,10 +285,10 @@ TEST_CASE("Enum delegate click outside popup closes without changing") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 10}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Click outside popup area (below all options: y = 30 + 3*28 + 10 = 124)
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{{10, 124}, 1, true}, node);
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 124), 1, true}, node);
 
     CHECK(field.get() == Color::Red);
     auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
@@ -338,7 +339,7 @@ TEST_CASE("Dropdown<T> popup shows custom labels") {
 
     // Open
     prism::Delegate<prism::Dropdown<Color>>::handle_input(
-        field, prism::MouseButton{{10, 10}, 1, true}, node);
+        field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Re-record to populate overlay
     prism::DrawList dl;
@@ -462,14 +463,14 @@ TEST_CASE("hit_test on overlay popup returns dropdown widget, not widget below")
 
     // The popup starts at dd_rect.y + 30 (dd_widget_h) and extends down,
     // overlapping the checkbox below. Click in the popup area.
-    float popup_y = dd_rect->y + 30.f + 14.f;  // middle of first option
-    float popup_x = dd_rect->x + 10.f;
+    float popup_y = dd_rect->origin.y.raw() + 30.f + 14.f;  // middle of first option
+    float popup_x = dd_rect->origin.x.raw() + 10.f;
 
     // This point should be within the checkbox's geometry too
-    CHECK(cb_rect->contains({popup_x, popup_y}));
+    CHECK(cb_rect->contains(P(popup_x, popup_y)));
 
     // But hit_test should return the dropdown (overlay takes priority)
-    auto hit = prism::hit_test(*snap, {popup_x, popup_y});
+    auto hit = prism::hit_test(*snap, P(popup_x, popup_y));
     REQUIRE(hit.has_value());
     CHECK(*hit == dropdown_id);
 }

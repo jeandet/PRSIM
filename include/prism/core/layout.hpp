@@ -23,7 +23,7 @@ struct SizeHint {
 struct LayoutNode {
     WidgetId id = 0;
     SizeHint hint;
-    Rect allocated{0, 0, 0, 0};
+    Rect allocated{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
@@ -38,11 +38,11 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     case LayoutNode::Kind::Leaf: {
         auto bb = node.draws.bounding_box();
         if (parent_axis == LayoutAxis::Horizontal) {
-            node.hint.preferred = bb.w;
-            node.hint.cross = bb.h;
+            node.hint.preferred = bb.extent.w.raw();
+            node.hint.cross = bb.extent.h.raw();
         } else {
-            node.hint.preferred = bb.h;
-            node.hint.cross = bb.w;
+            node.hint.preferred = bb.extent.h.raw();
+            node.hint.cross = bb.extent.w.raw();
         }
         return;
     }
@@ -100,7 +100,7 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
             total_preferred += child.hint.preferred;
     }
 
-    float remaining = (horizontal ? available.w : available.h) - total_preferred;
+    float remaining = (horizontal ? available.extent.w.raw() : available.extent.h.raw()) - total_preferred;
     float expand_share = (expand_count > 0) ? std::max(0.f, remaining) / expand_count : 0;
 
     float offset = 0;
@@ -108,9 +108,11 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
         float main_size = child.hint.expand ? expand_share : child.hint.preferred;
         Rect child_rect;
         if (horizontal) {
-            child_rect = {available.x + offset, available.y, main_size, available.h};
+            child_rect = {Point{X{available.origin.x.raw() + offset}, available.origin.y},
+                          Size{Width{main_size}, available.extent.h}};
         } else {
-            child_rect = {available.x, available.y + offset, available.w, main_size};
+            child_rect = {Point{available.origin.x, Y{available.origin.y.raw() + offset}},
+                          Size{available.extent.w, Height{main_size}}};
         }
         layout_arrange(child, child_rect);
         offset += main_size;
@@ -119,15 +121,15 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
 
 namespace detail {
 
-inline void translate_draw_list(DrawList& dl, float dx, float dy) {
+inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
     for (auto& cmd : dl.commands) {
         std::visit([dx, dy](auto& c) {
             if constexpr (requires { c.rect; }) {
-                c.rect.x += dx;
-                c.rect.y += dy;
+                c.rect.origin.x = X{c.rect.origin.x.raw() + dx.raw()};
+                c.rect.origin.y = Y{c.rect.origin.y.raw() + dy.raw()};
             } else if constexpr (requires { c.origin; }) {
-                c.origin.x += dx;
-                c.origin.y += dy;
+                c.origin.x = X{c.origin.x.raw() + dx.raw()};
+                c.origin.y = Y{c.origin.y.raw() + dy.raw()};
             }
         }, cmd);
     }
@@ -139,7 +141,9 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
 
     if (!node.draws.empty()) {
-        detail::translate_draw_list(node.draws, node.allocated.x, node.allocated.y);
+        DX dx{node.allocated.origin.x.raw()};
+        DY dy{node.allocated.origin.y.raw()};
+        detail::translate_draw_list(node.draws, dx, dy);
         auto idx = static_cast<uint16_t>(snap.geometry.size());
         snap.geometry.push_back({node.id, node.allocated});
         snap.draw_lists.push_back(std::move(node.draws));
@@ -147,7 +151,9 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     }
 
     if (!node.overlay_draws.empty()) {
-        detail::translate_draw_list(node.overlay_draws, node.allocated.x, node.allocated.y);
+        DX dx{node.allocated.origin.x.raw()};
+        DY dy{node.allocated.origin.y.raw()};
+        detail::translate_draw_list(node.overlay_draws, dx, dy);
         snap.overlay_geometry.push_back({node.id, node.overlay_draws.bounding_box()});
         for (auto& cmd : node.overlay_draws.commands)
             snap.overlay.commands.push_back(std::move(cmd));

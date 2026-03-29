@@ -72,7 +72,7 @@ struct TextArea {
     bool operator==(const TextArea&) const = default;
 };
 
-// Monospace text measurement — single replacement point for future TextMetrics
+// Monospace text measurement -- single replacement point for future TextMetrics
 inline float char_width(float font_size) { return 0.6f * font_size; }
 
 // Ephemeral cursor state for text editing delegates
@@ -147,7 +147,7 @@ struct Dropdown {
 struct DropdownEditState {
     bool open = false;
     size_t highlighted = 0;
-    Rect popup_rect{};
+    Rect popup_rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
 };
 
 // WidgetNode is defined in widget_tree.hpp; declared here so delegate
@@ -159,6 +159,15 @@ struct WidgetNode;
 // Declared here, defined in widget_tree.hpp (after WidgetNode is complete).
 const WidgetVisualState& node_vs(const WidgetNode& n);
 
+namespace detail {
+inline Rect make_rect(float x, float y, float w, float h) {
+    return {Point{X{x}, Y{y}}, Size{Width{w}, Height{h}}};
+}
+inline Point make_point(float x, float y) {
+    return {X{x}, Y{y}};
+}
+} // namespace detail
+
 // Primary template: default delegate for any Field<T>.
 // Renders only a filled rect, ignores input.
 template <typename T>
@@ -168,7 +177,7 @@ struct Delegate {
     static void record(DrawList& dl, const Field<T>&, const WidgetNode& node) {
         auto& vs = node_vs(node);
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
-        dl.filled_rect({0, 0, 200, 30}, bg);
+        dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -182,9 +191,9 @@ struct Delegate<T> {
     static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node) {
         auto& vs = node_vs(node);
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
-        dl.filled_rect({0, 0, 200, 30}, bg);
+        dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
         dl.text(std::string(field.get().data(), field.get().size()),
-                {4, 4}, 14, Color::rgba(220, 220, 220));
+                detail::make_point(4, 4), 14, Color::rgba(220, 220, 220));
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -207,15 +216,15 @@ inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
         auto fill = vs.pressed  ? Color::rgba(0, 100, 170)
                   : vs.hovered  ? Color::rgba(0, 140, 220)
                   :               Color::rgba(0, 120, 200);
-        dl.filled_rect({x, y, box_size, box_size}, fill);
-        dl.text("\xe2\x9c\x93", {x + 2, y + 1}, 13, Color::rgba(255, 255, 255)); // checkmark
+        dl.filled_rect(detail::make_rect(x, y, box_size, box_size), fill);
+        dl.text("\xe2\x9c\x93", detail::make_point(x + 2, y + 1), 13, Color::rgba(255, 255, 255)); // checkmark
     } else {
         auto fill = vs.pressed  ? Color::rgba(35, 35, 42)
                   : vs.hovered  ? Color::rgba(55, 55, 65)
                   :               Color::rgba(45, 45, 55);
-        dl.filled_rect({x, y, box_size, box_size}, fill);
+        dl.filled_rect(detail::make_rect(x, y, box_size, box_size), fill);
     }
-    dl.rect_outline({x, y, box_size, box_size},
+    dl.rect_outline(detail::make_rect(x, y, box_size, box_size),
                     vs.hovered ? Color::rgba(120, 120, 135) : Color::rgba(90, 90, 105),
                     border);
 }
@@ -231,16 +240,16 @@ struct Delegate<Checkbox> {
         auto& cb = field.get();
 
         auto bg = vs.hovered ? Color::rgba(55, 55, 65) : Color::rgba(45, 45, 55);
-        dl.filled_rect({0, 0, widget_w, widget_h}, bg);
+        dl.filled_rect(detail::make_rect(0, 0, widget_w, widget_h), bg);
 
         float box_y = (widget_h - box_size) / 2.f;
         draw_check_box(dl, 8, box_y, cb.checked, vs);
 
         if (!cb.label.empty())
-            dl.text(cb.label, {32, 7}, 14, Color::rgba(220, 220, 220));
+            dl.text(cb.label, detail::make_point(32, 7), 14, Color::rgba(220, 220, 220));
 
         if (vs.focused)
-            dl.rect_outline({-1, -1, widget_w + 2, widget_h + 2},
+            dl.rect_outline(detail::make_rect(-1, -1, widget_w + 2, widget_h + 2),
                             Color::rgba(80, 160, 240), 2.0f);
     }
 
@@ -270,13 +279,13 @@ struct Delegate<bool> {
         constexpr float box_size = 16.f;
 
         auto bg = vs.hovered ? Color::rgba(55, 55, 65) : Color::rgba(45, 45, 55);
-        dl.filled_rect({0, 0, widget_w, widget_h}, bg);
+        dl.filled_rect(detail::make_rect(0, 0, widget_w, widget_h), bg);
 
         float box_y = (widget_h - box_size) / 2.f;
         draw_check_box(dl, 8, box_y, field.get(), vs);
 
         if (vs.focused)
-            dl.rect_outline({-1, -1, widget_w + 2, widget_h + 2},
+            dl.rect_outline(detail::make_rect(-1, -1, widget_w + 2, widget_h + 2),
                             Color::rgba(80, 160, 240), 2.0f);
     }
 
@@ -295,9 +304,9 @@ struct Delegate<Label<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetNode&) {
-        dl.filled_rect({0, 0, 200, 24}, Color::rgba(40, 40, 48));
+        dl.filled_rect(detail::make_rect(0, 0, 200, 24), Color::rgba(40, 40, 48));
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
-                {4, 4}, 14, Color::rgba(180, 180, 190));
+                detail::make_point(4, 4), 14, Color::rgba(180, 180, 190));
     }
 
     static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetNode&) {}
@@ -333,20 +342,20 @@ struct Delegate<Slider<T>> {
         float track_y = (widget_h - track_h) / 2.f;
 
         auto track_bg = vs.hovered ? Color::rgba(70, 70, 82) : Color::rgba(60, 60, 70);
-        dl.filled_rect({0, track_y, track_w, track_h}, track_bg);
+        dl.filled_rect(detail::make_rect(0, track_y, track_w, track_h), track_bg);
 
         auto thumb_color = vs.pressed ? Color::rgba(0, 120, 180)
                          : vs.hovered ? Color::rgba(0, 160, 220)
                          : Color::rgba(0, 140, 200);
         float thumb_x = r * (track_w - thumb_w);
-        dl.filled_rect({thumb_x, 0, thumb_w, widget_h}, thumb_color);
+        dl.filled_rect(detail::make_rect(thumb_x, 0, thumb_w, widget_h), thumb_color);
         if (vs.focused)
-            dl.rect_outline({-1, -1, track_w + 2, widget_h + 2}, Color::rgba(80, 160, 240), 2.0f);
+            dl.rect_outline(detail::make_rect(-1, -1, track_w + 2, widget_h + 2), Color::rgba(80, 160, 240), 2.0f);
     }
 
     static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetNode&) {
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-            float t = std::clamp(mb->position.x / track_w, 0.f, 1.f);
+            float t = std::clamp(mb->position.x.raw() / track_w, 0.f, 1.f);
             auto& s = field.get();
             T raw = static_cast<T>(s.min + t * (s.max - s.min));
             Slider<T> updated = s;
@@ -377,11 +386,11 @@ struct Delegate<Button> {
         Color bg = vs.pressed ? Color::rgba(30, 90, 160)
                  : vs.hovered ? Color::rgba(50, 120, 200)
                  : Color::rgba(40, 105, 180);
-        dl.filled_rect({0, 0, 200, 32}, bg);
-        dl.rect_outline({0, 0, 200, 32}, Color::rgba(60, 140, 220), 1.0f);
-        dl.text(field.get().text, {8, 7}, 14, Color::rgba(240, 240, 240));
+        dl.filled_rect(detail::make_rect(0, 0, 200, 32), bg);
+        dl.rect_outline(detail::make_rect(0, 0, 200, 32), Color::rgba(60, 140, 220), 1.0f);
+        dl.text(field.get().text, detail::make_point(8, 7), 14, Color::rgba(240, 240, 240));
         if (vs.focused)
-            dl.rect_outline({-2, -2, 204, 36}, Color::rgba(80, 160, 240), 2.0f);
+            dl.rect_outline(detail::make_rect(-2, -2, 204, 36), Color::rgba(80, 160, 240), 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {
@@ -445,7 +454,7 @@ struct Delegate<TextArea<T>> {
     static void handle_input(Field<TextArea<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
-// ScopedEnum delegate — declared here, defined in widget_tree.hpp
+// ScopedEnum delegate -- declared here, defined in widget_tree.hpp
 template <ScopedEnum T>
     requires (!TextEditable<T>)
 struct Delegate<T> {

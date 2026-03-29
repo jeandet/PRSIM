@@ -7,9 +7,13 @@
 
 #include <vector>
 
+namespace {
+prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }
+}
+
 TEST_CASE("TestBackend fires events then WindowClose") {
     std::vector<prism::InputEvent> events = {
-        prism::MouseButton{{100, 50}, 1, true},
+        prism::MouseButton{P(100, 50), 1, true},
         prism::KeyPress{42, 0},
     };
     prism::TestBackend tb{events};
@@ -39,7 +43,7 @@ TEST_CASE("TestBackend with no events fires only WindowClose") {
 
 TEST_CASE("TestBackend works through Backend wrapper") {
     std::vector<prism::InputEvent> events = {
-        prism::MouseMove{{10, 20}},
+        prism::MouseMove{P(10, 20)},
     };
     auto backend = prism::Backend{std::make_unique<prism::TestBackend>(events)};
     std::vector<prism::InputEvent> received;

@@ -8,6 +8,7 @@ namespace prism {
 
 template <typename Tag>
 struct Scalar {
+    constexpr Scalar() : v_(0.f) {}
     constexpr explicit Scalar(float v) : v_(v) {}
     [[nodiscard]] constexpr float raw() const { return v_; }
     constexpr auto operator<=>(const Scalar&) const = default;

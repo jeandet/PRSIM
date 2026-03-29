@@ -95,7 +95,7 @@ TEST_CASE("Password record shows cursor when focused") {
     int thin_rects = 0;
     for (auto& cmd : dl.commands) {
         if (auto* fr = std::get_if<prism::FilledRect>(&cmd)) {
-            if (fr->rect.w <= 3.f) thin_rects++;
+            if (fr->rect.extent.w.raw() <= 3.f) thin_rects++;
         }
     }
     CHECK(thin_rects >= 1);

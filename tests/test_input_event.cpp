@@ -15,10 +15,10 @@ TEST_CASE("InputEvent variant holds WindowResize") {
 }
 
 TEST_CASE("InputEvent variant holds MouseMove") {
-    prism::InputEvent ev = prism::MouseMove{.position = {10.0f, 20.0f}};
+    prism::InputEvent ev = prism::MouseMove{.position = {prism::X{10.0f}, prism::Y{20.0f}}};
     auto& move = std::get<prism::MouseMove>(ev);
-    CHECK(move.position.x == doctest::Approx(10.0f));
-    CHECK(move.position.y == doctest::Approx(20.0f));
+    CHECK(move.position.x.raw() == doctest::Approx(10.0f));
+    CHECK(move.position.y.raw() == doctest::Approx(20.0f));
 }
 
 TEST_CASE("TextInput event holds text") {

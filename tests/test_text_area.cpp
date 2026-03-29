@@ -232,8 +232,8 @@ TEST_CASE("TextArea record produces background rect with correct height") {
     constexpr float padding = 4.f;
     constexpr float line_h = 14.f * 1.4f;
     float expected_h = padding * 2 + 6 * line_h;
-    CHECK(bg->rect.h == doctest::Approx(expected_h));
-    CHECK(bg->rect.w == doctest::Approx(200.f));
+    CHECK(bg->rect.extent.h.raw() == doctest::Approx(expected_h));
+    CHECK(bg->rect.extent.w.raw() == doctest::Approx(200.f));
 }
 
 TEST_CASE("TextArea record with custom rows changes height") {
@@ -247,7 +247,7 @@ TEST_CASE("TextArea record with custom rows changes height") {
     constexpr float padding = 4.f;
     constexpr float line_h = 14.f * 1.4f;
     float expected_h = padding * 2 + 3 * line_h;
-    CHECK(bg->rect.h == doctest::Approx(expected_h));
+    CHECK(bg->rect.extent.h.raw() == doctest::Approx(expected_h));
 }
 
 TEST_CASE("TextArea record shows placeholder when empty and unfocused") {
@@ -336,7 +336,7 @@ TEST_CASE("TextArea record renders cursor when focused") {
     int thin_rects = 0;
     for (auto& cmd : dl.commands) {
         if (auto* fr = std::get_if<prism::FilledRect>(&cmd)) {
-            if (fr->rect.w == doctest::Approx(2.f)) thin_rects++;
+            if (fr->rect.extent.w.raw() == doctest::Approx(2.f)) thin_rects++;
         }
     }
     CHECK(thin_rects >= 1);
@@ -598,7 +598,7 @@ TEST_CASE("TextArea: mouse click positions cursor") {
     float click_x = padding + 1.5f * cw;
     float click_y = padding + 1.0f * line_h + line_h * 0.5f;
     prism::InputEvent ev = prism::MouseButton{
-        .position = {click_x, click_y}, .button = 1, .pressed = true};
+        .position = prism::Point{prism::X{click_x}, prism::Y{click_y}}, .button = 1, .pressed = true};
     prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
 
     CHECK(es.cursor == 6);
@@ -611,7 +611,7 @@ TEST_CASE("TextArea: mouse click below last line clamps to end") {
     constexpr float line_h = 14.f * 1.4f;
 
     prism::InputEvent ev = prism::MouseButton{
-        .position = {100.f, 10.f * line_h}, .button = 1, .pressed = true};
+        .position = prism::Point{prism::X{100.f}, prism::Y{10.f * line_h}}, .button = 1, .pressed = true};
     prism::Delegate<prism::TextArea<>>::handle_input(field, ev, node);
 
     CHECK(es.cursor == 3);
@@ -699,7 +699,7 @@ TEST_CASE("TextArea in WidgetTree: snapshot contains correct geometry") {
     constexpr float line_h = 14.f * 1.4f;
     float expected_h = padding * 2 + 4 * line_h;
     auto& [wid, rect] = snap->geometry[0];
-    CHECK(rect.h == doctest::Approx(expected_h));
+    CHECK(rect.extent.h.raw() == doctest::Approx(expected_h));
 }
 
 TEST_CASE("TextArea in WidgetTree: Enter creates new line via dispatch") {

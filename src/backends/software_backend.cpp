@@ -10,7 +10,7 @@ namespace prism {
 namespace {
 
 SDL_FRect to_sdl(Rect r) {
-    return {r.x, r.y, r.w, r.h};
+    return {r.origin.x.raw(), r.origin.y.raw(), r.extent.w.raw(), r.extent.h.raw()};
 }
 
 SDL_Color to_sdl(Color c) {
@@ -69,19 +69,19 @@ void SoftwareBackend::run(std::function<void(const InputEvent&)> event_cb) {
                 event_cb(WindowResize{ev.window.data1, ev.window.data2});
                 break;
             case SDL_EVENT_MOUSE_MOTION:
-                event_cb(MouseMove{{ev.motion.x, ev.motion.y}});
+                event_cb(MouseMove{Point{X{ev.motion.x}, Y{ev.motion.y}}});
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
                 event_cb(MouseButton{
-                    {ev.button.x, ev.button.y}, ev.button.button, true});
+                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, true});
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
                 event_cb(MouseButton{
-                    {ev.button.x, ev.button.y}, ev.button.button, false});
+                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, false});
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
                 event_cb(MouseScroll{
-                    {ev.wheel.mouse_x, ev.wheel.mouse_y}, ev.wheel.x, ev.wheel.y});
+                    Point{X{ev.wheel.mouse_x}, Y{ev.wheel.mouse_y}}, DX{ev.wheel.x}, DY{ev.wheel.y}});
                 break;
             case SDL_EVENT_KEY_DOWN:
                 event_cb(KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod});
@@ -172,7 +172,7 @@ void SoftwareBackend::render_cmd(const TextCmd& cmd) {
 
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
     if (texture) {
-        SDL_FRect dst = {cmd.origin.x, cmd.origin.y,
+        SDL_FRect dst = {cmd.origin.x.raw(), cmd.origin.y.raw(),
                          static_cast<float>(surface->w),
                          static_cast<float>(surface->h)};
         SDL_RenderTexture(renderer_, texture, nullptr, &dst);
@@ -182,8 +182,8 @@ void SoftwareBackend::render_cmd(const TextCmd& cmd) {
 }
 
 void SoftwareBackend::render_cmd(const ClipPush& cmd) {
-    SDL_Rect r = {static_cast<int>(cmd.rect.x), static_cast<int>(cmd.rect.y),
-                  static_cast<int>(cmd.rect.w), static_cast<int>(cmd.rect.h)};
+    SDL_Rect r = {static_cast<int>(cmd.rect.origin.x.raw()), static_cast<int>(cmd.rect.origin.y.raw()),
+                  static_cast<int>(cmd.rect.extent.w.raw()), static_cast<int>(cmd.rect.extent.h.raw())};
     clip_stack_.push_back(r);
     SDL_SetRenderClipRect(renderer_, &r);
 }

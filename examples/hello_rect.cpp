@@ -14,12 +14,18 @@ static constexpr auto accent   = prism::Color::rgba(0, 180, 120);
 static constexpr auto muted    = prism::Color::rgba(60, 60, 75);
 static constexpr auto panel_bg = prism::Color::rgba(38, 38, 50);
 
+namespace {
+prism::Rect R(float x, float y, float w, float h) {
+    return {prism::Point{prism::X{x}, prism::Y{y}}, prism::Size{prism::Width{w}, prism::Height{h}}};
+}
+}
+
 void nav_item(auto& ui, float h, prism::Color c) {
-    ui.frame().filled_rect({4, 4, 192, h - 8}, c);
+    ui.frame().filled_rect(R(4, 4, 192, h - 8), c);
 }
 
 void content_card(auto& ui, float w, float h, prism::Color c) {
-    ui.frame().filled_rect({8, 8, w - 16, h - 16}, c);
+    ui.frame().filled_rect(R(8, 8, w - 16, h - 16), c);
 }
 
 int main() {
@@ -28,7 +34,7 @@ int main() {
             // Root: full-window column (header / body / footer)
             ui.column([&] {
                 // Header bar
-                ui.frame().filled_rect({0, 0, 100, 48}, header);
+                ui.frame().filled_rect(R(0, 0, 100, 48), header);
 
                 // Body: sidebar | content
                 ui.row([&] {
@@ -46,7 +52,7 @@ int main() {
                 });
 
                 // Footer bar
-                ui.frame().filled_rect({0, 0, 100, 32}, footer);
+                ui.frame().filled_rect(R(0, 0, 100, 32), footer);
             });
         },
         [](State& s, const prism::InputEvent& ev) {

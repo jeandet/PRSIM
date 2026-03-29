@@ -172,7 +172,7 @@ TEST_CASE("model_app routes click to Slider and updates value") {
             REQUIRE_FALSE(geo->geometry.empty());
             auto [id, rect] = geo->geometry[0];
             // Click at the right edge of the track → value near 1.0
-            cb(prism::MouseButton{{rect.x + 190, rect.y + 15}, 1, true});
+            cb(prism::MouseButton{prism::Point{prism::X{rect.origin.x.raw() + 190}, prism::Y{rect.origin.y.raw() + 15}}, 1, true});
 
             auto before = count.load(std::memory_order_acquire);
             count.wait(before, std::memory_order_acquire);

@@ -83,28 +83,28 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     auto bg = vs.focused ? Color::rgba(65, 65, 78)
             : vs.hovered ? Color::rgba(55, 55, 68)
             : Color::rgba(45, 45, 55);
-    dl.filled_rect({0, 0, tf_widget_w, tf_widget_h}, bg);
+    dl.filled_rect(make_rect(0, 0, tf_widget_w, tf_widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline({-1, -1, tf_widget_w + 2, tf_widget_h + 2},
+        dl.rect_outline(make_rect(-1, -1, tf_widget_w + 2, tf_widget_h + 2),
                         Color::rgba(80, 160, 240), 2.0f);
 
     float text_area_w = tf_widget_w - 2 * tf_padding;
-    dl.clip_push({tf_padding, 0}, {text_area_w, tf_widget_h});
+    dl.clip_push(make_point(tf_padding, 0), Size{Width{text_area_w}, Height{tf_widget_h}});
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, {0, tf_padding + 2}, tf_font_size,
+        dl.text(sf.placeholder, make_point(0, tf_padding + 2), tf_font_size,
                 Color::rgba(120, 120, 130));
     } else {
         float text_x = -es.scroll_offset;
         std::string display_text = display_fn(std::string(sf.value.data(), sf.value.size()));
-        dl.text(display_text, {text_x, tf_padding + 2}, tf_font_size,
+        dl.text(display_text, make_point(text_x, tf_padding + 2), tf_font_size,
                 Color::rgba(220, 220, 220));
     }
 
     if (vs.focused) {
-        float cursor_x = es.cursor * cw - es.scroll_offset;
-        dl.filled_rect({cursor_x, tf_padding, tf_cursor_w, tf_widget_h - 2 * tf_padding},
+        float cursor_x = static_cast<float>(es.cursor) * cw - es.scroll_offset;
+        dl.filled_rect(make_rect(cursor_x, tf_padding, tf_cursor_w, tf_widget_h - 2 * tf_padding),
                        Color::rgba(220, 220, 240));
     }
 
@@ -157,7 +157,7 @@ void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widge
         }
     } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
         float cw = char_width(tf_font_size);
-        float rel_x = mb->position.x - tf_padding + es.scroll_offset;
+        float rel_x = mb->position.x.raw() - tf_padding + es.scroll_offset;
         size_t pos = static_cast<size_t>(
             std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(len)));
         if (pos != es.cursor) {
@@ -168,7 +168,7 @@ void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widge
 
     float cw = char_width(tf_font_size);
     float text_area_w = tf_widget_w - 2 * tf_padding;
-    float cursor_px = es.cursor * cw;
+    float cursor_px = static_cast<float>(es.cursor) * cw;
     if (cursor_px - es.scroll_offset > text_area_w)
         es.scroll_offset = cursor_px - text_area_w;
     if (cursor_px < es.scroll_offset)
@@ -263,42 +263,42 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     auto& es = get_text_area_edit_state(node);
     float cw = char_width(ta_font_size);
     float text_area_w = ta_widget_w - 2 * ta_padding;
-    float text_area_h = sf.rows * ta_line_height;
+    float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
     float widget_h = ta_padding * 2 + text_area_h;
 
     auto bg = vs.focused ? Color::rgba(65, 65, 78)
             : vs.hovered ? Color::rgba(55, 55, 68)
             : Color::rgba(45, 45, 55);
-    dl.filled_rect({0, 0, ta_widget_w, widget_h}, bg);
+    dl.filled_rect(make_rect(0, 0, ta_widget_w, widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline({-1, -1, ta_widget_w + 2, widget_h + 2},
+        dl.rect_outline(make_rect(-1, -1, ta_widget_w + 2, widget_h + 2),
                         Color::rgba(80, 160, 240), 2.0f);
 
-    dl.clip_push({ta_padding, ta_padding}, {text_area_w, text_area_h});
+    dl.clip_push(make_point(ta_padding, ta_padding), Size{Width{text_area_w}, Height{text_area_h}});
 
     auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
                               text_area_w, cw);
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, {0, 2}, ta_font_size, Color::rgba(120, 120, 130));
+        dl.text(sf.placeholder, make_point(0, 2), ta_font_size, Color::rgba(120, 120, 130));
     } else {
         for (size_t i = 0; i < wrapped.size(); ++i) {
-            float y = i * ta_line_height - es.scroll_y;
+            float y = static_cast<float>(i) * ta_line_height - es.scroll_y;
             if (y + ta_line_height < 0) continue;
             if (y > text_area_h) break;
             if (wrapped[i].length > 0) {
                 std::string line_text(sf.value.data() + wrapped[i].start, wrapped[i].length);
-                dl.text(line_text, {0, y + 2}, ta_font_size, Color::rgba(220, 220, 220));
+                dl.text(line_text, make_point(0, y + 2), ta_font_size, Color::rgba(220, 220, 220));
             }
         }
     }
 
     if (vs.focused) {
         auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
-        float cx = col * cw;
-        float cy = line * ta_line_height - es.scroll_y;
-        dl.filled_rect({cx, cy, ta_cursor_w, ta_line_height}, Color::rgba(220, 220, 240));
+        float cx = static_cast<float>(col) * cw;
+        float cy = static_cast<float>(line) * ta_line_height - es.scroll_y;
+        dl.filled_rect(make_rect(cx, cy, ta_cursor_w, ta_line_height), Color::rgba(220, 220, 240));
     }
 
     dl.clip_pop();
@@ -312,7 +312,7 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
     es.cursor = std::min(es.cursor, len);  // clamp if value changed externally
     float cw = char_width(ta_font_size);
     float text_area_w = ta_widget_w - 2 * ta_padding;
-    float text_area_h = sf.rows * ta_line_height;
+    float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
 
     auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
                               text_area_w, cw);
@@ -384,10 +384,10 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
             }
         }
     } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-        float rel_y = mb->position.y - ta_padding + es.scroll_y;
+        float rel_y = mb->position.y.raw() - ta_padding + es.scroll_y;
         size_t click_line = static_cast<size_t>(
             std::clamp(rel_y / ta_line_height, 0.f, static_cast<float>(wrapped.size() - 1)));
-        float rel_x = mb->position.x - ta_padding;
+        float rel_x = mb->position.x.raw() - ta_padding;
         size_t click_col = static_cast<size_t>(
             std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(wrapped[click_line].length)));
         size_t new_cursor = line_col_to_cursor(click_line, click_col, wrapped);
@@ -402,7 +402,7 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
         std::string_view(field.get().value.data(), field.get().value.size()),
         text_area_w, cw);
     auto [cur_line, cur_col] = cursor_to_line_col(es.cursor, new_wrapped);
-    float cursor_y = cur_line * ta_line_height;
+    float cursor_y = static_cast<float>(cur_line) * ta_line_height;
 
     if (cursor_y - es.scroll_y > text_area_h - ta_line_height)
         es.scroll_y = cursor_y - text_area_h + ta_line_height;
@@ -522,36 +522,36 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
     auto bg = es.open    ? Color::rgba(65, 65, 78)
             : vs.hovered ? Color::rgba(55, 55, 68)
             : Color::rgba(45, 45, 55);
-    dl.filled_rect({0, 0, dd_widget_w, dd_widget_h}, bg);
+    dl.filled_rect(make_rect(0, 0, dd_widget_w, dd_widget_h), bg);
 
-    dl.text(current_label, {dd_padding, 7}, dd_font_size, Color::rgba(220, 220, 220));
+    dl.text(current_label, make_point(dd_padding, 7), dd_font_size, Color::rgba(220, 220, 220));
 
-    dl.text("\xe2\x96\xbe", {dd_widget_w - 20, 7}, dd_font_size, Color::rgba(160, 160, 170));
+    dl.text("\xe2\x96\xbe", make_point(dd_widget_w - 20, 7), dd_font_size, Color::rgba(160, 160, 170));
 
     if (vs.focused)
-        dl.rect_outline({-1, -1, dd_widget_w + 2, dd_widget_h + 2},
+        dl.rect_outline(make_rect(-1, -1, dd_widget_w + 2, dd_widget_h + 2),
                         Color::rgba(80, 160, 240), 2.0f);
 
     node.overlay_draws.clear();
     if (es.open) {
-        float popup_h = resolver.count * dd_option_h;
+        float popup_h = static_cast<float>(resolver.count) * dd_option_h;
         node.overlay_draws.filled_rect(
-            {0, dd_widget_h, dd_widget_w, popup_h},
+            make_rect(0, dd_widget_h, dd_widget_w, popup_h),
             Color::rgba(50, 50, 62));
         node.overlay_draws.rect_outline(
-            {0, dd_widget_h, dd_widget_w, popup_h},
+            make_rect(0, dd_widget_h, dd_widget_w, popup_h),
             Color::rgba(80, 80, 95), 1.0f);
 
         for (size_t i = 0; i < resolver.count; ++i) {
-            float y = dd_widget_h + i * dd_option_h;
+            float y = dd_widget_h + static_cast<float>(i) * dd_option_h;
             if (i == es.highlighted) {
                 node.overlay_draws.filled_rect(
-                    {0, y, dd_widget_w, dd_option_h},
+                    make_rect(0, y, dd_widget_w, dd_option_h),
                     Color::rgba(60, 100, 180));
             }
             node.overlay_draws.text(
                 resolver.label_at(i),
-                {dd_padding, y + 6}, dd_font_size,
+                make_point(dd_padding, y + 6), dd_font_size,
                 i == es.highlighted ? Color::rgba(255, 255, 255)
                                     : Color::rgba(200, 200, 210));
         }
@@ -566,9 +566,9 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
 
     if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
         if (es.open) {
-            float rel_y = mb->position.y - dd_widget_h;
-            if (rel_y >= 0 && rel_y < count * dd_option_h
-                && mb->position.x >= 0 && mb->position.x < dd_widget_w) {
+            float rel_y = mb->position.y.raw() - dd_widget_h;
+            if (rel_y >= 0 && rel_y < static_cast<float>(count) * dd_option_h
+                && mb->position.x.raw() >= 0 && mb->position.x.raw() < dd_widget_w) {
                 size_t idx = static_cast<size_t>(rel_y / dd_option_h);
                 select(idx);
                 changed = true;
@@ -672,7 +672,7 @@ void Delegate<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputE
         });
 }
 
-// index_ stores raw pointers into the tree — valid only because the tree
+// index_ stores raw pointers into the tree -- valid only because the tree
 // is fully built before build_index runs and never mutated after construction.
 class WidgetTree {
 public:
@@ -793,7 +793,7 @@ public:
         build_layout(root_, layout);
 
         layout_measure(layout, LayoutAxis::Vertical);
-        layout_arrange(layout, {0, 0, w, h});
+        layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
 
         auto snap = std::make_unique<SceneSnapshot>();
         snap->version = version;
@@ -933,7 +933,7 @@ private:
             using M = std::remove_cvref_t<decltype(member)>;
 
             if constexpr (is_state_v<M>) {
-                // invisible observable — no widget
+                // invisible observable -- no widget
             } else if constexpr (is_field_v<M>) {
                 container.children.push_back(build_leaf(member));
             } else if constexpr (is_component_v<M>) {

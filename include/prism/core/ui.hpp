@@ -61,7 +61,7 @@ public:
             LayoutAxis axis = (root.kind == LayoutNode::Kind::Row)
                 ? LayoutAxis::Horizontal : LayoutAxis::Vertical;
             layout_measure(root, axis);
-            layout_arrange(root, {0, 0, static_cast<float>(w), static_cast<float>(h)});
+            layout_arrange(root, Rect{Point{X{0}, Y{0}}, Size{Width{static_cast<float>(w)}, Height{static_cast<float>(h)}}});
 
             auto snap = std::make_shared<SceneSnapshot>();
             snap->version = version;

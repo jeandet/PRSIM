@@ -37,10 +37,10 @@ public:
     }
 
     void fill_rect(Rect r, Color c) {
-        int x0 = std::max(0, static_cast<int>(r.x));
-        int y0 = std::max(0, static_cast<int>(r.y));
-        int x1 = std::min(w_, static_cast<int>(r.x + r.w));
-        int y1 = std::min(h_, static_cast<int>(r.y + r.h));
+        int x0 = std::max(0, static_cast<int>(r.origin.x.raw()));
+        int y0 = std::max(0, static_cast<int>(r.origin.y.raw()));
+        int x1 = std::min(w_, static_cast<int>(r.origin.x.raw() + r.extent.w.raw()));
+        int y1 = std::min(h_, static_cast<int>(r.origin.y.raw() + r.extent.h.raw()));
 
         uint32_t packed = pack(c);
         for (int y = y0; y < y1; ++y) {
