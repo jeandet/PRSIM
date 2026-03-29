@@ -319,6 +319,36 @@ struct CanvasModel {
     }
 };
 
+struct DrawingCanvasModel {
+    prism::Field<int> value{42};
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+        dl.filled_rect(bounds, prism::Color::rgba(255, 0, 0));
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(value);
+        vb.canvas(*this).depends_on(value);
+    }
+};
+
+TEST_CASE("canvas record() receives allocated bounds from layout") {
+    DrawingCanvasModel model;
+    prism::WidgetTree tree(model);
+
+    auto snap = tree.build_snapshot(400, 300, 1);
+    REQUIRE(snap->geometry.size() == 2);
+
+    auto& canvas_draws = snap->draw_lists[1];
+    REQUIRE_FALSE(canvas_draws.empty());
+
+    auto& cmd = canvas_draws.commands[0];
+    auto* fr = std::get_if<prism::FilledRect>(&cmd);
+    REQUIRE(fr != nullptr);
+    CHECK(fr->rect.extent.w.raw() > 0);
+    CHECK(fr->rect.extent.h.raw() > 0);
+}
+
 TEST_CASE("canvas node expands to fill remaining space") {
     CanvasModel model;
     prism::WidgetTree tree(model);

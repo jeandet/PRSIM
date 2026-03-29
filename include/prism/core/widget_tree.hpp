@@ -920,6 +920,9 @@ public:
         layout_measure(layout, LayoutAxis::Vertical);
         layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
 
+        // Post-layout: update canvas nodes with their resolved bounds and re-record
+        update_canvas_bounds(layout, root_);
+
         auto snap = std::make_unique<SceneSnapshot>();
         snap->version = version;
         layout_flatten(layout, *snap);
@@ -1019,6 +1022,32 @@ private:
         for (auto& c : node.children)
             if (mark_dirty(c, id)) return true;
         return false;
+    }
+
+    static void update_canvas_bounds(LayoutNode& layout_node, WidgetNode& widget_root) {
+        if (layout_node.kind == LayoutNode::Kind::Canvas) {
+            auto* wn = find_widget_node(widget_root, layout_node.id);
+            if (wn && wn->record) {
+                wn->canvas_bounds = Rect{
+                    Point{X{0}, Y{0}},
+                    layout_node.allocated.extent
+                };
+                wn->record(*wn);
+                layout_node.draws = wn->draws;
+            }
+            return;
+        }
+        for (auto& child : layout_node.children)
+            update_canvas_bounds(child, widget_root);
+    }
+
+    static WidgetNode* find_widget_node(WidgetNode& node, WidgetId id) {
+        if (node.id == id) return &node;
+        for (auto& c : node.children) {
+            auto* found = find_widget_node(c, id);
+            if (found) return found;
+        }
+        return nullptr;
     }
 
     static void build_layout(WidgetNode& node, LayoutNode& parent) {
