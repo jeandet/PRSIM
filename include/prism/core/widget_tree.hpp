@@ -12,8 +12,10 @@
 
 #include <any>
 #include <cassert>
+#include <cstdio>
 #include <functional>
 #include <memory>
+#include <set>
 #include <optional>
 #include <span>
 #include <string>
@@ -682,6 +684,7 @@ public:
         WidgetTree& tree_;
         WidgetNode& target_;
         std::vector<WidgetNode*> stack_;
+        std::set<const void*> placed_;
 
         WidgetNode& current_parent() {
             return stack_.empty() ? target_ : *stack_.back();
@@ -693,8 +696,11 @@ public:
 
         template <typename T>
         void widget(Field<T>& field) {
+            placed_.insert(&field);
             current_parent().children.push_back(tree_.build_leaf(field));
         }
+
+        [[nodiscard]] const std::set<const void*>& placed() const { return placed_; }
 
         template <typename C>
         void component(C& comp) {
@@ -884,6 +890,29 @@ private:
     std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;
 
+    template <typename Model>
+    void check_unplaced_fields([[maybe_unused]] Model& model,
+                               [[maybe_unused]] const std::set<const void*>& placed) {
+#ifndef NDEBUG
+        static constexpr auto members = std::define_static_array(
+            std::meta::nonstatic_data_members_of(
+                ^^Model, std::meta::access_context::unchecked()));
+        template for (constexpr auto m : members) {
+            auto& member = model.[:m:];
+            using M = std::remove_cvref_t<decltype(member)>;
+            if constexpr (is_field_v<M>) {
+                if (!placed.contains(&member)) {
+                    std::fprintf(stderr, "[prism] warning: Field '%.*s' in %.*s not placed by view()\n",
+                        static_cast<int>(std::meta::identifier_of(m).size()),
+                        std::meta::identifier_of(m).data(),
+                        static_cast<int>(std::meta::identifier_of(^^Model).size()),
+                        std::meta::identifier_of(^^Model).data());
+                }
+            }
+        }
+#endif
+    }
+
     void build_index(WidgetNode& node) {
         index_[node.id] = &node;
         if (node.wire) {
@@ -1018,6 +1047,7 @@ private:
         if constexpr (requires(Model& m, ViewBuilder& vb) { m.view(vb); }) {
             ViewBuilder vb{*this, container};
             model.view(vb);
+            check_unplaced_fields(model, vb.placed());
             vb.finalize();
         } else {
             static constexpr auto members = std::define_static_array(
