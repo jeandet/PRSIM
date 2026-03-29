@@ -1,6 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#include <string>
+
 #include <prism/core/widget_tree.hpp>
 
 TEST_CASE("WidgetNode has layout_kind defaulting to Default") {
@@ -277,8 +279,6 @@ TEST_CASE("dirty propagation works for view()-placed widgets") {
 }
 
 // ── Task 11: regression guard ───────────────────────────────────────────────
-
-#include <string>
 
 struct PlainModel {
     prism::Field<int> a{0};

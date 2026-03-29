@@ -743,6 +743,8 @@ public:
                 target_.children.clear();
                 target_.children.push_back(std::move(wrapper));
             }
+            // Hoist single Row/Column child: avoids an unnecessary nesting level
+            // when view() produces exactly one container (the common case).
             if (target_.children.size() == 1) {
                 auto lk = target_.children[0].layout_kind;
                 if (lk == WidgetNode::LayoutKind::Row || lk == WidgetNode::LayoutKind::Column) {
@@ -926,7 +928,8 @@ private:
     }
 
     static size_t count_leaves(const WidgetNode& node) {
-        if (!node.is_container) return 1;
+        if (!node.is_container)
+            return node.layout_kind == WidgetNode::LayoutKind::Spacer ? 0 : 1;
         size_t n = 0;
         for (auto& c : node.children) n += count_leaves(c);
         return n;
@@ -955,7 +958,8 @@ private:
 
     static void collect_leaf_ids(const WidgetNode& node, std::vector<WidgetId>& ids) {
         if (!node.is_container) {
-            ids.push_back(node.id);
+            if (node.layout_kind != WidgetNode::LayoutKind::Spacer)
+                ids.push_back(node.id);
             return;
         }
         for (auto& c : node.children) collect_leaf_ids(c, ids);
