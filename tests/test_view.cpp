@@ -443,3 +443,60 @@ TEST_CASE("canvas node expands to fill remaining space") {
     CHECK(r_canvas.extent.h.raw() > 0);
     CHECK(r_canvas.extent.w.raw() == doctest::Approx(800));
 }
+
+struct CanvasInRow {
+    prism::Field<int> a{0};
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+        dl.filled_rect(bounds, prism::Color::rgba(0, 100, 0));
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.row([&] {
+            vb.widget(a);
+            vb.canvas(*this);
+        });
+    }
+};
+
+TEST_CASE("canvas in row expands horizontally") {
+    CanvasInRow model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap->geometry.size() == 2);
+
+    auto& [id_a, r_a] = snap->geometry[0];
+    auto& [id_canvas, r_canvas] = snap->geometry[1];
+
+    // Same y (row), canvas starts after widget a
+    CHECK(r_canvas.origin.y.raw() == r_a.origin.y.raw());
+    CHECK(r_canvas.origin.x.raw() >= r_a.origin.x.raw() + r_a.extent.w.raw());
+    // Canvas fills remaining width
+    float expected_w = 800 - r_a.extent.w.raw();
+    CHECK(r_canvas.extent.w.raw() == doctest::Approx(expected_w));
+}
+
+struct CanvasOnlyModel {
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+        dl.filled_rect(bounds, prism::Color::rgba(0, 0, 100));
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.canvas(*this);
+    }
+};
+
+TEST_CASE("canvas-only model fills entire viewport") {
+    CanvasOnlyModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 1);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap->geometry.size() == 1);
+
+    auto& [id, r] = snap->geometry[0];
+    CHECK(r.extent.w.raw() == doctest::Approx(800));
+    CHECK(r.extent.h.raw() == doctest::Approx(600));
+}
