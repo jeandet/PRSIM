@@ -18,7 +18,7 @@ public:
     void filled_rect(Rect r, Color c) { dl_.filled_rect(r, c); }
     void rect_outline(Rect r, Color c, float thickness = 1.0f) { dl_.rect_outline(r, c, thickness); }
     void text(std::string s, Point origin, float size, Color c) { dl_.text(std::move(s), origin, size, c); }
-    void clip_push(Rect r) { dl_.clip_push(r); }
+    void clip_push(Point origin, Size extent) { dl_.clip_push(origin, extent); }
     void clip_pop() { dl_.clip_pop(); }
 
     [[nodiscard]] int width() const { return width_; }

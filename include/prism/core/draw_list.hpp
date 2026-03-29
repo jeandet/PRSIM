@@ -93,8 +93,6 @@ struct DrawList {
         commands.emplace_back(ClipPush{{abs_x, abs_y, extent.w, extent.h}});
     }
 
-    // Transitional overload — remove once all callers migrate to (Point, Size)
-    void clip_push(Rect r) { clip_push(Point{r.x, r.y}, Size{r.w, r.h}); }
 
     void clip_pop()
     {
