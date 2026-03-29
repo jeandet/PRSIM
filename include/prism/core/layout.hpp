@@ -113,23 +113,19 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
     node.allocated = available;
 
     if (node.kind == LayoutNode::Kind::Scroll) {
-        // Expanders inside a scroll get the viewport height as fallback
         float viewport_h = available.extent.h.raw();
-        float content_h = 0;
-        for (auto& child : node.children)
-            content_h += child.hint.expand ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
-        node.scroll_content_h = Height{content_h};
-
         float offset = 0;
         for (auto& child : node.children) {
-            float main_size = child.hint.expand ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
-            Rect child_rect{
+            // Expanders inside a scroll get the viewport height as fallback
+            float main_size = child.hint.expand
+                ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
+            layout_arrange(child, {
                 Point{available.origin.x, Y{available.origin.y.raw() + offset}},
                 Size{available.extent.w, Height{main_size}}
-            };
-            layout_arrange(child, child_rect);
+            });
             offset += main_size;
         }
+        node.scroll_content_h = Height{offset};
         return;
     }
 
@@ -228,29 +224,25 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
 
         // Scrollbar overlay (if content exceeds viewport)
         if (node.scroll_content_h.raw() > node.allocated.extent.h.raw()) {
+            constexpr float track_width = 6.f;
+            constexpr float track_inset = 8.f;
+            constexpr float min_thumb_h = 20.f;
+
             auto vp = node.allocated;
             float viewport_h = vp.extent.h.raw();
             float content_h = node.scroll_content_h.raw();
-            float thumb_ratio = viewport_h / content_h;
-            float thumb_h = std::max(20.f, viewport_h * thumb_ratio);
+            float thumb_h = std::max(min_thumb_h, viewport_h * (viewport_h / content_h));
             float max_scroll = content_h - viewport_h;
             float thumb_y = (max_scroll > 0)
                 ? node.scroll_offset.raw() * (viewport_h - thumb_h) / max_scroll
                 : 0.f;
 
-            float track_x = vp.origin.x.raw() + vp.extent.w.raw() - 8.f;
-            float track_y = vp.origin.y.raw() + thumb_y;
-
-            DrawList scrollbar_dl;
-            scrollbar_dl.filled_rect(
-                Rect{Point{X{track_x}, Y{track_y}},
-                     Size{Width{6}, Height{thumb_h}}},
-                Color::rgba(120, 120, 130, 160));
-            Rect thumb_rect{Point{X{track_x}, Y{track_y}},
-                            Size{Width{6}, Height{thumb_h}}};
+            Rect thumb_rect{
+                Point{X{vp.origin.x.raw() + vp.extent.w.raw() - track_inset},
+                      Y{vp.origin.y.raw() + thumb_y}},
+                Size{Width{track_width}, Height{thumb_h}}};
+            snap.overlay.filled_rect(thumb_rect, Color::rgba(120, 120, 130, 160));
             snap.overlay_geometry.push_back({node.id, thumb_rect});
-            for (auto& cmd : scrollbar_dl.commands)
-                snap.overlay.commands.push_back(std::move(cmd));
         }
 
         return;

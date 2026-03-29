@@ -803,14 +803,11 @@ public:
     private:
         void item(field_type auto& field) { widget(field); }
         void item(component_type auto& comp) { component(comp); }
-        Node& push_scroll_container(ScrollBarPolicy bar, ScrollEventPolicy evt,
-                                    std::invocable auto&& fn) {
+        Node& push_container(LayoutKind kind, std::invocable auto&& fn) {
             Node container;
             container.id = tree_.next_id_++;
             container.is_leaf = false;
-            container.layout_kind = LayoutKind::Scroll;
-            container.scroll_bar_policy = bar;
-            container.scroll_event_policy = evt;
+            container.layout_kind = kind;
             auto& parent = current_parent();
             parent.children.push_back(std::move(container));
             auto& ref = parent.children.back();
@@ -818,18 +815,6 @@ public:
             fn();
             stack_.pop_back();
             return ref;
-        }
-
-        void push_container(LayoutKind kind, std::invocable auto&& fn) {
-            Node container;
-            container.id = tree_.next_id_++;
-            container.is_leaf = false;
-            container.layout_kind = kind;
-            auto& parent = current_parent();
-            parent.children.push_back(std::move(container));
-            stack_.push_back(&parent.children.back());
-            fn();
-            stack_.pop_back();
         }
 
     public:
@@ -843,17 +828,22 @@ public:
         }
 
         void scroll(std::invocable auto&& fn) {
-            push_scroll_container(ScrollBarPolicy::Auto, ScrollEventPolicy::BubbleAtBounds, fn);
+            auto& node = push_container(LayoutKind::Scroll, fn);
+            node.scroll_bar_policy = ScrollBarPolicy::Auto;
+            node.scroll_event_policy = ScrollEventPolicy::BubbleAtBounds;
         }
 
         void scroll(ScrollBarPolicy policy, std::invocable auto&& fn) {
-            push_scroll_container(policy, ScrollEventPolicy::BubbleAtBounds, fn);
+            auto& node = push_container(LayoutKind::Scroll, fn);
+            node.scroll_bar_policy = policy;
+            node.scroll_event_policy = ScrollEventPolicy::BubbleAtBounds;
         }
 
         void scroll(Field<ScrollArea>& field, std::invocable auto&& fn) {
             placed_.insert(&field);
-            auto& scroll_node = push_scroll_container(
-                field.get().scrollbar, field.get().event_policy, fn);
+            auto& scroll_node = push_container(LayoutKind::Scroll, fn);
+            scroll_node.scroll_bar_policy = field.get().scrollbar;
+            scroll_node.scroll_event_policy = field.get().event_policy;
             scroll_node.build_widget = [&field](WidgetNode& wn) {
                 if (!wn.edit_state.has_value())
                     wn.edit_state = ScrollState{};
@@ -937,7 +927,8 @@ public:
                 }
 
                 ss.offset_y = new_offset;
-                ss.show_ticks = 30;
+                constexpr uint8_t scrollbar_visible_frames = 30;
+                ss.show_ticks = scrollbar_visible_frames;
                 mark_dirty(root_, current);
                 return;
             }
@@ -1342,12 +1333,8 @@ private:
             LayoutNode container;
             container.kind = LayoutNode::Kind::Scroll;
             container.id = node.id;
-            if (node.edit_state.has_value()) {
-                try {
-                    auto& ss = std::any_cast<const ScrollState&>(node.edit_state);
-                    container.scroll_offset = ss.offset_y;
-                } catch (...) {}
-            }
+            if (auto* ss = std::any_cast<ScrollState>(&node.edit_state))
+                container.scroll_offset = ss->offset_y;
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));
