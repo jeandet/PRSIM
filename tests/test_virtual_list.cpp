@@ -123,3 +123,112 @@ TEST_CASE("VirtualList stabilizes after two frames") {
     // After two frames, visible range is stable
     CHECK(snap3->geometry.size() == snap2->geometry.size());
 }
+
+TEST_CASE("scroll_at works on VirtualList") {
+    StringListModel model;
+    for (int i = 0; i < 50; ++i)
+        model.items.push_back("item " + std::to_string(i));
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 100, 1);
+    tree.clear_dirty();
+
+    REQUIRE(!snap->geometry.empty());
+    prism::WidgetId leaf_id = 0;
+    for (auto& [id, rect] : snap->geometry) {
+        if (rect.extent.w.raw() > 0 && rect.extent.h.raw() > 0
+            && rect.extent.h.raw() < 50) {
+            leaf_id = id;
+            break;
+        }
+    }
+    REQUIRE(leaf_id != 0);
+
+    tree.scroll_at(leaf_id, prism::DY{50});
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("scroll_at clamps VirtualList to bounds") {
+    StringListModel model;
+    model.items.push_back("only one");
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    auto ids = tree.leaf_ids();
+    REQUIRE(!ids.empty());
+    tree.scroll_at(ids[0], prism::DY{100});
+    CHECK_FALSE(tree.any_dirty());
+}
+
+TEST_CASE("VirtualList reacts to List push_back") {
+    StringListModel model;
+    model.items.push_back("initial");
+
+    prism::WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    model.items.push_back("added");
+    CHECK(tree.any_dirty());
+
+    auto snap2 = tree.build_snapshot(400, 300, 2);
+    CHECK(snap2->geometry.size() >= snap1->geometry.size());
+}
+
+TEST_CASE("VirtualList reacts to List erase") {
+    StringListModel model;
+    model.items.push_back("a");
+    model.items.push_back("b");
+    model.items.push_back("c");
+
+    prism::WidgetTree tree(model);
+    [[maybe_unused]] auto snap1 = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    model.items.erase(1);
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("VirtualList reacts to List set (update)") {
+    StringListModel model;
+    model.items.push_back("original");
+
+    prism::WidgetTree tree(model);
+    [[maybe_unused]] auto snap1 = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    model.items.set(0, "updated");
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("VirtualList full scroll workflow") {
+    StringListModel model;
+    for (int i = 0; i < 100; ++i)
+        model.items.push_back("item " + std::to_string(i));
+
+    prism::WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(400, 100, 1);
+    REQUIRE(snap1 != nullptr);
+    size_t initial_count = snap1->geometry.size();
+    CHECK(initial_count > 0);
+    CHECK(initial_count < 100);
+
+    prism::WidgetId leaf_id = 0;
+    for (auto& [id, rect] : snap1->geometry) {
+        if (rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            leaf_id = id;
+            break;
+        }
+    }
+    if (leaf_id != 0) {
+        tree.scroll_at(leaf_id, prism::DY{200});
+        CHECK(tree.any_dirty());
+    }
+
+    auto snap2 = tree.build_snapshot(400, 100, 2);
+    CHECK(snap2->geometry.size() > 0);
+
+    CHECK(!snap2->overlay_geometry.empty());
+}

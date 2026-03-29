@@ -1041,6 +1041,28 @@ public:
                 mark_dirty(root_, current);
                 return;
             }
+            if (it != index_.end() && it->second->layout_kind == LayoutKind::VirtualList) {
+                auto* vls = get_vlist_state(*it->second);
+                if (vls) {
+                    float content_h = static_cast<float>(vls->item_count.raw())
+                        * vls->item_height.raw();
+                    DY max_offset{std::max(0.f, content_h - vls->viewport_h.raw())};
+                    DY new_offset{std::clamp(
+                        vls->scroll_offset.raw() + delta.raw(), 0.f, max_offset.raw())};
+
+                    if (std::abs(new_offset.raw() - vls->scroll_offset.raw()) < 0.001f) {
+                        auto pit = parent_map_.find(current);
+                        current = (pit != parent_map_.end()) ? pit->second : 0;
+                        continue;
+                    }
+
+                    vls->scroll_offset = new_offset;
+                    constexpr uint8_t scrollbar_visible_frames = 30;
+                    vls->show_ticks = scrollbar_visible_frames;
+                    mark_dirty(root_, current);
+                    return;
+                }
+            }
             auto pit = parent_map_.find(current);
             current = (pit != parent_map_.end()) ? pit->second : 0;
         }
