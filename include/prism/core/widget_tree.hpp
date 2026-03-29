@@ -914,13 +914,6 @@ public:
 
         template <typename T>
         void list(List<T>& items) {
-            list(items, [](ViewBuilder& vb, Field<T>& field, ItemIndex) {
-                vb.widget(field);
-            });
-        }
-
-        template <typename T, typename RowBuilder>
-        void list(List<T>& items, [[maybe_unused]] RowBuilder row_builder) {
             Node container;
             container.id = tree_.next_id_++;
             container.is_leaf = false;
@@ -1270,22 +1263,27 @@ private:
             // Virtual list: connect List<T> signals
             if (node.layout_kind == LayoutKind::VirtualList) {
                 auto id = wn.id;
-                auto* wn_ptr = &wn;
                 if (node.vlist_on_insert) {
                     wn.connections.push_back(
-                        node.vlist_on_insert(0, [this, id, wn_ptr]() {
-                            if (auto* vls = get_vlist_state(*wn_ptr))
-                                vls->item_count = ItemCount{vls->item_count.raw() + 1};
+                        node.vlist_on_insert(0, [this, id]() {
+                            auto it = index_.find(id);
+                            if (it != index_.end()) {
+                                if (auto* vls = get_vlist_state(*it->second))
+                                    vls->item_count = ItemCount{vls->item_count.raw() + 1};
+                            }
                             mark_dirty(root_, id);
                         })
                     );
                 }
                 if (node.vlist_on_remove) {
                     wn.connections.push_back(
-                        node.vlist_on_remove(0, [this, id, wn_ptr]() {
-                            if (auto* vls = get_vlist_state(*wn_ptr)) {
-                                if (vls->item_count.raw() > 0)
-                                    vls->item_count = ItemCount{vls->item_count.raw() - 1};
+                        node.vlist_on_remove(0, [this, id]() {
+                            auto it = index_.find(id);
+                            if (it != index_.end()) {
+                                if (auto* vls = get_vlist_state(*it->second)) {
+                                    if (vls->item_count.raw() > 0)
+                                        vls->item_count = ItemCount{vls->item_count.raw() - 1};
+                                }
                             }
                             mark_dirty(root_, id);
                         })
