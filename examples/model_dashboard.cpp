@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 enum class Theme { Light, Dark, System };
@@ -76,12 +77,14 @@ struct Dashboard {
     prism::Field<prism::TextArea<>> notes{{.placeholder = "Notes...", .rows = 4}};
     prism::Field<prism::Button> increment{{"Increment"}};
     prism::Field<int> counter{0};
+    prism::List<std::string> log_messages;
     prism::State<int> request_count{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.scroll([&] {
             vb.vstack(settings, waveform, status, notes, increment, counter);
         });
+        vb.list(log_messages);
     }
 };
 
@@ -103,13 +106,16 @@ int main() {
               })
         );
 
-        // Button click increments counter
+        // Button click increments counter and appends to log
         connections.push_back(
             dashboard.increment.on_change()
             | prism::on(sched)
             | prism::then([&](const prism::Button&) {
-                  dashboard.counter.set(dashboard.counter.get() + 1);
-                  std::cout << "Counter: " << dashboard.counter.get() << "\n";
+                  auto n = dashboard.counter.get() + 1;
+                  dashboard.counter.set(n);
+                  std::ostringstream oss;
+                  oss << "Event #" << n << " — counter incremented";
+                  dashboard.log_messages.push_back(oss.str());
               })
         );
 
