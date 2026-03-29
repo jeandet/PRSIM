@@ -64,6 +64,7 @@ graph TB
 | [styling.md](styling.md) | Theme as data, context propagation, per-instance overrides | Draft |
 | [delegates-and-sentinels.md](delegates-and-sentinels.md) | Delegate<T> + WidgetVisualState, all sentinels (Label/Slider/Button/Checkbox/TextField/Password/TextArea/Dropdown), overlay system | **Implemented** |
 | [stdexec integration](stdexec-integration.md) | run_loop event loops, prism::then/on pipe adaptors, AppContext | **Implemented** |
+| [canvas escape hatch](../../docs/superpowers/specs/2026-03-29-canvas-escape-hatch-design.md) | `vb.canvas(model)` — custom DrawList rendering in expandable area | **Implemented** |
 | [widget-model.md](widget-model.md) | Persistent widgets from Field<T> via reflection | **Superseded** by field/sender/widget spec |
 | [reactivity.md](reactivity.md) | Sender/observer pattern, Field<T> change propagation | **Superseded** by field/sender/widget spec |
 

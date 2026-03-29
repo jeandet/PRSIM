@@ -116,19 +116,22 @@ struct GasSensor : prism::Component {
 };
 ```
 
-### Custom rendering surface (future, requires canvas)
+### Custom rendering surface (implemented via ViewBuilder::canvas)
 
-The Component IS the visual — no child Fields, just a custom-drawn area with custom input:
+The `vb.canvas(model)` method in ViewBuilder provides the canvas escape hatch. Any struct with a `canvas(DrawList&, Rect, const WidgetNode&)` method can draw custom content. Input handling is optional via `handle_canvas_input()`. See the [canvas spec](../../docs/superpowers/specs/2026-03-29-canvas-escape-hatch-design.md) for details.
 
 ```cpp
-struct PlotView : prism::Component {
+struct PlotView {
     Field<std::vector<float>> data{{}};
 
-    void canvas(DrawList& dl, const Rect& bounds, const WidgetNode& node) override {
+    void canvas(DrawList& dl, Rect bounds, const WidgetNode& node) {
         // custom plot rendering — pan, grid, series
     }
-    void handle_input(const InputEvent& ev, WidgetNode& node) override {
+    void handle_canvas_input(const InputEvent& ev, WidgetNode& node, Rect bounds) {
         // mouse drag for pan, scroll for zoom
+    }
+    void view(WidgetTree::ViewBuilder& vb) {
+        vb.canvas(*this).depends_on(data);
     }
 };
 ```
