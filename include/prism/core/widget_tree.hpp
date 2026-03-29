@@ -16,6 +16,7 @@
 
 #include <any>
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -47,6 +48,46 @@ struct WidgetNode {
     LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
 };
+
+struct VirtualListState {
+    ItemCount item_count{0};
+    Height item_height{0};
+    DY scroll_offset{0};
+    Height viewport_h{0};
+    ItemIndex visible_start{0};
+    ItemIndex visible_end{0};
+    ItemCount overscan{2};
+    ScrollBarPolicy scrollbar{ScrollBarPolicy::Auto};
+    uint8_t show_ticks = 0;
+
+    // Recycling pool of detached WidgetNodes
+    std::vector<WidgetNode> pool;
+
+    // Row factory: creates/rebinds a WidgetNode for item at index
+    std::function<void(WidgetNode&, size_t index)> bind_row;
+
+    // Unbind: disconnect subscriptions, clear state
+    std::function<void(WidgetNode&)> unbind_row;
+};
+
+inline std::pair<ItemIndex, ItemIndex> compute_visible_range(
+    ItemCount item_count, Height item_height, DY scroll_offset,
+    Height viewport_h, ItemCount overscan)
+{
+    if (item_count.raw() == 0 || item_height.raw() <= 0.f)
+        return {ItemIndex{0}, ItemIndex{0}};
+
+    float h = item_height.raw();
+    size_t first_visible = static_cast<size_t>(std::max(0.f, scroll_offset.raw() / h));
+    size_t last_visible = static_cast<size_t>(
+        std::ceil((scroll_offset.raw() + viewport_h.raw()) / h));
+
+    size_t start = (first_visible >= overscan.raw())
+        ? first_visible - overscan.raw() : 0;
+    size_t end = std::min(last_visible + overscan.raw(), item_count.raw());
+
+    return {ItemIndex{start}, ItemIndex{end}};
+}
 
 // Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
 inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }

@@ -10,6 +10,8 @@
 
 namespace prism {
 
+struct WidgetNode;
+
 struct Node {
     WidgetId id = 0;
     bool is_leaf = false;
@@ -28,6 +30,14 @@ struct Node {
     // Scroll container metadata (only meaningful when layout_kind == Scroll)
     ScrollBarPolicy scroll_bar_policy = ScrollBarPolicy::Auto;
     ScrollEventPolicy scroll_event_policy = ScrollEventPolicy::BubbleAtBounds;
+
+    // Virtual list metadata (only meaningful when layout_kind == VirtualList)
+    std::function<void(WidgetNode&, size_t index)> vlist_bind_row;
+    std::function<void(WidgetNode&)> vlist_unbind_row;
+    std::function<Connection(size_t, std::function<void()>)> vlist_on_insert;
+    std::function<Connection(size_t, std::function<void()>)> vlist_on_remove;
+    std::function<Connection(size_t, std::function<void()>)> vlist_on_update;
+    size_t vlist_item_count = 0;
 };
 
 } // namespace prism

@@ -38,3 +38,43 @@ TEST_CASE("IntScalar arithmetic: ItemCount + ItemCount = ItemCount") {
     static_assert(std::is_same_v<decltype(result), ItemCount>);
     CHECK(result.raw() == 5);
 }
+
+#include <prism/core/widget_tree.hpp>
+
+TEST_CASE("VirtualListState default construction") {
+    prism::VirtualListState state;
+    CHECK(state.item_count.raw() == 0);
+    CHECK(state.scroll_offset.raw() == doctest::Approx(0));
+    CHECK(state.viewport_h.raw() == doctest::Approx(0));
+    CHECK(state.visible_start.raw() == 0);
+    CHECK(state.visible_end.raw() == 0);
+    CHECK(state.overscan.raw() == 2);
+}
+
+TEST_CASE("compute_visible_range — basic viewport") {
+    auto [start, end] = prism::compute_visible_range(
+        ItemCount{100}, Height{30}, DY{0}, Height{100}, ItemCount{2});
+    CHECK(start.raw() == 0);
+    CHECK(end.raw() == 6);
+}
+
+TEST_CASE("compute_visible_range — scrolled down") {
+    auto [start, end] = prism::compute_visible_range(
+        ItemCount{100}, Height{30}, DY{90}, Height{100}, ItemCount{2});
+    CHECK(start.raw() == 1);
+    CHECK(end.raw() == 9);
+}
+
+TEST_CASE("compute_visible_range — clamp to item count") {
+    auto [start, end] = prism::compute_visible_range(
+        ItemCount{5}, Height{30}, DY{0}, Height{300}, ItemCount{2});
+    CHECK(start.raw() == 0);
+    CHECK(end.raw() == 5);
+}
+
+TEST_CASE("compute_visible_range — empty list") {
+    auto [start, end] = prism::compute_visible_range(
+        ItemCount{0}, Height{30}, DY{0}, Height{100}, ItemCount{2});
+    CHECK(start.raw() == 0);
+    CHECK(end.raw() == 0);
+}
