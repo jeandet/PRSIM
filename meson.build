@@ -12,7 +12,10 @@ project('prism', 'cpp',
   meson_version : '>= 1.5.0',
 )
 
-add_project_arguments('-freflection', language : 'cpp')
+cpp = meson.get_compiler('cpp')
+if cpp.has_argument('-freflection')
+  add_project_arguments('-freflection', language : 'cpp')
+endif
 
 prism_inc = include_directories('include')
 
