@@ -114,14 +114,11 @@ struct SpacerModel {
     prism::Field<int> a{0};
     prism::Field<int> b{0};
 
-    // column wrapper gives the row full window width so the spacer can expand
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.column([&] {
-            vb.row([&] {
-                vb.widget(a);
-                vb.spacer();
-                vb.widget(b);
-            });
+        vb.row([&] {
+            vb.widget(a);
+            vb.spacer();
+            vb.widget(b);
         });
     }
 };

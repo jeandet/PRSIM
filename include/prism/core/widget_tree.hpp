@@ -739,8 +739,10 @@ public:
             }
             if (target_.children.size() == 1) {
                 auto lk = target_.children[0].layout_kind;
-                if (lk == WidgetNode::LayoutKind::Row || lk == WidgetNode::LayoutKind::Column)
+                if (lk == WidgetNode::LayoutKind::Row || lk == WidgetNode::LayoutKind::Column) {
                     target_.layout_kind = lk;
+                    target_.children = std::move(target_.children[0].children);
+                }
             }
         }
     };
@@ -862,7 +864,8 @@ public:
         layout.kind = (root_.layout_kind == WidgetNode::LayoutKind::Row)
             ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
         layout.id = root_.id;
-        build_layout(root_, layout);
+        for (auto& c : root_.children)
+            build_layout(c, layout);
 
         layout_measure(layout, LayoutAxis::Vertical);
         layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
