@@ -18,6 +18,7 @@ struct Settings {
 struct Dashboard {
     Settings settings;
     prism::Field<prism::Label<>> status{{"All systems go"}};
+    prism::Field<prism::TextArea<>> notes{{.placeholder = "Notes...", .rows = 4}};
     prism::Field<prism::Button> increment{{"Increment"}};
     prism::Field<int> counter{0};
     prism::State<int> request_count{0};
