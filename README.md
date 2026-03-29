@@ -4,9 +4,9 @@
 
 # PRISM — Persistent Rendering & Interactive Scene Model
 
-**This is an R&D experiment** — exploring what a 2D UI toolkit could look like if built from scratch in C++26 with no legacy constraints. Nothing here is production-ready.
+**This is an R&D experiment** — exploring what a 2D UI toolkit could look like if built from scratch in modern C++ with no legacy constraints. Nothing here is production-ready.
 
-> Take Qt's persistent widget tree, strip away moc and QObject, replace signal/slot strings with C++26 senders, and let P2996 reflection generate the UI from plain structs.
+> Take Qt's persistent widget tree, strip away moc and QObject, replace signal/slot strings with C++26 senders, and let model structs generate the UI — via P2996 reflection on C++26, or manual `view()` on C++23.
 
 ## The Problem
 
@@ -136,7 +136,7 @@ graph TD
     S --> DM["dark_mode : Field&lt;bool&gt;"]
 ```
 
-C++26 reflection (`P2996`) walks the struct members at compile time — `Field<T>` gets a widget, `State<T>` is skipped, nested structs recurse. No registration, no moc, no string-based identity.
+On C++26, P2996 reflection walks the struct members automatically — `Field<T>` gets a widget, `State<T>` is skipped, nested structs recurse. On C++23, each model provides a `view()` method that describes the same tree manually. Both paths produce identical output through an intermediate `Node` layer. No registration, no moc, no string-based identity.
 
 ## Three Entry Points
 
@@ -199,20 +199,25 @@ sequenceDiagram
 
 Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when nothing changes.
 
-## C++26 Features
+## C++ Features
 
-| Feature | Used for |
-|---|---|
-| Static Reflection (P2996) | Walk model structs, map `Field<T>` to widgets, generate UI |
-| `std::execution` (P2300) | `run_loop` event loop, `prism::then` / `prism::on` pipe adaptors |
-| Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` |
-| Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), strong type algebra (`Addable`, `Scalable`) |
-| `std::expected` | Fallible API operations — no exceptions at API boundary |
-| Designated initialisers | Named-parameter widget construction |
+| Feature | Used for | Required |
+|---|---|---|
+| Static Reflection (P2996) | Auto-generate UI from model structs | **Optional** — `view()` method is the fallback |
+| `std::execution` (P2300) | `run_loop` event loop, `prism::then` / `prism::on` pipe adaptors | Yes (via stdexec) |
+| Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` | Yes |
+| Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), strong type algebra | Yes (C++20) |
+| `std::expected` | Fallible API operations — no exceptions at API boundary | Yes (C++23) |
+| Designated initialisers | Named-parameter widget construction | Yes (C++20) |
+| magic_enum | Enum introspection fallback when P2996 is unavailable | Auto — only on pre-C++26 |
 
 ## Building
 
-Requires **GCC 16+** with C++26 reflection support and **Meson >= 1.5**.
+**Minimum:** C++23 compiler (GCC 14+, Clang 17+) and **Meson >= 1.5**.
+
+**With reflection:** GCC 16+ with `-freflection` (auto-detected by the build system). When available, model structs don't need a `view()` method — P2996 generates the UI automatically.
+
+**Without reflection:** All model structs must provide a `view()` method that describes the widget tree via `ViewBuilder`. Enum dropdowns use magic_enum (fetched automatically as a Meson wrap).
 
 ```bash
 meson setup builddir
@@ -220,7 +225,7 @@ ninja -C builddir
 meson test -C builddir
 ```
 
-The build automatically passes `-freflection` for P2996 support. Dependencies (SDL3, doctest) are fetched via Meson wraps.
+The build auto-detects `-freflection` support and conditionally enables P2996. Dependencies (SDL3, stdexec, doctest, magic_enum) are fetched via Meson wraps.
 
 ## Roadmap
 
@@ -228,16 +233,20 @@ The build automatically passes `-freflection` for P2996 support. Dependencies (S
 graph LR
     P1["Phase 1<br/>Core Infrastructure<br/><b>DONE</b>"]
     P2["Phase 2<br/>Layout + Observers<br/><b>DONE</b>"]
-    P3["Phase 3<br/>Widgets + Rendering<br/><i>next</i>"]
+    P3["Phase 3<br/>Widgets + Rendering<br/><b>DONE</b>"]
+    P35["Phase 3.5<br/>stdexec<br/><b>DONE</b>"]
+    P36["Phase 3.6<br/>Node Tree<br/><b>DONE</b>"]
     P4["Phase 4<br/>Advanced Features"]
     P5["Phase 5<br/>GPU Backend"]
 
-    P1 --> P2 --> P3 --> P4 --> P5
+    P1 --> P2 --> P3 --> P35 --> P36 --> P4 --> P5
 ```
 
 - **Phase 1** (done) — DrawList, SceneSnapshot, SDL3 backend, event-driven loop
 - **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
-- **Phase 3** (in progress) — Delegate dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown, enum auto-dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, strong coordinate types (`Scalar<Tag>` zero-cost wrappers with compile-time affine algebra), `clip_push` local coordinate system. Next: custom `view()`, `canvas()` escape hatch
+- **Phase 3** (done) — Delegate dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), custom `view()` override, `canvas()` escape hatch, strong coordinate types, `clip_push` local coordinate system
+- **Phase 3.5** (done) — stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, `AppContext`
+- **Phase 3.6** (done) — `Node` intermediate layer (type-erased `Field<T>` + children), pre-C++26 support via `view()` methods, magic_enum enum fallback, `#if __cpp_impl_reflection` guards (only 2 locations)
 - **Phase 4** — Animation, accessibility, scroll areas, data widgets (plot, table)
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
@@ -256,6 +265,7 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Input Routing](docs/superpowers/specs/2026-03-27-input-routing-design.md) — hit_test → dispatch → delegate handle_input → field mutation
 - [stdexec Integration](doc/design/stdexec-integration.md) — run_loop event loops, prism::then/on pipe adaptors, AppContext
 - [SDL_Renderer Migration](docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) — SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit
+- [Dynamic Node Tree](doc/design/dynamic-node-tree.md) — `Node` intermediate layer, pre-C++26 support, ViewBuilder→Node→WidgetNode pipeline
 - [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
 - [Components](doc/design/components.md) — `prism::Component` base class, self-wiring reusable UI + logic bundles (design only)
 

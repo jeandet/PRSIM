@@ -12,7 +12,7 @@ PRISM follows a **Model-View-Behavior** pattern — three clearly separated laye
 
 The key distinction from MVC/MVVM: View and Behavior are not mediated by a controller or view-model. The Model is the single source of truth. Delegates handle widget-level input mechanics (e.g. translating a click into a toggle). Behavior handles domain logic (e.g. "when volume exceeds 0.9, show a warning").
 
-P2996 reflection bridges Model to View automatically — `Field<T>` structs become widgets with zero boilerplate.
+On C++26, P2996 reflection bridges Model to View automatically. On C++23, models provide a `view()` method. Both paths produce identical widget trees through an intermediate `Node` layer.
 
 ```mermaid
 graph TB
@@ -65,6 +65,7 @@ graph TB
 | [delegates-and-sentinels.md](delegates-and-sentinels.md) | Delegate<T> + WidgetVisualState, all sentinels (Label/Slider/Button/Checkbox/TextField/Password/TextArea/Dropdown), overlay system | **Implemented** |
 | [stdexec integration](stdexec-integration.md) | run_loop event loops, prism::then/on pipe adaptors, AppContext | **Implemented** |
 | [canvas escape hatch](../../docs/superpowers/specs/2026-03-29-canvas-escape-hatch-design.md) | `vb.canvas(model)` — custom DrawList rendering in expandable area | **Implemented** |
+| [dynamic-node-tree.md](dynamic-node-tree.md) | Node intermediate layer — ViewBuilder→Node→WidgetNode pipeline, pre-C++26 support | **Implemented** |
 | [widget-model.md](widget-model.md) | Persistent widgets from Field<T> via reflection | **Superseded** by field/sender/widget spec |
 | [reactivity.md](reactivity.md) | Sender/observer pattern, Field<T> change propagation | **Superseded** by field/sender/widget spec |
 
@@ -73,7 +74,7 @@ graph TB
 | Document | Subsystem |
 |---|---|
 | [components.md](components.md) | `prism::Component` base class — self-wiring reusable UI + logic bundles | **Design only** |
-| [dynamic-node-tree.md](dynamic-node-tree.md) | Runtime `Node` tree — type-erased `Field<T>` + children, same WidgetNode output as reflection | **Design only** |
+| [dynamic-node-tree.md](dynamic-node-tree.md) | Runtime `Node` tree — future: public API for dynamic UIs, tree mutation | **Future** |
 | [proxy-widget.md](proxy-widget.md) | Composite foreign renderers (CEF, VTK, mpv, etc.) as regular widgets via shared surfaces | **Concept** |
 | python-bindings | nanobind wrapping, GIL-free Python 3.14+, callback threading |
 | testing-strategy | doctest, synchronous scheduler, headless rendering, visual regression |
