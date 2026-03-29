@@ -26,3 +26,26 @@ TEST_CASE("build_snapshot with default layout stacks vertically") {
     auto& [id1, r1] = snap->geometry[1];
     CHECK(r1.origin.y.raw() >= r0.origin.y.raw() + r0.extent.h.raw());
 }
+
+struct ViewModelSimple {
+    prism::Field<int> a{0};
+    prism::Field<int> b{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(b);
+        vb.widget(a);
+    }
+};
+
+TEST_CASE("view() controls field order") {
+    ViewModelSimple model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 2);
+
+    tree.clear_dirty();
+    model.b.set(42);
+    CHECK(tree.any_dirty());
+}

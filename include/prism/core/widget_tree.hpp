@@ -677,6 +677,77 @@ void Delegate<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputE
 // is fully built before build_index runs and never mutated after construction.
 class WidgetTree {
 public:
+    class ViewBuilder {
+        WidgetTree& tree_;
+        WidgetNode& target_;
+        std::vector<WidgetNode*> stack_;
+
+        WidgetNode& current_parent() {
+            return stack_.empty() ? target_ : *stack_.back();
+        }
+
+    public:
+        ViewBuilder(WidgetTree& tree, WidgetNode& target)
+            : tree_(tree), target_(target) {}
+
+        template <typename T>
+        void widget(Field<T>& field) {
+            current_parent().children.push_back(tree_.build_leaf(field));
+        }
+
+        template <typename C>
+        void component(C& comp) {
+            current_parent().children.push_back(tree_.build_container(comp));
+        }
+
+        void row(std::invocable auto&& fn) {
+            WidgetNode container;
+            container.id = tree_.next_id_++;
+            container.is_container = true;
+            container.layout_kind = WidgetNode::LayoutKind::Row;
+            auto& parent = current_parent();
+            parent.children.push_back(std::move(container));
+            stack_.push_back(&parent.children.back());
+            fn();
+            stack_.pop_back();
+        }
+
+        void column(std::invocable auto&& fn) {
+            WidgetNode container;
+            container.id = tree_.next_id_++;
+            container.is_container = true;
+            container.layout_kind = WidgetNode::LayoutKind::Column;
+            auto& parent = current_parent();
+            parent.children.push_back(std::move(container));
+            stack_.push_back(&parent.children.back());
+            fn();
+            stack_.pop_back();
+        }
+
+        void spacer() {
+            WidgetNode s;
+            s.id = tree_.next_id_++;
+            s.is_container = false;
+            s.layout_kind = WidgetNode::LayoutKind::Spacer;
+            current_parent().children.push_back(std::move(s));
+        }
+
+        void finalize() {
+            if (target_.children.size() > 1) {
+                WidgetNode wrapper;
+                wrapper.id = tree_.next_id_++;
+                wrapper.is_container = true;
+                wrapper.layout_kind = WidgetNode::LayoutKind::Column;
+                wrapper.children = std::move(target_.children);
+                target_.children.clear();
+                target_.children.push_back(std::move(wrapper));
+            }
+            if (target_.children.size() == 1) {
+                target_.layout_kind = target_.children[0].layout_kind;
+            }
+        }
+    };
+
     template <typename Model>
     explicit WidgetTree(Model& model) {
         root_ = build_container(model);
@@ -942,20 +1013,25 @@ private:
         container.id = next_id_++;
         container.is_container = true;
 
-        static constexpr auto members = std::define_static_array(
-            std::meta::nonstatic_data_members_of(
-                ^^Model, std::meta::access_context::unchecked()));
+        if constexpr (requires(Model& m, ViewBuilder& vb) { m.view(vb); }) {
+            ViewBuilder vb{*this, container};
+            model.view(vb);
+            vb.finalize();
+        } else {
+            static constexpr auto members = std::define_static_array(
+                std::meta::nonstatic_data_members_of(
+                    ^^Model, std::meta::access_context::unchecked()));
 
-        template for (constexpr auto m : members) {
-            auto& member = model.[:m:];
-            using M = std::remove_cvref_t<decltype(member)>;
+            template for (constexpr auto m : members) {
+                auto& member = model.[:m:];
+                using M = std::remove_cvref_t<decltype(member)>;
 
-            if constexpr (is_state_v<M>) {
-                // invisible observable -- no widget
-            } else if constexpr (is_field_v<M>) {
-                container.children.push_back(build_leaf(member));
-            } else if constexpr (is_component_v<M>) {
-                container.children.push_back(build_container(member));
+                if constexpr (is_state_v<M>) {
+                } else if constexpr (is_field_v<M>) {
+                    container.children.push_back(build_leaf(member));
+                } else if constexpr (is_component_v<M>) {
+                    container.children.push_back(build_container(member));
+                }
             }
         }
 
