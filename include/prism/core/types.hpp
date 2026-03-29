@@ -103,6 +103,46 @@ constexpr Scalar<scale_result_t<Tag>> operator-(Scalar<Tag> a) {
     return Scalar<scale_result_t<Tag>>{-a.raw()};
 }
 
+// Integer scalar (for item indices and counts)
+template <typename Tag>
+struct IntScalar {
+    constexpr IntScalar() : v_(0) {}
+    constexpr explicit IntScalar(size_t v) : v_(v) {}
+    [[nodiscard]] constexpr size_t raw() const { return v_; }
+    constexpr auto operator<=>(const IntScalar&) const = default;
+private:
+    size_t v_;
+};
+
+struct ItemIndexTag {};
+struct ItemCountTag {};
+
+using ItemIndex = IntScalar<ItemIndexTag>;
+using ItemCount = IntScalar<ItemCountTag>;
+
+// Affine arithmetic rules for IntScalar (mirrors Scalar patterns)
+template <typename LTag, typename RTag> struct IntAddResult;
+template <typename LTag, typename RTag> struct IntSubResult;
+
+template <> struct IntAddResult<ItemIndexTag, ItemCountTag> { using type = ItemIndexTag; };
+template <> struct IntAddResult<ItemCountTag, ItemCountTag> { using type = ItemCountTag; };
+template <> struct IntSubResult<ItemIndexTag, ItemIndexTag> { using type = ItemCountTag; };
+template <> struct IntSubResult<ItemCountTag, ItemCountTag> { using type = ItemCountTag; };
+template <> struct IntSubResult<ItemIndexTag, ItemCountTag> { using type = ItemIndexTag; };
+
+template <typename L, typename R> concept IntAddable = requires { typename IntAddResult<L, R>::type; };
+template <typename L, typename R> concept IntSubtractable = requires { typename IntSubResult<L, R>::type; };
+
+template <typename L, typename R> requires IntAddable<L, R>
+constexpr IntScalar<typename IntAddResult<L, R>::type> operator+(IntScalar<L> a, IntScalar<R> b) {
+    return IntScalar<typename IntAddResult<L, R>::type>{a.raw() + b.raw()};
+}
+
+template <typename L, typename R> requires IntSubtractable<L, R>
+constexpr IntScalar<typename IntSubResult<L, R>::type> operator-(IntScalar<L> a, IntScalar<R> b) {
+    return IntScalar<typename IntSubResult<L, R>::type>{a.raw() - b.raw()};
+}
+
 // Composite types
 struct Offset {
     DX dx; DY dy;

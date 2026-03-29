@@ -26,6 +26,7 @@ headless_tests = {
   'view' : files('test_view.cpp'),
   'node' : files('test_node.cpp'),
   'scroll' : files('test_scroll.cpp'),
+  'virtual_list' : files('test_virtual_list.cpp'),
 }
 
 foreach name, src : headless_tests
