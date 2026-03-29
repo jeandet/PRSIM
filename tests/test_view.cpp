@@ -389,6 +389,45 @@ TEST_CASE("canvas depends_on supports multiple fields") {
     CHECK(tree.any_dirty());
 }
 
+// ── Task 5: canvas input handling ────────────────────────────────────────────
+
+struct InteractiveCanvas {
+    prism::Field<int> click_count{0};
+    bool input_received = false;
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+        dl.filled_rect(bounds, prism::Color::rgba(30, 30, 40));
+    }
+
+    void handle_canvas_input(const prism::InputEvent& ev, prism::WidgetNode&, prism::Rect) {
+        if (std::get_if<prism::MouseButton>(&ev))
+            input_received = true;
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.canvas(*this).depends_on(click_count);
+    }
+};
+
+TEST_CASE("canvas with handle_canvas_input is focusable") {
+    InteractiveCanvas model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    CHECK(focus.size() == 1);
+}
+
+TEST_CASE("canvas dispatches input to handle_canvas_input") {
+    InteractiveCanvas model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 1);
+
+    prism::MouseButton click{prism::Point{prism::X{50}, prism::Y{50}}, 1, true};
+    tree.dispatch(ids[0], click);
+
+    CHECK(model.input_received);
+}
+
 TEST_CASE("canvas node expands to fill remaining space") {
     CanvasModel model;
     prism::WidgetTree tree(model);

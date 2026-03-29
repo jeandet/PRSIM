@@ -767,6 +767,19 @@ public:
             };
             node.record(node);
 
+            if constexpr (requires(T& t, const InputEvent& ev, WidgetNode& n, Rect r) {
+                               t.handle_canvas_input(ev, n, r);
+                           }) {
+                node.focus_policy = FocusPolicy::tab_and_click;
+                node.wire = [&model](WidgetNode& n) {
+                    n.connections.push_back(
+                        n.on_input.connect([&model, &n](const InputEvent& ev) {
+                            model.handle_canvas_input(ev, n, n.canvas_bounds);
+                        })
+                    );
+                };
+            }
+
             current_parent().children.push_back(std::move(node));
             return CanvasHandle{current_parent().children.back(), tree_};
         }
