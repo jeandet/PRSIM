@@ -6,6 +6,7 @@
 #include <prism/core/field.hpp>
 #include <prism/core/input_event.hpp>
 #include <prism/core/layout.hpp>
+#include <prism/core/list.hpp>
 #include <prism/core/node.hpp>
 #include <prism/core/traits.hpp>
 #if __cpp_impl_reflection
@@ -14,6 +15,7 @@
 #include <prism/core/scene_snapshot.hpp>
 #include <prism/core/state.hpp>
 
+#include <algorithm>
 #include <any>
 #include <cassert>
 #include <cmath>
@@ -40,9 +42,11 @@ struct WidgetNode {
     std::any edit_state;
     DrawList draws;
     DrawList overlay_draws;
-    std::vector<Connection> connections;
     std::vector<WidgetNode> children;
     SenderHub<const InputEvent&> on_input;
+    // connections must be declared after on_input so they are destroyed first,
+    // disconnecting from on_input before it is destroyed
+    std::vector<Connection> connections;
     std::function<void(WidgetNode&)> wire;
     std::function<void(WidgetNode&)> record;
     LayoutKind layout_kind = LayoutKind::Default;
@@ -908,6 +912,70 @@ public:
             return CanvasHandle{current_parent().children.back()};
         }
 
+        template <typename T>
+        void list(List<T>& items) {
+            list(items, [](ViewBuilder& vb, Field<T>& field, ItemIndex) {
+                vb.widget(field);
+            });
+        }
+
+        template <typename T, typename RowBuilder>
+        void list(List<T>& items, [[maybe_unused]] RowBuilder row_builder) {
+            Node container;
+            container.id = tree_.next_id_++;
+            container.is_leaf = false;
+            container.layout_kind = LayoutKind::VirtualList;
+            container.vlist_item_count = items.size();
+
+            container.vlist_bind_row = [&items](WidgetNode& wn, size_t index) {
+                auto field_ptr = std::make_shared<Field<T>>(items[index]);
+                wn.edit_state = field_ptr;
+                wn.focus_policy = Delegate<T>::focus_policy;
+                wn.dirty = true;
+                wn.is_container = false;
+                wn.draws.clear();
+                wn.overlay_draws.clear();
+                wn.record = [field_ptr](WidgetNode& node) {
+                    node.draws.clear();
+                    node.overlay_draws.clear();
+                    Delegate<T>::record(node.draws, *field_ptr, node);
+                };
+                wn.record(wn);
+                wn.wire = [field_ptr](WidgetNode& node) {
+                    node.connections.push_back(
+                        node.on_input.connect([field_ptr, &node](const InputEvent& ev) {
+                            Delegate<T>::handle_input(*field_ptr, ev, node);
+                        })
+                    );
+                };
+            };
+
+            container.vlist_unbind_row = [](WidgetNode& wn) {
+                wn.connections.clear();
+                wn.draws.clear();
+                wn.overlay_draws.clear();
+                wn.edit_state.reset();
+                wn.wire = nullptr;
+                wn.record = nullptr;
+                wn.dirty = false;
+            };
+
+            container.vlist_on_insert = [&items](size_t, std::function<void()> cb) -> Connection {
+                return items.on_insert().connect(
+                    [cb = std::move(cb)](size_t, const auto&) { cb(); });
+            };
+            container.vlist_on_remove = [&items](size_t, std::function<void()> cb) -> Connection {
+                return items.on_remove().connect(
+                    [cb = std::move(cb)](size_t) { cb(); });
+            };
+            container.vlist_on_update = [&items](size_t, std::function<void()> cb) -> Connection {
+                return items.on_update().connect(
+                    [cb = std::move(cb)](size_t, const auto&) { cb(); });
+            };
+
+            current_parent().children.push_back(std::move(container));
+        }
+
         void finalize() {
             if (target_.children.size() > 1) {
                 Node wrapper;
@@ -1075,6 +1143,7 @@ public:
 
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
         refresh_dirty(root_);
+        materialize_all_virtual_lists(root_);
 
         LayoutNode layout;
         // root_ is always a container; Spacer is only valid on non-container nodes
@@ -1115,6 +1184,11 @@ private:
         return std::any_cast<ScrollState&>(node.edit_state);
     }
 
+    static VirtualListState* get_vlist_state(WidgetNode& node) {
+        auto* sp = std::any_cast<std::shared_ptr<VirtualListState>>(&node.edit_state);
+        return sp ? sp->get() : nullptr;
+    }
+
     // --- Node → WidgetNode conversion ---
 
     static WidgetNode build_widget_node(Node& node) {
@@ -1134,9 +1208,17 @@ private:
                 wn.edit_state = ss;
                 if (node.build_widget)
                     node.build_widget(wn);  // Field<ScrollArea> overrides
+            } else if (node.layout_kind == LayoutKind::VirtualList) {
+                auto vls = std::make_shared<VirtualListState>();
+                vls->item_count = ItemCount{node.vlist_item_count};
+                if (node.vlist_bind_row) vls->bind_row = node.vlist_bind_row;
+                if (node.vlist_unbind_row) vls->unbind_row = node.vlist_unbind_row;
+                wn.edit_state = vls;
             }
-            for (auto& child : node.children)
-                wn.children.push_back(build_widget_node(child));
+            if (node.layout_kind != LayoutKind::VirtualList) {
+                for (auto& child : node.children)
+                    wn.children.push_back(build_widget_node(child));
+            }
         }
         return wn;
     }
@@ -1162,6 +1244,41 @@ private:
                     node.on_change([this, id]() { mark_dirty(root_, id); })
                 );
             }
+
+            // Virtual list: connect List<T> signals
+            if (node.layout_kind == LayoutKind::VirtualList) {
+                auto id = wn.id;
+                auto* wn_ptr = &wn;
+                if (node.vlist_on_insert) {
+                    wn.connections.push_back(
+                        node.vlist_on_insert(0, [this, id, wn_ptr]() {
+                            if (auto* vls = get_vlist_state(*wn_ptr))
+                                vls->item_count = ItemCount{vls->item_count.raw() + 1};
+                            mark_dirty(root_, id);
+                        })
+                    );
+                }
+                if (node.vlist_on_remove) {
+                    wn.connections.push_back(
+                        node.vlist_on_remove(0, [this, id, wn_ptr]() {
+                            if (auto* vls = get_vlist_state(*wn_ptr)) {
+                                if (vls->item_count.raw() > 0)
+                                    vls->item_count = ItemCount{vls->item_count.raw() - 1};
+                            }
+                            mark_dirty(root_, id);
+                        })
+                    );
+                }
+                if (node.vlist_on_update) {
+                    wn.connections.push_back(
+                        node.vlist_on_update(0, [this, id]() {
+                            mark_dirty(root_, id);
+                        })
+                    );
+                }
+                return; // no child nodes to recurse into
+            }
+
             assert(node.children.size() == wn.children.size());
             for (size_t i = 0; i < node.children.size(); ++i)
                 connect_dirty(node.children[i], wn.children[i]);
@@ -1316,6 +1433,22 @@ private:
                 if (ss.show_ticks > 0) ss.show_ticks--;
             }
         }
+        if (layout_node.kind == LayoutNode::Kind::VirtualList) {
+            auto it = index_.find(layout_node.id);
+            if (it != index_.end()) {
+                auto* vls = get_vlist_state(*it->second);
+                if (vls) {
+                    vls->viewport_h = layout_node.allocated.extent.h;
+                    float content_h = static_cast<float>(vls->item_count.raw())
+                        * vls->item_height.raw();
+                    DY max_offset{std::max(0.f, content_h - vls->viewport_h.raw())};
+                    vls->scroll_offset = DY{std::clamp(
+                        vls->scroll_offset.raw(), 0.f, max_offset.raw())};
+                    layout_node.scroll_offset = vls->scroll_offset;
+                    if (vls->show_ticks > 0) vls->show_ticks--;
+                }
+            }
+        }
         for (auto& child : layout_node.children)
             update_scroll_state(child);
     }
@@ -1344,6 +1477,72 @@ private:
             if (found) return found;
         }
         return nullptr;
+    }
+
+    void materialize_virtual_list(WidgetNode& node) {
+        auto* vls = get_vlist_state(node);
+        if (!vls || !vls->bind_row) return;
+
+        // Measure item height from first item if not yet known
+        if (vls->item_height.raw() <= 0.f && vls->item_count.raw() > 0) {
+            WidgetNode probe;
+            probe.id = next_id_++;
+            vls->bind_row(probe, 0);
+            auto bb = probe.draws.bounding_box();
+            vls->item_height = bb.extent.h;
+            if (vls->unbind_row) vls->unbind_row(probe);
+        }
+
+        auto [new_start, new_end] = compute_visible_range(
+            vls->item_count, vls->item_height, vls->scroll_offset,
+            vls->viewport_h, vls->overscan);
+
+        // Unbind all current children -> pool
+        for (auto it = node.children.rbegin(); it != node.children.rend(); ++it) {
+            index_.erase(it->id);
+            parent_map_.erase(it->id);
+            std::erase(focus_order_, it->id);
+            if (vls->unbind_row) vls->unbind_row(*it);
+            vls->pool.push_back(std::move(*it));
+        }
+        node.children.clear();
+
+        // Bind children for visible range (wire after push to avoid dangling SenderHub pointers)
+        size_t range_size = new_end.raw() - new_start.raw();
+        node.children.reserve(range_size);
+        for (size_t i = new_start.raw(); i < new_end.raw(); ++i) {
+            WidgetNode wn;
+            if (!vls->pool.empty()) {
+                wn = std::move(vls->pool.back());
+                vls->pool.pop_back();
+            } else {
+                wn.id = next_id_++;
+            }
+            vls->bind_row(wn, i);
+            parent_map_[wn.id] = node.id;
+            if (wn.focus_policy != FocusPolicy::none)
+                focus_order_.push_back(wn.id);
+            node.children.push_back(std::move(wn));
+        }
+
+        // Wire and fix index pointers after all children are in final positions
+        for (auto& c : node.children) {
+            if (c.wire) {
+                c.wire(c);
+                c.wire = nullptr;
+            }
+            index_[c.id] = &c;
+        }
+
+        vls->visible_start = new_start;
+        vls->visible_end = new_end;
+    }
+
+    void materialize_all_virtual_lists(WidgetNode& node) {
+        if (node.layout_kind == LayoutKind::VirtualList)
+            materialize_virtual_list(node);
+        for (auto& c : node.children)
+            materialize_all_virtual_lists(c);
     }
 
     static void build_layout(WidgetNode& node, LayoutNode& parent) {
@@ -1376,6 +1575,18 @@ private:
             container.id = node.id;
             if (auto* ss = std::any_cast<ScrollState>(&node.edit_state))
                 container.scroll_offset = ss->offset_y;
+            for (auto& c : node.children)
+                build_layout(c, container);
+            parent.children.push_back(std::move(container));
+        } else if (node.layout_kind == LK::VirtualList) {
+            LayoutNode container;
+            container.kind = LayoutNode::Kind::VirtualList;
+            container.id = node.id;
+            if (auto* vls = get_vlist_state(node)) {
+                container.scroll_offset = vls->scroll_offset;
+                container.scroll_content_h = Height{
+                    static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
+            }
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));

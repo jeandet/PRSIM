@@ -78,3 +78,48 @@ TEST_CASE("compute_visible_range — empty list") {
     CHECK(start.raw() == 0);
     CHECK(end.raw() == 0);
 }
+
+#include <prism/core/list.hpp>
+
+struct StringListModel {
+    prism::List<std::string> items;
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.list(items);
+    }
+};
+
+TEST_CASE("ViewBuilder::list creates VirtualList node") {
+    StringListModel model;
+    model.items.push_back("alpha");
+    model.items.push_back("beta");
+    model.items.push_back("gamma");
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    CHECK(snap != nullptr);
+    CHECK(snap->geometry.size() > 0);
+}
+
+TEST_CASE("VirtualList materializes visible items") {
+    StringListModel model;
+    for (int i = 0; i < 20; ++i)
+        model.items.push_back("item " + std::to_string(i));
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 100, 1);
+    CHECK(snap != nullptr);
+    CHECK(snap->geometry.size() < 20);
+    CHECK(snap->geometry.size() > 0);
+}
+
+TEST_CASE("VirtualList stabilizes after two frames") {
+    StringListModel model;
+    for (int i = 0; i < 50; ++i)
+        model.items.push_back("item " + std::to_string(i));
+    prism::WidgetTree tree(model);
+    // First frame: viewport_h unknown, second frame: viewport_h set by layout
+    auto snap1 = tree.build_snapshot(400, 100, 1);
+    auto snap2 = tree.build_snapshot(400, 100, 2);
+    auto snap3 = tree.build_snapshot(400, 100, 3);
+    CHECK(snap2->geometry.size() > 0);
+    // After two frames, visible range is stable
+    CHECK(snap3->geometry.size() == snap2->geometry.size());
+}
