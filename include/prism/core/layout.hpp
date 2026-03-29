@@ -52,34 +52,44 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     case LayoutNode::Kind::Row: {
         LayoutAxis child_axis = LayoutAxis::Horizontal;
         float sum = 0, max_cross = 0;
+        bool has_expander = false;
         for (auto& child : node.children) {
             layout_measure(child, child_axis);
             sum += child.hint.preferred;
             max_cross = std::max(max_cross, child.hint.cross);
+            if (child.hint.expand) has_expander = true;
         }
         if (parent_axis == LayoutAxis::Horizontal) {
             node.hint.preferred = sum;
             node.hint.cross = max_cross;
+            if (has_expander) node.hint.expand = true;
         } else {
             node.hint.preferred = max_cross;
             node.hint.cross = sum;
+            // Cross-axis expander: child row wants to expand horizontally,
+            // but parent is vertical — propagate expand on main axis
+            if (has_expander) node.hint.expand = true;
         }
         return;
     }
     case LayoutNode::Kind::Column: {
         LayoutAxis child_axis = LayoutAxis::Vertical;
         float sum = 0, max_cross = 0;
+        bool has_expander = false;
         for (auto& child : node.children) {
             layout_measure(child, child_axis);
             sum += child.hint.preferred;
             max_cross = std::max(max_cross, child.hint.cross);
+            if (child.hint.expand) has_expander = true;
         }
         if (parent_axis == LayoutAxis::Vertical) {
             node.hint.preferred = sum;
             node.hint.cross = max_cross;
+            if (has_expander) node.hint.expand = true;
         } else {
             node.hint.preferred = max_cross;
             node.hint.cross = sum;
+            if (has_expander) node.hint.expand = true;
         }
         return;
     }
