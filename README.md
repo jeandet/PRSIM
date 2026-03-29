@@ -168,9 +168,11 @@ prism::app<State>("App", State{},
 
 **3. Raw DrawList** — direct rendering, no state management:
 ```cpp
+using namespace prism::literals;
 prism::App app({.title = "Hello", .width = 800, .height = 600});
 app.run([](prism::Frame& frame) {
-    frame.filled_rect({10, 10, 200, 100}, prism::Color::rgba(0, 120, 215));
+    frame.filled_rect({prism::Point{10_x, 10_y}, prism::Size{200_w, 100_h}},
+                      prism::Color::rgba(0, 120, 215));
 });
 ```
 
@@ -204,7 +206,7 @@ Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when
 | Static Reflection (P2996) | Walk model structs, map `Field<T>` to widgets, generate UI |
 | `std::execution` (P2300) | `run_loop` event loop, `prism::then` / `prism::on` pipe adaptors |
 | Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` |
-| Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), composability rules |
+| Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), strong type algebra (`Addable`, `Scalable`) |
 | `std::expected` | Fallible API operations — no exceptions at API boundary |
 | Designated initialisers | Named-parameter widget construction |
 
@@ -235,7 +237,7 @@ graph LR
 
 - **Phase 1** (done) — DrawList, SceneSnapshot, SDL3 backend, event-driven loop
 - **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
-- **Phase 3** (in progress) — Delegate dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, Slider, Button, Checkbox, Dropdown, enum auto-dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors. Next: TextArea, custom `view()`, `canvas()` escape hatch
+- **Phase 3** (in progress) — Delegate dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown, enum auto-dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, strong coordinate types (`Scalar<Tag>` zero-cost wrappers with compile-time affine algebra), `clip_push` local coordinate system. Next: custom `view()`, `canvas()` escape hatch
 - **Phase 4** — Animation, accessibility, scroll areas, data widgets (plot, table)
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
@@ -245,12 +247,12 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 
 - [Threading Model](doc/design/threading-model.md) — lock-free snapshot handoff, thread roles, input flow
 - [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, dirty repaint model
-- [Draw List](doc/design/draw-list.md) — command set, extensibility, serialisation
+- [Draw List](doc/design/draw-list.md) — command set, strong coordinate types, local coordinate system, serialisation
 - [Render Backend](doc/design/render-backend.md) — BackendBase vtable, software vs GPU path
 - [Input Events](doc/design/input-events.md) — input queue, event forwarding, hit testing
 - [Layout Engine](docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) — row/column/spacer, two-pass solver, hit testing
 - [Field/Sender/Widget Spec](docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) — Field<T>, observer pattern, persistent widget tree
-- [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, all sentinel types, overlay system, focus policy
+- [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, all sentinel types (incl. TextArea), overlay system, focus policy
 - [Input Routing](docs/superpowers/specs/2026-03-27-input-routing-design.md) — hit_test → dispatch → delegate handle_input → field mutation
 - [stdexec Integration](doc/design/stdexec-integration.md) — run_loop event loops, prism::then/on pipe adaptors, AppContext
 - [SDL_Renderer Migration](docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) — SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit

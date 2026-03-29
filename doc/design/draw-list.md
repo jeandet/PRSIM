@@ -20,12 +20,36 @@ Current commands:
 | `ClipPush` | rect | Push a clip rectangle onto the clip stack |
 | `ClipPop` | — | Pop the clip stack |
 
+## Strong Coordinate Types
+
+All coordinates use zero-cost strong types from `types.hpp` — a `Scalar<Tag>` template with per-direction tags:
+
+| Type | Tag | Role |
+|---|---|---|
+| `X`, `Y` | `XTag`, `YTag` | Positions (cannot be added, scaled, or mixed) |
+| `DX`, `DY` | `DXTag`, `DYTag` | Offsets (addable, scalable) |
+| `Width`, `Height` | `WidthTag`, `HeightTag` | Dimensions (addable, scalable) |
+
+Composite types: `Point{X, Y}`, `Offset{DX, DY}`, `Size{Width, Height}`, `Rect{Point origin, Size extent}`.
+
+Affine algebra is enforced at compile time via trait specializations:
+- `Point - Point = Offset`, `Point + Offset = Point`
+- `Width + Width = Width`, `Width * float = Width`
+- `X + X` = **compile error**, `X + Y` = **compile error**, `X * float` = **compile error**
+
+Raw floats are extracted via `.raw()` only at system boundaries (SDL backend).
+
+## Local Coordinate System
+
+`clip_push(Point origin, Size extent)` establishes a local coordinate system. Drawing at `{0,0}` inside a clip means "top-left of the clipped region." DrawList maintains a private offset stack and applies the cumulative offset to all draw commands at record time. Nested clips compose additively (push/pop stack semantics). The backend receives absolute coordinates — no backend changes needed.
+
 ## Design Principles
 
 - **Flat array**: contiguous in memory, cache-friendly, trivially copyable across threads.
 - **Discriminated union**: `std::variant` — no vtables, no heap allocation per command.
 - **Extensible**: adding a new command = add a struct + add it to the variant. No interface changes.
 - **Backend-agnostic**: commands describe geometry and color, not GPU state or API calls.
+- **Type-safe coordinates**: strong types prevent axis/role confusion at compile time with zero runtime cost.
 
 ## Future Commands
 

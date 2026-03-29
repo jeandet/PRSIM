@@ -74,7 +74,12 @@ struct Password {
 };
 
 template <StringLike T = std::string>
-struct TextArea { T value; };  // not yet implemented
+struct TextArea {
+    T value{};
+    std::string placeholder{};
+    size_t max_length = 0;  // 0 = unlimited
+    int rows = 6;           // visible rows
+};
 
 template <Numeric T = double>
 struct Slider {
@@ -270,6 +275,12 @@ TextField and Password share their implementation via parameterized `detail::` h
 
 Enum dropdown and `Dropdown<T>` similarly share `detail::dropdown_record()` and `detail::dropdown_handle_input()`.
 
+TextArea uses its own `detail::` helpers: `text_area_record()`, `text_area_handle_input()`, `wrap_lines()`, `cursor_to_line_col()`, `line_col_to_cursor()`.
+
+## Strong Coordinate Types
+
+All delegate rendering and input handling uses strong types from `types.hpp`. Widget constants use proper dimensional types (`Width`, `Height`, `X`, `Y`). `char_width()` returns `Width`. `TextEditState.scroll_offset` is `DX`, `TextAreaEditState.scroll_y` is `DY`. Delegates draw using `clip_push(Point, Size)` which establishes a local coordinate system — `{0,0}` inside a clip means "top-left of the clipped region." See [draw-list.md](draw-list.md) for the full type system and local coordinate semantics.
+
 ## Focus Policy
 
 Each delegate declares a compile-time `FocusPolicy`:
@@ -279,7 +290,7 @@ enum class FocusPolicy : uint8_t { none, tab_and_click };
 ```
 
 - `none` — non-interactive (Label, StringLike, primary catch-all)
-- `tab_and_click` — interactive (bool, Slider, Button, Checkbox, TextField, Password, ScopedEnum, Dropdown)
+- `tab_and_click` — interactive (bool, Slider, Button, Checkbox, TextField, Password, TextArea, ScopedEnum, Dropdown)
 
 Tab/Shift+Tab cycles through focusable widgets. Click on a focusable widget sets focus. Focused widgets render a blue focus ring (`RectOutline`, 2px).
 
