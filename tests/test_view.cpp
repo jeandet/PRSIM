@@ -138,3 +138,41 @@ TEST_CASE("view() with spacer pushes widgets apart") {
     float gap = rb.origin.x.raw() - (ra.origin.x.raw() + ra.extent.w.raw());
     CHECK(gap > 0);
 }
+
+// ── Task 7: view() with component() ──────────────────────────────────────────
+
+struct SubComponent {
+    prism::Field<int> x{0};
+    prism::Field<int> y{0};
+};
+
+struct ParentWithComponent {
+    SubComponent sub;
+    prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.row([&] {
+            vb.component(sub);
+            vb.widget(flag);
+        });
+    }
+};
+
+TEST_CASE("view() with component() embeds sub-component tree") {
+    ParentWithComponent model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 3);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap != nullptr);
+    CHECK(snap->geometry.size() == 3);
+}
+
+TEST_CASE("view() with component(): sub-component fields are reactive") {
+    ParentWithComponent model;
+    prism::WidgetTree tree(model);
+    tree.clear_dirty();
+
+    model.sub.x.set(99);
+    CHECK(tree.any_dirty());
+}
