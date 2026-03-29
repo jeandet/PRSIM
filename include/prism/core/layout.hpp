@@ -27,7 +27,9 @@ struct LayoutNode {
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
-    enum class Kind { Leaf, Row, Column, Spacer, Canvas } kind = Kind::Leaf;
+    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll } kind = Kind::Leaf;
+    DY scroll_offset{0};        // only for Kind::Scroll
+    Height scroll_content_h{0}; // total content height, for scrollbar rendering
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
@@ -93,11 +95,43 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
         }
         return;
     }
+    case LayoutNode::Kind::Scroll: {
+        float max_cross = 0;
+        for (auto& child : node.children) {
+            layout_measure(child, LayoutAxis::Vertical);
+            max_cross = std::max(max_cross, child.hint.cross);
+        }
+        node.hint.expand = true;
+        node.hint.preferred = 0;
+        node.hint.cross = max_cross;
+        return;
+    }
     }
 }
 
 inline void layout_arrange(LayoutNode& node, Rect available) {
     node.allocated = available;
+
+    if (node.kind == LayoutNode::Kind::Scroll) {
+        // Expanders inside a scroll get the viewport height as fallback
+        float viewport_h = available.extent.h.raw();
+        float content_h = 0;
+        for (auto& child : node.children)
+            content_h += child.hint.expand ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
+        node.scroll_content_h = Height{content_h};
+
+        float offset = 0;
+        for (auto& child : node.children) {
+            float main_size = child.hint.expand ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
+            Rect child_rect{
+                Point{available.origin.x, Y{available.origin.y.raw() + offset}},
+                Size{available.extent.w, Height{main_size}}
+            };
+            layout_arrange(child, child_rect);
+            offset += main_size;
+        }
+        return;
+    }
 
     if (node.children.empty()) return;
 
@@ -148,17 +182,89 @@ inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
     }
 }
 
+inline void offset_subtree_y(LayoutNode& node, DY dy) {
+    node.allocated.origin.y = Y{node.allocated.origin.y.raw() + dy.raw()};
+    for (auto& child : node.children)
+        offset_subtree_y(child, dy);
+}
+
 } // namespace detail
 
 inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
 
+    if (node.kind == LayoutNode::Kind::Scroll) {
+        // ClipPush for the viewport
+        DrawList clip_dl;
+        clip_dl.clip_push(node.allocated.origin, node.allocated.extent);
+        snap.geometry.push_back({node.id, node.allocated});
+        snap.draw_lists.push_back(std::move(clip_dl));
+        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+
+        // Flatten visible children with scroll offset applied to entire subtree
+        DY scroll_dy = node.scroll_offset;
+        DY neg_scroll{-scroll_dy.raw()};
+        for (auto& child : node.children) {
+            float child_top = child.allocated.origin.y.raw() - scroll_dy.raw();
+            float child_bottom = child_top + child.allocated.extent.h.raw();
+            float vp_top = node.allocated.origin.y.raw();
+            float vp_bottom = vp_top + node.allocated.extent.h.raw();
+
+            if (child_bottom <= vp_top || child_top >= vp_bottom)
+                continue;
+
+            detail::offset_subtree_y(child, neg_scroll);
+            layout_flatten(child, snap);
+            DY restore{scroll_dy.raw()};
+            detail::offset_subtree_y(child, restore);
+        }
+
+        // ClipPop
+        DrawList clip_pop_dl;
+        clip_pop_dl.clip_pop();
+        snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
+        snap.draw_lists.push_back(std::move(clip_pop_dl));
+        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+
+        // Scrollbar overlay (if content exceeds viewport)
+        if (node.scroll_content_h.raw() > node.allocated.extent.h.raw()) {
+            auto vp = node.allocated;
+            float viewport_h = vp.extent.h.raw();
+            float content_h = node.scroll_content_h.raw();
+            float thumb_ratio = viewport_h / content_h;
+            float thumb_h = std::max(20.f, viewport_h * thumb_ratio);
+            float max_scroll = content_h - viewport_h;
+            float thumb_y = (max_scroll > 0)
+                ? node.scroll_offset.raw() * (viewport_h - thumb_h) / max_scroll
+                : 0.f;
+
+            float track_x = vp.origin.x.raw() + vp.extent.w.raw() - 8.f;
+            float track_y = vp.origin.y.raw() + thumb_y;
+
+            DrawList scrollbar_dl;
+            scrollbar_dl.filled_rect(
+                Rect{Point{X{track_x}, Y{track_y}},
+                     Size{Width{6}, Height{thumb_h}}},
+                Color::rgba(120, 120, 130, 160));
+            Rect thumb_rect{Point{X{track_x}, Y{track_y}},
+                            Size{Width{6}, Height{thumb_h}}};
+            snap.overlay_geometry.push_back({node.id, thumb_rect});
+            for (auto& cmd : scrollbar_dl.commands)
+                snap.overlay.commands.push_back(std::move(cmd));
+        }
+
+        return;
+    }
+
     if (!node.draws.empty() || node.kind == LayoutNode::Kind::Canvas) {
         DX dx{node.allocated.origin.x.raw()};
         DY dy{node.allocated.origin.y.raw()};
         detail::translate_draw_list(node.draws, dx, dy);
+        // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
+        auto hit_rect = (node.kind == LayoutNode::Kind::Canvas)
+            ? node.allocated : node.draws.bounding_box();
         auto idx = static_cast<uint16_t>(snap.geometry.size());
-        snap.geometry.push_back({node.id, node.allocated});
+        snap.geometry.push_back({node.id, hit_rect});
         snap.draw_lists.push_back(std::move(node.draws));
         snap.z_order.push_back(idx);
     }

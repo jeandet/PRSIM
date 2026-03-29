@@ -803,6 +803,23 @@ public:
     private:
         void item(field_type auto& field) { widget(field); }
         void item(component_type auto& comp) { component(comp); }
+        Node& push_scroll_container(ScrollBarPolicy bar, ScrollEventPolicy evt,
+                                    std::invocable auto&& fn) {
+            Node container;
+            container.id = tree_.next_id_++;
+            container.is_leaf = false;
+            container.layout_kind = LayoutKind::Scroll;
+            container.scroll_bar_policy = bar;
+            container.scroll_event_policy = evt;
+            auto& parent = current_parent();
+            parent.children.push_back(std::move(container));
+            auto& ref = parent.children.back();
+            stack_.push_back(&ref);
+            fn();
+            stack_.pop_back();
+            return ref;
+        }
+
         void push_container(LayoutKind kind, std::invocable auto&& fn) {
             Node container;
             container.id = tree_.next_id_++;
@@ -823,6 +840,32 @@ public:
             s.is_leaf = true;
             s.layout_kind = LayoutKind::Spacer;
             current_parent().children.push_back(std::move(s));
+        }
+
+        void scroll(std::invocable auto&& fn) {
+            push_scroll_container(ScrollBarPolicy::Auto, ScrollEventPolicy::BubbleAtBounds, fn);
+        }
+
+        void scroll(ScrollBarPolicy policy, std::invocable auto&& fn) {
+            push_scroll_container(policy, ScrollEventPolicy::BubbleAtBounds, fn);
+        }
+
+        void scroll(Field<ScrollArea>& field, std::invocable auto&& fn) {
+            placed_.insert(&field);
+            auto& scroll_node = push_scroll_container(
+                field.get().scrollbar, field.get().event_policy, fn);
+            scroll_node.build_widget = [&field](WidgetNode& wn) {
+                if (!wn.edit_state.has_value())
+                    wn.edit_state = ScrollState{};
+                auto& ss = std::any_cast<ScrollState&>(wn.edit_state);
+                ss.scrollbar = field.get().scrollbar;
+                ss.event_policy = field.get().event_policy;
+                ss.offset_y = field.get().scroll_y;
+            };
+            scroll_node.on_change = [&field](std::function<void()> cb) -> Connection {
+                return field.on_change().connect(
+                    [cb = std::move(cb)](const ScrollArea&) { cb(); });
+            };
         }
 
         template <typename T>
@@ -874,6 +917,34 @@ public:
     void clear_dirty() { clear_dirty_impl(root_); }
 
     void close_overlays() { close_overlays_impl(root_); }
+
+    void scroll_at(WidgetId target, DY delta) {
+        WidgetId current = target;
+        while (current != 0) {
+            auto it = index_.find(current);
+            if (it != index_.end() && it->second->layout_kind == LayoutKind::Scroll) {
+                auto& ss = ensure_scroll_state(*it->second);
+                DY max_offset{std::max(0.f, ss.content_h.raw() - ss.viewport_h.raw())};
+                DY new_offset{std::clamp(ss.offset_y.raw() + delta.raw(), 0.f, max_offset.raw())};
+
+                if (std::abs(new_offset.raw() - ss.offset_y.raw()) < 0.001f) {
+                    if (ss.event_policy == ScrollEventPolicy::BubbleAtBounds) {
+                        auto pit = parent_map_.find(current);
+                        current = (pit != parent_map_.end()) ? pit->second : 0;
+                        continue;
+                    }
+                    return;
+                }
+
+                ss.offset_y = new_offset;
+                ss.show_ticks = 30;
+                mark_dirty(root_, current);
+                return;
+            }
+            auto pit = parent_map_.find(current);
+            current = (pit != parent_map_.end()) ? pit->second : 0;
+        }
+    }
 
     [[nodiscard]] std::vector<WidgetId> leaf_ids() const {
         std::vector<WidgetId> ids;
@@ -985,6 +1056,9 @@ public:
         layout_measure(layout, LayoutAxis::Vertical);
         layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
 
+        // Post-layout: sync scroll state (viewport/content sizes, offset clamping)
+        update_scroll_state(layout);
+
         // Post-layout: update canvas nodes with their resolved bounds and re-record
         update_canvas_bounds(layout, root_);
 
@@ -1001,6 +1075,13 @@ private:
     WidgetId focused_id_ = 0;
     std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;
+    std::unordered_map<WidgetId, WidgetId> parent_map_;
+
+    static ScrollState& ensure_scroll_state(WidgetNode& node) {
+        if (!node.edit_state.has_value())
+            node.edit_state = ScrollState{};
+        return std::any_cast<ScrollState&>(node.edit_state);
+    }
 
     // --- Node → WidgetNode conversion ---
 
@@ -1014,6 +1095,14 @@ private:
                 node.build_widget(wn);
         } else {
             wn.is_container = true;
+            if (node.layout_kind == LayoutKind::Scroll) {
+                ScrollState ss;
+                ss.scrollbar = node.scroll_bar_policy;
+                ss.event_policy = node.scroll_event_policy;
+                wn.edit_state = ss;
+                if (node.build_widget)
+                    node.build_widget(wn);  // Field<ScrollArea> overrides
+            }
             for (auto& child : node.children)
                 wn.children.push_back(build_widget_node(child));
         }
@@ -1034,6 +1123,13 @@ private:
                 );
             }
         } else {
+            // Scroll containers with Field<ScrollArea> have their own on_change
+            if (node.on_change) {
+                auto id = wn.id;
+                wn.connections.push_back(
+                    node.on_change([this, id]() { mark_dirty(root_, id); })
+                );
+            }
             assert(node.children.size() == wn.children.size());
             for (size_t i = 0; i < node.children.size(); ++i)
                 connect_dirty(node.children[i], wn.children[i]);
@@ -1115,8 +1211,10 @@ private:
         }
         if (!node.is_container && node.focus_policy != FocusPolicy::none)
             focus_order_.push_back(node.id);
-        for (auto& c : node.children)
+        for (auto& c : node.children) {
+            parent_map_[c.id] = node.id;
             build_index(c);
+        }
     }
 
     static size_t count_leaves(const WidgetNode& node) {
@@ -1171,6 +1269,25 @@ private:
         return false;
     }
 
+    void update_scroll_state(LayoutNode& layout_node) {
+        if (layout_node.kind == LayoutNode::Kind::Scroll) {
+            auto it = index_.find(layout_node.id);
+            if (it != index_.end()) {
+                auto& ss = ensure_scroll_state(*it->second);
+                ss.viewport_h = layout_node.allocated.extent.h;
+                ss.viewport_w = layout_node.allocated.extent.w;
+                ss.content_h = layout_node.scroll_content_h;
+                // Clamp offset in case viewport/content changed
+                DY max_offset{std::max(0.f, ss.content_h.raw() - ss.viewport_h.raw())};
+                ss.offset_y = DY{std::clamp(ss.offset_y.raw(), 0.f, max_offset.raw())};
+                layout_node.scroll_offset = ss.offset_y;
+                if (ss.show_ticks > 0) ss.show_ticks--;
+            }
+        }
+        for (auto& child : layout_node.children)
+            update_scroll_state(child);
+    }
+
     static void update_canvas_bounds(LayoutNode& layout_node, WidgetNode& widget_root) {
         if (layout_node.kind == LayoutNode::Kind::Canvas) {
             auto* wn = find_widget_node(widget_root, layout_node.id);
@@ -1221,6 +1338,19 @@ private:
                 leaf.overlay_draws = node.overlay_draws;
                 parent.children.push_back(std::move(leaf));
             }
+        } else if (node.layout_kind == LK::Scroll) {
+            LayoutNode container;
+            container.kind = LayoutNode::Kind::Scroll;
+            container.id = node.id;
+            if (node.edit_state.has_value()) {
+                try {
+                    auto& ss = std::any_cast<const ScrollState&>(node.edit_state);
+                    container.scroll_offset = ss.offset_y;
+                } catch (...) {}
+            }
+            for (auto& c : node.children)
+                build_layout(c, container);
+            parent.children.push_back(std::move(container));
         } else if (node.layout_kind == LK::Row || node.layout_kind == LK::Column) {
             LayoutNode container;
             container.kind = (node.layout_kind == LK::Row)

@@ -33,7 +33,10 @@ concept StringLike = requires(const T& t) {
 
 enum class FocusPolicy : uint8_t { none, tab_and_click };
 
-enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas };
+enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll };
+
+enum class ScrollBarPolicy : uint8_t { Auto, Always, Never };
+enum class ScrollEventPolicy : uint8_t { ConsumeAlways, BubbleAtBounds };
 
 // Sentinel: read-only label
 template <StringLike T = std::string>
@@ -89,6 +92,28 @@ struct TextEditState {
 struct TextAreaEditState {
     size_t cursor = 0;
     float scroll_y = 0.f;
+};
+
+// Ephemeral scroll state (stored in WidgetNode::edit_state)
+struct ScrollState {
+    DY offset_y{0};
+    DX offset_x{0};
+    Height content_h{0};
+    Width content_w{0};
+    Height viewport_h{0};
+    Width viewport_w{0};
+    ScrollBarPolicy scrollbar = ScrollBarPolicy::Auto;
+    ScrollEventPolicy event_policy = ScrollEventPolicy::BubbleAtBounds;
+    uint8_t show_ticks = 0;
+};
+
+// Sentinel: scroll container with observable position
+struct ScrollArea {
+    ScrollBarPolicy scrollbar = ScrollBarPolicy::Auto;
+    ScrollEventPolicy event_policy = ScrollEventPolicy::BubbleAtBounds;
+    DY scroll_y{0};
+    DX scroll_x{0};
+    bool operator==(const ScrollArea&) const = default;
 };
 
 // Concept: scoped enum type

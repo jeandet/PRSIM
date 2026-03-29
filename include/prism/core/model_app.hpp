@@ -78,12 +78,21 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                             tree.clear_focus();
                         }
                     }
+                    if (auto* ms = std::get_if<MouseScroll>(&ev); ms && current_snap) {
+                        auto id = hit_test(*current_snap, ms->position);
+                        if (id)
+                            tree.scroll_at(*id, DY{ms->dy.raw() * 60.f});
+                    }
                     if (auto* kp = std::get_if<KeyPress>(&ev)) {
                         if (kp->key == keys::tab) {
                             if (kp->mods & mods::shift)
                                 tree.focus_prev();
                             else
                                 tree.focus_next();
+                        } else if (kp->key == keys::page_up && tree.focused_id() != 0) {
+                            tree.scroll_at(tree.focused_id(), DY{-200});
+                        } else if (kp->key == keys::page_down && tree.focused_id() != 0) {
+                            tree.scroll_at(tree.focused_id(), DY{200});
                         } else if (tree.focused_id() != 0) {
                             tree.dispatch(tree.focused_id(), ev);
                         }

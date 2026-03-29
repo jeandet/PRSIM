@@ -24,6 +24,10 @@ struct Node {
 
     // Multiple dependencies for canvas nodes with depends_on()
     std::vector<std::function<Connection(std::function<void()>)>> dependencies;
+
+    // Scroll container metadata (only meaningful when layout_kind == Scroll)
+    ScrollBarPolicy scroll_bar_policy = ScrollBarPolicy::Auto;
+    ScrollEventPolicy scroll_event_policy = ScrollEventPolicy::BubbleAtBounds;
 };
 
 } // namespace prism

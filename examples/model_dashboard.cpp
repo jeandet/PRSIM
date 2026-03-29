@@ -79,7 +79,9 @@ struct Dashboard {
     prism::State<int> request_count{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.vstack(settings, waveform, status, notes, increment, counter);
+        vb.scroll([&] {
+            vb.vstack(settings, waveform, status, notes, increment, counter);
+        });
     }
 };
 
