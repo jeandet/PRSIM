@@ -27,12 +27,13 @@ struct LayoutNode {
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
-    enum class Kind { Leaf, Row, Column, Spacer } kind = Kind::Leaf;
+    enum class Kind { Leaf, Row, Column, Spacer, Canvas } kind = Kind::Leaf;
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     switch (node.kind) {
     case LayoutNode::Kind::Spacer:
+    case LayoutNode::Kind::Canvas:
         node.hint = {.preferred = 0, .expand = true};
         return;
     case LayoutNode::Kind::Leaf: {

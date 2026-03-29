@@ -301,3 +301,9 @@ TEST_CASE("model without view() still uses reflection walk") {
         CHECK(r_curr.origin.y.raw() >= r_prev.origin.y.raw() + r_prev.extent.h.raw());
     }
 }
+
+TEST_CASE("WidgetNode LayoutKind::Canvas exists") {
+    prism::WidgetNode node;
+    node.layout_kind = prism::WidgetNode::LayoutKind::Canvas;
+    CHECK(node.layout_kind == prism::WidgetNode::LayoutKind::Canvas);
+}
