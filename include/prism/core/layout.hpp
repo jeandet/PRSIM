@@ -27,7 +27,7 @@ struct LayoutNode {
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
-    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll } kind = Kind::Leaf;
+    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList } kind = Kind::Leaf;
     DY scroll_offset{0};        // only for Kind::Scroll
     Height scroll_content_h{0}; // total content height, for scrollbar rendering
 };
@@ -106,13 +106,24 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
         node.hint.cross = max_cross;
         return;
     }
+    case LayoutNode::Kind::VirtualList: {
+        float max_cross = 0;
+        for (auto& child : node.children) {
+            layout_measure(child, LayoutAxis::Vertical);
+            max_cross = std::max(max_cross, child.hint.cross);
+        }
+        node.hint.expand = true;
+        node.hint.preferred = 0;
+        node.hint.cross = max_cross;
+        return;
+    }
     }
 }
 
 inline void layout_arrange(LayoutNode& node, Rect available) {
     node.allocated = available;
 
-    if (node.kind == LayoutNode::Kind::Scroll) {
+    if (node.kind == LayoutNode::Kind::Scroll || node.kind == LayoutNode::Kind::VirtualList) {
         float viewport_h = available.extent.h.raw();
         float offset = 0;
         for (auto& child : node.children) {
@@ -189,7 +200,7 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
 inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
 
-    if (node.kind == LayoutNode::Kind::Scroll) {
+    if (node.kind == LayoutNode::Kind::Scroll || node.kind == LayoutNode::Kind::VirtualList) {
         // ClipPush for the viewport
         DrawList clip_dl;
         clip_dl.clip_push(node.allocated.origin, node.allocated.extent);

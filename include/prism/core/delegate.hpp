@@ -33,7 +33,7 @@ concept StringLike = requires(const T& t) {
 
 enum class FocusPolicy : uint8_t { none, tab_and_click };
 
-enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll };
+enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll, VirtualList };
 
 enum class ScrollBarPolicy : uint8_t { Auto, Always, Never };
 enum class ScrollEventPolicy : uint8_t { ConsumeAlways, BubbleAtBounds };
