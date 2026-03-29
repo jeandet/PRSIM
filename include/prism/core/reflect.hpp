@@ -1,7 +1,9 @@
 #pragma once
 
-#include <meta>
 #include <prism/core/traits.hpp>
+
+#if __cpp_impl_reflection
+#include <meta>
 
 namespace prism {
 
@@ -69,3 +71,5 @@ void for_each_member(Model& model, Fn&& fn) {
 }
 
 } // namespace prism
+
+#endif // __cpp_impl_reflection

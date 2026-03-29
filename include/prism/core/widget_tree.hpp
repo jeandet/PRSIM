@@ -6,7 +6,11 @@
 #include <prism/core/field.hpp>
 #include <prism/core/input_event.hpp>
 #include <prism/core/layout.hpp>
+#include <prism/core/node.hpp>
+#include <prism/core/traits.hpp>
+#if __cpp_impl_reflection
 #include <prism/core/reflect.hpp>
+#endif
 #include <prism/core/scene_snapshot.hpp>
 #include <prism/core/state.hpp>
 
@@ -25,8 +29,6 @@
 #include <vector>
 
 namespace prism {
-
-enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas };
 
 struct WidgetNode {
     WidgetId id = 0;
@@ -48,6 +50,72 @@ struct WidgetNode {
 
 // Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
 inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }
+
+// --- Node factory functions (need complete WidgetNode) ---
+
+template <typename T>
+Node node_leaf(Field<T>& field, WidgetId& next_id) {
+    Node n;
+    n.id = next_id++;
+    n.is_leaf = true;
+
+    n.build_widget = [&field](WidgetNode& wn) {
+        wn.focus_policy = Delegate<T>::focus_policy;
+        wn.record = [&field](WidgetNode& node) {
+            node.draws.clear();
+            node.overlay_draws.clear();
+            Delegate<T>::record(node.draws, field, node);
+        };
+        wn.record(wn);
+        wn.wire = [&field](WidgetNode& node) {
+            node.connections.push_back(
+                node.on_input.connect([&field, &node](const InputEvent& ev) {
+                    Delegate<T>::handle_input(field, ev, node);
+                })
+            );
+        };
+    };
+
+    n.on_change = [&field](std::function<void()> cb) -> Connection {
+        return field.on_change().connect([cb = std::move(cb)](const T&) { cb(); });
+    };
+
+    return n;
+}
+
+template <typename T>
+    requires requires(T& t, DrawList& dl, Rect r, const WidgetNode& n) {
+        t.canvas(dl, r, n);
+    }
+Node node_canvas(T& model, WidgetId& next_id) {
+    Node n;
+    n.id = next_id++;
+    n.is_leaf = true;
+    n.layout_kind = LayoutKind::Canvas;
+
+    n.build_widget = [&model](WidgetNode& wn) {
+        wn.record = [&model](WidgetNode& node) {
+            node.draws.clear();
+            model.canvas(node.draws, node.canvas_bounds, node);
+        };
+        wn.record(wn);
+
+        if constexpr (requires(T& t, const InputEvent& ev, WidgetNode& nd, Rect r) {
+                           t.handle_canvas_input(ev, nd, r);
+                       }) {
+            wn.focus_policy = FocusPolicy::tab_and_click;
+            wn.wire = [&model](WidgetNode& node) {
+                node.connections.push_back(
+                    node.on_input.connect([&model, &node](const InputEvent& ev) {
+                        model.handle_canvas_input(ev, node, node.canvas_bounds);
+                    })
+                );
+            };
+        }
+    };
+
+    return n;
+}
 
 // --- Shared text field helpers (used by TextField and Password delegates) ---
 
@@ -685,46 +753,45 @@ class WidgetTree {
 public:
     class ViewBuilder {
         WidgetTree& tree_;
-        WidgetNode& target_;
-        std::vector<WidgetNode*> stack_;
+        Node& target_;
+        std::vector<Node*> stack_;
         std::set<const void*> placed_;
 
-        WidgetNode& current_parent() {
+        Node& current_parent() {
             return stack_.empty() ? target_ : *stack_.back();
         }
 
     public:
         struct CanvasHandle {
-            WidgetNode& node_ref;
-            WidgetTree& tree_ref;
+            Node& node_ref;
 
             template <typename U>
             CanvasHandle& depends_on(Field<U>& field) {
-                auto id = node_ref.id;
-                node_ref.connections.push_back(
-                    field.on_change().connect([&tree_ref = tree_ref, id](const U&) {
-                        tree_ref.mark_dirty_by_id(id);
-                    })
+                node_ref.dependencies.push_back(
+                    [&field](std::function<void()> cb) -> Connection {
+                        return field.on_change().connect(
+                            [cb = std::move(cb)](const U&) { cb(); });
+                    }
                 );
                 return *this;
             }
         };
 
     public:
-        ViewBuilder(WidgetTree& tree, WidgetNode& target)
+        ViewBuilder(WidgetTree& tree, Node& target)
             : tree_(tree), target_(target) {}
 
         template <typename T>
         void widget(Field<T>& field) {
             placed_.insert(&field);
-            current_parent().children.push_back(tree_.build_leaf(field));
+            current_parent().children.push_back(node_leaf(field, tree_.next_id_));
         }
 
         [[nodiscard]] const std::set<const void*>& placed() const { return placed_; }
 
         template <typename C>
         void component(C& comp) {
-            current_parent().children.push_back(tree_.build_container(comp));
+            current_parent().children.push_back(tree_.build_node_tree(comp));
         }
 
         void row(std::invocable auto&& fn)    { push_container(LayoutKind::Row, fn); }
@@ -732,9 +799,9 @@ public:
 
     private:
         void push_container(LayoutKind kind, std::invocable auto&& fn) {
-            WidgetNode container;
+            Node container;
             container.id = tree_.next_id_++;
-            container.is_container = true;
+            container.is_leaf = false;
             container.layout_kind = kind;
             auto& parent = current_parent();
             parent.children.push_back(std::move(container));
@@ -746,9 +813,9 @@ public:
     public:
 
         void spacer() {
-            WidgetNode s;
+            Node s;
             s.id = tree_.next_id_++;
-            s.is_container = false;
+            s.is_leaf = true;
             s.layout_kind = LayoutKind::Spacer;
             current_parent().children.push_back(std::move(s));
         }
@@ -758,39 +825,15 @@ public:
                 t.canvas(dl, r, n);
             }
         auto canvas(T& model) {
-            WidgetNode node;
-            node.id = tree_.next_id_++;
-            node.is_container = false;
-            node.layout_kind = LayoutKind::Canvas;
-
-            node.record = [&model](WidgetNode& n) {
-                n.draws.clear();
-                model.canvas(n.draws, n.canvas_bounds, n);
-            };
-            node.record(node);
-
-            if constexpr (requires(T& t, const InputEvent& ev, WidgetNode& n, Rect r) {
-                               t.handle_canvas_input(ev, n, r);
-                           }) {
-                node.focus_policy = FocusPolicy::tab_and_click;
-                node.wire = [&model](WidgetNode& n) {
-                    n.connections.push_back(
-                        n.on_input.connect([&model, &n](const InputEvent& ev) {
-                            model.handle_canvas_input(ev, n, n.canvas_bounds);
-                        })
-                    );
-                };
-            }
-
-            current_parent().children.push_back(std::move(node));
-            return CanvasHandle{current_parent().children.back(), tree_};
+            current_parent().children.push_back(node_canvas(model, tree_.next_id_));
+            return CanvasHandle{current_parent().children.back()};
         }
 
         void finalize() {
             if (target_.children.size() > 1) {
-                WidgetNode wrapper;
+                Node wrapper;
                 wrapper.id = tree_.next_id_++;
-                wrapper.is_container = true;
+                wrapper.is_leaf = false;
                 wrapper.layout_kind = LayoutKind::Column;
                 wrapper.children = std::move(target_.children);
                 target_.children.clear();
@@ -810,7 +853,9 @@ public:
 
     template <typename Model>
     explicit WidgetTree(Model& model) {
-        root_ = build_container(model);
+        auto node_tree = build_node_tree(model);
+        root_ = build_widget_node(node_tree);
+        connect_dirty(node_tree, root_);
         build_index(root_);
         clear_dirty();
     }
@@ -952,6 +997,85 @@ private:
     std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;
 
+    // --- Node → WidgetNode conversion ---
+
+    static WidgetNode build_widget_node(Node& node) {
+        WidgetNode wn;
+        wn.id = node.id;
+        wn.layout_kind = node.layout_kind;
+        if (node.is_leaf) {
+            wn.is_container = false;
+            if (node.build_widget)
+                node.build_widget(wn);
+        } else {
+            wn.is_container = true;
+            for (auto& child : node.children)
+                wn.children.push_back(build_widget_node(child));
+        }
+        return wn;
+    }
+
+    void connect_dirty(Node& node, WidgetNode& wn) {
+        if (node.is_leaf) {
+            auto id = wn.id;
+            if (node.on_change) {
+                wn.connections.push_back(
+                    node.on_change([this, id]() { mark_dirty(root_, id); })
+                );
+            }
+            for (auto& dep : node.dependencies) {
+                wn.connections.push_back(
+                    dep([this, id]() { mark_dirty(root_, id); })
+                );
+            }
+        } else {
+            assert(node.children.size() == wn.children.size());
+            for (size_t i = 0; i < node.children.size(); ++i)
+                connect_dirty(node.children[i], wn.children[i]);
+        }
+    }
+
+    // --- Node tree construction ---
+
+    template <typename Model>
+    Node build_node_tree(Model& model) {
+        Node root;
+        root.id = next_id_++;
+        root.is_leaf = false;
+
+        if constexpr (requires(Model& m, ViewBuilder& vb) { m.view(vb); }) {
+            ViewBuilder vb{*this, root};
+            model.view(vb);
+#if __cpp_impl_reflection
+            check_unplaced_fields(model, vb.placed());
+#endif
+            vb.finalize();
+        }
+#if __cpp_impl_reflection
+        else {
+            static constexpr auto members = std::define_static_array(
+                std::meta::nonstatic_data_members_of(
+                    ^^Model, std::meta::access_context::unchecked()));
+
+            template for (constexpr auto m : members) {
+                auto& member = model.[:m:];
+                using M = std::remove_cvref_t<decltype(member)>;
+
+                if constexpr (is_state_v<M>) {
+                    // invisible observable — no widget
+                } else if constexpr (is_field_v<M>) {
+                    root.children.push_back(node_leaf(member, next_id_));
+                } else if constexpr (is_component_v<M>) {
+                    root.children.push_back(build_node_tree(member));
+                }
+            }
+        }
+#endif // __cpp_impl_reflection
+
+        return root;
+    }
+
+#if __cpp_impl_reflection
     template <typename Model>
     void check_unplaced_fields([[maybe_unused]] Model& model,
                                [[maybe_unused]] const std::set<const void*>& placed) {
@@ -974,6 +1098,9 @@ private:
         }
 #endif
     }
+#endif // __cpp_impl_reflection
+
+    // --- WidgetNode tree utilities ---
 
     void build_index(WidgetNode& node) {
         index_[node.id] = &node;
@@ -1101,71 +1228,6 @@ private:
             for (auto& c : node.children)
                 build_layout(c, parent);
         }
-    }
-
-    template <typename T>
-    WidgetNode build_leaf(Field<T>& field) {
-        WidgetNode node;
-        node.id = next_id_++;
-        node.is_container = false;
-        node.focus_policy = Delegate<T>::focus_policy;
-
-        node.record = [&field](WidgetNode& n) {
-            n.draws.clear();
-            n.overlay_draws.clear();
-            Delegate<T>::record(n.draws, field, n);
-        };
-        node.record(node);
-
-        node.wire = [&field](WidgetNode& n) {
-            n.connections.push_back(
-                n.on_input.connect([&field, &n](const InputEvent& ev) {
-                    Delegate<T>::handle_input(field, ev, n);
-                })
-            );
-        };
-
-        auto id = node.id;
-        node.connections.push_back(
-            field.on_change().connect([this, id](const T&) {
-                mark_dirty(root_, id);
-            })
-        );
-
-        return node;
-    }
-
-    template <typename Model>
-    WidgetNode build_container(Model& model) {
-        WidgetNode container;
-        container.id = next_id_++;
-        container.is_container = true;
-
-        if constexpr (requires(Model& m, ViewBuilder& vb) { m.view(vb); }) {
-            ViewBuilder vb{*this, container};
-            model.view(vb);
-            check_unplaced_fields(model, vb.placed());
-            vb.finalize();
-        } else {
-            static constexpr auto members = std::define_static_array(
-                std::meta::nonstatic_data_members_of(
-                    ^^Model, std::meta::access_context::unchecked()));
-
-            template for (constexpr auto m : members) {
-                auto& member = model.[:m:];
-                using M = std::remove_cvref_t<decltype(member)>;
-
-                if constexpr (is_state_v<M>) {
-                    // invisible observable — no widget
-                } else if constexpr (is_field_v<M>) {
-                    container.children.push_back(build_leaf(member));
-                } else if constexpr (is_component_v<M>) {
-                    container.children.push_back(build_container(member));
-                }
-            }
-        }
-
-        return container;
     }
 };
 
