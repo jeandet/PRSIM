@@ -396,8 +396,7 @@ struct DropdownModel {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(color);
-        vb.widget(flag);
+        vb.vstack(color, flag);
     }
 };
 

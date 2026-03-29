@@ -661,7 +661,7 @@ struct FocusModel {
     prism::Field<prism::TextArea<>> editor{{.value = "hello"}};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(editor);
+        vb.vstack(editor);
     }
 };
 
@@ -669,7 +669,7 @@ struct GeomModel {
     prism::Field<prism::TextArea<>> editor{{.value = "line1\nline2", .rows = 4}};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(editor);
+        vb.vstack(editor);
     }
 };
 
@@ -677,7 +677,7 @@ struct EnterModel {
     prism::Field<prism::TextArea<>> editor{{.value = "ab"}};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(editor);
+        vb.vstack(editor);
     }
 };
 

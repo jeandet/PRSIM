@@ -15,8 +15,7 @@ struct RowModel {
     prism::Field<int> b{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(a);
-        vb.widget(b);
+        vb.vstack(a, b);
     }
 };
 
@@ -39,8 +38,7 @@ struct ViewModelSimple {
     prism::Field<int> b{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(b);
-        vb.widget(a);
+        vb.vstack(b, a);
     }
 };
 
@@ -62,7 +60,7 @@ struct RowViewModel {
     prism::Field<int> b{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.widget(a);
             vb.widget(b);
         });
@@ -89,7 +87,7 @@ struct NestedLayoutModel {
     prism::Field<int> c{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.widget(a);
             vb.widget(b);
         });
@@ -122,7 +120,7 @@ struct SpacerModel {
     prism::Field<int> b{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.widget(a);
             vb.spacer();
             vb.widget(b);
@@ -153,8 +151,7 @@ struct SubComponent {
     prism::Field<int> y{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(x);
-        vb.widget(y);
+        vb.vstack(x, y);
     }
 };
 
@@ -163,7 +160,7 @@ struct ParentWithComponent {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.component(sub);
             vb.widget(flag);
         });
@@ -196,7 +193,7 @@ struct SubWithView {
     prism::Field<int> y{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.widget(y);
             vb.widget(x);
         });
@@ -208,8 +205,7 @@ struct ParentWithViewedSub {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.component(sub);
-        vb.widget(flag);
+        vb.vstack(sub, flag);
     }
 };
 
@@ -235,7 +231,7 @@ struct OmittedFieldModel {
     prism::Field<int> hidden{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(shown);
+        vb.vstack(shown);
     }
 };
 
@@ -254,9 +250,7 @@ struct FocusViewModel {
     prism::Field<prism::Button> btn2{{"Second"}};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(btn2);
-        vb.widget(label);
-        vb.widget(btn1);
+        vb.vstack(btn2, label, btn1);
     }
 };
 
@@ -462,7 +456,7 @@ struct CanvasInRow {
     }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.widget(a);
             vb.canvas(*this);
         });

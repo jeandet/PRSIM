@@ -296,8 +296,7 @@ struct TextFieldModel {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(name);
-        vb.widget(flag);
+        vb.vstack(name, flag);
     }
 };
 

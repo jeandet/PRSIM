@@ -14,8 +14,7 @@ struct TestModel {
     prism::Field<std::string> name{"hello"};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(count);
-        vb.widget(name);
+        vb.vstack(count, name);
     }
 };
 
@@ -24,8 +23,7 @@ struct NestedTestModel {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.component(inner);
-        vb.widget(flag);
+        vb.vstack(inner, flag);
     }
 };
 
@@ -89,7 +87,7 @@ struct ClickTestModel {
     prism::Field<bool> toggle{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(toggle);
+        vb.vstack(toggle);
     }
 };
 
@@ -171,7 +169,7 @@ struct SliderClickModel {
     prism::Field<prism::Slider<>> volume{{.value = 0.0}};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(volume);
+        vb.vstack(volume);
     }
 };
 

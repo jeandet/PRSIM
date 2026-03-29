@@ -200,8 +200,7 @@ struct PasswordModel {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(secret);
-        vb.widget(flag);
+        vb.vstack(secret, flag);
     }
 };
 

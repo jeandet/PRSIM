@@ -17,6 +17,9 @@ template <typename T>
 inline constexpr bool is_field_v = is_field<T>::value;
 
 template <typename T>
+concept field_type = is_field_v<T>;
+
+template <typename T>
 struct is_state : std::false_type {};
 
 template <typename T>
@@ -27,5 +30,8 @@ struct is_state<T> : std::true_type {};
 
 template <typename T>
 inline constexpr bool is_state_v = is_state<T>::value;
+
+template <typename T>
+concept component_type = std::is_class_v<T> && !is_field_v<T> && !is_state_v<T>;
 
 } // namespace prism

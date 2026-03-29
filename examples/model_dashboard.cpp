@@ -16,13 +16,7 @@ struct Settings {
     prism::Field<prism::Password<>> api_key{{.placeholder = "API key"}};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(username);
-        vb.widget(dark_mode);
-        vb.widget(notifications);
-        vb.widget(volume);
-        vb.widget(search);
-        vb.widget(theme);
-        vb.widget(api_key);
+        vb.vstack(username, dark_mode, notifications, volume, search, theme, api_key);
     }
 };
 
@@ -67,7 +61,7 @@ struct Waveform {
     }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.row([&] {
+        vb.hstack([&] {
             vb.widget(frequency);
             vb.widget(amplitude);
         });
@@ -85,12 +79,7 @@ struct Dashboard {
     prism::State<int> request_count{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.component(settings);
-        vb.component(waveform);
-        vb.widget(status);
-        vb.widget(notes);
-        vb.widget(increment);
-        vb.widget(counter);
+        vb.vstack(settings, waveform, status, notes, increment, counter);
     }
 };
 

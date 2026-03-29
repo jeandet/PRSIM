@@ -16,8 +16,7 @@ struct SimpleModel {
     prism::Field<std::string> name{"hi"};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(count);
-        vb.widget(name);
+        vb.vstack(count, name);
     }
 };
 
@@ -26,8 +25,7 @@ struct NestedModel {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.component(inner);
-        vb.widget(flag);
+        vb.vstack(inner, flag);
     }
 };
 
@@ -119,8 +117,7 @@ struct BoolModel {
     prism::Field<int> count{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(flag);
-        vb.widget(count);
+        vb.vstack(flag, count);
     }
 };
 
@@ -170,9 +167,7 @@ struct ModelWithState {
     prism::Field<bool> flag{false};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(visible);
-        // hidden is State — not placed
-        vb.widget(flag);
+        vb.vstack(visible, flag);
     }
 };
 
@@ -196,9 +191,7 @@ struct SentinelModel {
     prism::Field<bool> enabled{true};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(status);
-        vb.widget(volume);
-        vb.widget(enabled);
+        vb.vstack(status, volume, enabled);
     }
 };
 
@@ -290,8 +283,7 @@ struct ButtonModel {
     prism::Field<int> count{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(action);
-        vb.widget(count);
+        vb.vstack(action, count);
     }
 };
 
@@ -319,11 +311,7 @@ struct FocusModel {
     prism::Field<int> count{0};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.widget(title);
-        vb.widget(toggle);
-        vb.widget(slider);
-        vb.widget(btn);
-        vb.widget(count);
+        vb.vstack(title, toggle, slider, btn, count);
     }
 };
 

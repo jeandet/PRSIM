@@ -794,10 +794,15 @@ public:
             current_parent().children.push_back(tree_.build_node_tree(comp));
         }
 
-        void row(std::invocable auto&& fn)    { push_container(LayoutKind::Row, fn); }
-        void column(std::invocable auto&& fn) { push_container(LayoutKind::Column, fn); }
+        void vstack(auto&... args) { (item(args), ...); }
+
+        void hstack(std::invocable auto&& fn) { push_container(LayoutKind::Row, fn); }
+        void hstack(auto&... args) { push_container(LayoutKind::Row, [&] { (item(args), ...); }); }
+        void vstack(std::invocable auto&& fn) { push_container(LayoutKind::Column, fn); }
 
     private:
+        void item(field_type auto& field) { widget(field); }
+        void item(component_type auto& comp) { component(comp); }
         void push_container(LayoutKind kind, std::invocable auto&& fn) {
             Node container;
             container.id = tree_.next_id_++;

@@ -24,6 +24,7 @@ headless_tests = {
   'text_area' : files('test_text_area.cpp'),
   'types' : files('test_types.cpp'),
   'view' : files('test_view.cpp'),
+  'node' : files('test_node.cpp'),
 }
 
 foreach name, src : headless_tests
