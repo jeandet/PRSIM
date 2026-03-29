@@ -281,7 +281,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
                               text_area_w, cw);
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, {0, 2}, ta_font_size, Color::rgba(120, 120, 130));
+        dl.text(sf.placeholder, {ta_padding, 2}, ta_font_size, Color::rgba(120, 120, 130));
     } else {
         for (size_t i = 0; i < wrapped.size(); ++i) {
             float y = i * ta_line_height - es.scroll_y;
@@ -289,14 +289,14 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
             if (y > text_area_h) break;
             if (wrapped[i].length > 0) {
                 std::string line_text(sf.value.data() + wrapped[i].start, wrapped[i].length);
-                dl.text(line_text, {0, y + 2}, ta_font_size, Color::rgba(220, 220, 220));
+                dl.text(line_text, {ta_padding, y + 2}, ta_font_size, Color::rgba(220, 220, 220));
             }
         }
     }
 
     if (vs.focused) {
         auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
-        float cx = col * cw;
+        float cx = ta_padding + col * cw;
         float cy = line * ta_line_height - es.scroll_y;
         dl.filled_rect({cx, cy, ta_cursor_w, ta_line_height}, Color::rgba(220, 220, 240));
     }
