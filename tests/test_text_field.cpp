@@ -294,6 +294,11 @@ TEST_CASE("TextField max_length blocks insert when full") {
 struct TextFieldModel {
     prism::Field<prism::TextField<>> name{{.value = "hi"}};
     prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(name);
+        vb.widget(flag);
+    }
 };
 
 TEST_CASE("TextField in WidgetTree creates focusable leaf") {

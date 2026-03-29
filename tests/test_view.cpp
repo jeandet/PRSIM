@@ -13,6 +13,11 @@ TEST_CASE("WidgetNode has layout_kind defaulting to Default") {
 struct RowModel {
     prism::Field<int> a{0};
     prism::Field<int> b{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(a);
+        vb.widget(b);
+    }
 };
 
 TEST_CASE("build_snapshot with default layout stacks vertically") {
@@ -146,6 +151,11 @@ TEST_CASE("view() with spacer pushes widgets apart") {
 struct SubComponent {
     prism::Field<int> x{0};
     prism::Field<int> y{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(x);
+        vb.widget(y);
+    }
 };
 
 struct ParentWithComponent {

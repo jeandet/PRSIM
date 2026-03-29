@@ -14,11 +14,21 @@ prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }
 struct SimpleModel {
     prism::Field<int> count{0};
     prism::Field<std::string> name{"hi"};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(count);
+        vb.widget(name);
+    }
 };
 
 struct NestedModel {
     SimpleModel inner;
     prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.component(inner);
+        vb.widget(flag);
+    }
 };
 
 TEST_CASE("WidgetTree creates one leaf per Field") {
@@ -107,6 +117,11 @@ TEST_CASE("WidgetTree dispatch to unknown id is a no-op") {
 struct BoolModel {
     prism::Field<bool> flag{false};
     prism::Field<int> count{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(flag);
+        vb.widget(count);
+    }
 };
 
 TEST_CASE("Field<bool> toggles on MouseButton dispatch") {
@@ -153,6 +168,12 @@ struct ModelWithState {
     prism::Field<int> visible{0};
     prism::State<int> hidden{0};
     prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(visible);
+        // hidden is State — not placed
+        vb.widget(flag);
+    }
 };
 
 TEST_CASE("WidgetTree skips State<T> members") {
@@ -173,6 +194,12 @@ struct SentinelModel {
     prism::Field<prism::Label<>> status{{"OK"}};
     prism::Field<prism::Slider<>> volume{{.value = 0.5}};
     prism::Field<bool> enabled{true};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(status);
+        vb.widget(volume);
+        vb.widget(enabled);
+    }
 };
 
 TEST_CASE("WidgetTree with sentinel types creates correct leaf count") {
@@ -261,6 +288,11 @@ TEST_CASE("set_pressed marks widget dirty") {
 struct ButtonModel {
     prism::Field<prism::Button> action{{"Click me"}};
     prism::Field<int> count{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(action);
+        vb.widget(count);
+    }
 };
 
 TEST_CASE("Button in WidgetTree creates leaf") {
@@ -285,6 +317,14 @@ struct FocusModel {
     prism::Field<prism::Slider<>> slider{{.value = 0.5}};
     prism::Field<prism::Button> btn{{"Click"}};
     prism::Field<int> count{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(title);
+        vb.widget(toggle);
+        vb.widget(slider);
+        vb.widget(btn);
+        vb.widget(count);
+    }
 };
 
 TEST_CASE("focus_order contains only focusable widgets in struct order") {

@@ -394,6 +394,11 @@ TEST_CASE("Dropdown<T> selection updates value") {
 struct DropdownModel {
     prism::Field<Color> color{Color::Red};
     prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(color);
+        vb.widget(flag);
+    }
 };
 
 TEST_CASE("Enum dropdown in WidgetTree creates focusable leaf") {

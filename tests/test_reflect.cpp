@@ -30,6 +30,7 @@ TEST_CASE("is_field_v detects Field<T>") {
     CHECK_FALSE(prism::is_field_v<std::string>);
 }
 
+#if __cpp_impl_reflection
 TEST_CASE("for_each_field visits all Field<T> members") {
     Simple s;
     int count = 0;
@@ -71,6 +72,7 @@ TEST_CASE("for_each_member visits fields and sub-components") {
     CHECK(fields == 1);      // flag
     CHECK(components == 1);  // inner
 }
+#endif // __cpp_impl_reflection
 
 #include <prism/core/state.hpp>
 
@@ -86,6 +88,7 @@ TEST_CASE("is_state_v detects State<T>") {
     CHECK_FALSE(prism::is_state_v<int>);
 }
 
+#if __cpp_impl_reflection
 TEST_CASE("is_component_v is true for struct with State + Field members") {
     CHECK(prism::is_component_v<ModelWithState>);
 }
@@ -96,3 +99,4 @@ TEST_CASE("for_each_field skips State members") {
     prism::for_each_field(model, [&](auto&) { ++count; });
     CHECK(count == 1);
 }
+#endif // __cpp_impl_reflection

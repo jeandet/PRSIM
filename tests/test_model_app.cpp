@@ -12,11 +12,21 @@
 struct TestModel {
     prism::Field<int> count{42};
     prism::Field<std::string> name{"hello"};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(count);
+        vb.widget(name);
+    }
 };
 
 struct NestedTestModel {
     TestModel inner;
     prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.component(inner);
+        vb.widget(flag);
+    }
 };
 
 TEST_CASE("model_app runs and produces a snapshot") {
@@ -77,6 +87,10 @@ TEST_CASE("model_app with nested model") {
 
 struct ClickTestModel {
     prism::Field<bool> toggle{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(toggle);
+    }
 };
 
 TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
@@ -155,6 +169,10 @@ TEST_CASE("model_app setup callback receives scheduler") {
 
 struct SliderClickModel {
     prism::Field<prism::Slider<>> volume{{.value = 0.0}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(volume);
+    }
 };
 
 TEST_CASE("model_app routes click to Slider and updates value") {

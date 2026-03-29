@@ -198,6 +198,11 @@ TEST_CASE("Password max_length enforced") {
 struct PasswordModel {
     prism::Field<prism::Password<>> secret{{.value = "pass"}};
     prism::Field<bool> flag{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(secret);
+        vb.widget(flag);
+    }
 };
 
 TEST_CASE("Password in WidgetTree creates focusable leaf") {
