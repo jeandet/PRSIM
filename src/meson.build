@@ -8,7 +8,8 @@ has_reflection = cpp.compiles('''
   #else
   #error no reflection
   #endif
-''', name : '__cpp_impl_reflection check')
+''', args : ['-freflection'],
+   name : '__cpp_impl_reflection check')
 
 if not has_reflection
   magic_enum_dep = dependency('magic_enum', fallback : ['magic_enum', 'magic_enum_dep'])

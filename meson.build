@@ -13,7 +13,7 @@ project('prism', 'cpp',
 )
 
 cpp = meson.get_compiler('cpp')
-if cpp.has_argument('-freflection')
+if cpp.compiles('int main() {}', args : ['-freflection'], name : '-freflection support')
   add_project_arguments('-freflection', language : 'cpp')
 endif
 
