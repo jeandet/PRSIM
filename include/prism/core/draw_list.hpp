@@ -22,6 +22,10 @@ struct Point {
     float x, y;
 };
 
+struct Size {
+    float w, h;
+};
+
 struct Rect {
     float x, y, w, h;
 
@@ -61,22 +65,46 @@ using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop
 struct DrawList {
     std::vector<DrawCmd> commands;
 
-    void filled_rect(Rect r, Color c) { commands.emplace_back(FilledRect{r, c}); }
+    void filled_rect(Rect r, Color c)
+    {
+        auto o = current_offset();
+        commands.emplace_back(FilledRect{{r.x + o.x, r.y + o.y, r.w, r.h}, c});
+    }
 
     void rect_outline(Rect r, Color c, float thickness = 1.0f)
     {
-        commands.emplace_back(RectOutline{r, c, thickness});
+        auto o = current_offset();
+        commands.emplace_back(RectOutline{{r.x + o.x, r.y + o.y, r.w, r.h}, c, thickness});
     }
 
     void text(std::string s, Point origin, float size, Color c)
     {
-        commands.emplace_back(TextCmd{std::move(s), origin, size, c});
+        auto o = current_offset();
+        commands.emplace_back(
+            TextCmd{std::move(s), {origin.x + o.x, origin.y + o.y}, size, c});
     }
 
-    void clip_push(Rect r) { commands.emplace_back(ClipPush{r}); }
-    void clip_pop() { commands.emplace_back(ClipPop{}); }
+    void clip_push(Point origin, Size extent)
+    {
+        auto o = current_offset();
+        float abs_x = o.x + origin.x;
+        float abs_y = o.y + origin.y;
+        origin_stack_.push_back({abs_x, abs_y});
+        commands.emplace_back(ClipPush{{abs_x, abs_y, extent.w, extent.h}});
+    }
 
-    void clear() { commands.clear(); }
+    void clip_pop()
+    {
+        if (!origin_stack_.empty()) origin_stack_.pop_back();
+        commands.emplace_back(ClipPop{});
+    }
+
+    void clear()
+    {
+        commands.clear();
+        origin_stack_.clear();
+    }
+
     [[nodiscard]] bool empty() const { return commands.empty(); }
     [[nodiscard]] std::size_t size() const { return commands.size(); }
 
@@ -101,6 +129,14 @@ struct DrawList {
             }, cmd);
         }
         return {min_x, min_y, max_x - min_x, max_y - min_y};
+    }
+
+  private:
+    std::vector<Point> origin_stack_;
+
+    [[nodiscard]] Point current_offset() const
+    {
+        return origin_stack_.empty() ? Point{0.f, 0.f} : origin_stack_.back();
     }
 };
 
