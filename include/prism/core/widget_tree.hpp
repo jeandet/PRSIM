@@ -11,6 +11,7 @@
 #include <prism/core/state.hpp>
 
 #include <any>
+#include <cassert>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -700,11 +701,15 @@ public:
             current_parent().children.push_back(tree_.build_container(comp));
         }
 
-        void row(std::invocable auto&& fn) {
+        void row(std::invocable auto&& fn)    { push_container(WidgetNode::LayoutKind::Row, fn); }
+        void column(std::invocable auto&& fn) { push_container(WidgetNode::LayoutKind::Column, fn); }
+
+    private:
+        void push_container(WidgetNode::LayoutKind kind, std::invocable auto&& fn) {
             WidgetNode container;
             container.id = tree_.next_id_++;
             container.is_container = true;
-            container.layout_kind = WidgetNode::LayoutKind::Row;
+            container.layout_kind = kind;
             auto& parent = current_parent();
             parent.children.push_back(std::move(container));
             stack_.push_back(&parent.children.back());
@@ -712,17 +717,7 @@ public:
             stack_.pop_back();
         }
 
-        void column(std::invocable auto&& fn) {
-            WidgetNode container;
-            container.id = tree_.next_id_++;
-            container.is_container = true;
-            container.layout_kind = WidgetNode::LayoutKind::Column;
-            auto& parent = current_parent();
-            parent.children.push_back(std::move(container));
-            stack_.push_back(&parent.children.back());
-            fn();
-            stack_.pop_back();
-        }
+    public:
 
         void spacer() {
             WidgetNode s;
@@ -743,7 +738,9 @@ public:
                 target_.children.push_back(std::move(wrapper));
             }
             if (target_.children.size() == 1) {
-                target_.layout_kind = target_.children[0].layout_kind;
+                auto lk = target_.children[0].layout_kind;
+                if (lk == WidgetNode::LayoutKind::Row || lk == WidgetNode::LayoutKind::Column)
+                    target_.layout_kind = lk;
             }
         }
     };
@@ -860,6 +857,8 @@ public:
         refresh_dirty(root_);
 
         LayoutNode layout;
+        // root_ is always a container; Spacer is only valid on non-container nodes
+        assert(root_.layout_kind != WidgetNode::LayoutKind::Spacer);
         layout.kind = (root_.layout_kind == WidgetNode::LayoutKind::Row)
             ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
         layout.id = root_.id;
@@ -1027,6 +1026,7 @@ private:
                 using M = std::remove_cvref_t<decltype(member)>;
 
                 if constexpr (is_state_v<M>) {
+                    // invisible observable — no widget
                 } else if constexpr (is_field_v<M>) {
                     container.children.push_back(build_leaf(member));
                 } else if constexpr (is_component_v<M>) {
