@@ -215,3 +215,89 @@ TEST_CASE("component() delegates to sub-component's view()") {
     auto& [id1, r1] = snap->geometry[1];
     CHECK(r0.origin.y.raw() == r1.origin.y.raw());
 }
+
+// ── Task 9: omitted fields and focus order ──────────────────────────────────
+
+struct OmittedFieldModel {
+    prism::Field<int> shown{0};
+    prism::Field<int> hidden{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(shown);
+    }
+};
+
+TEST_CASE("omitted field has no widget but remains reactive") {
+    OmittedFieldModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 1);
+
+    model.hidden.set(99);
+    CHECK(model.hidden.get() == 99);
+}
+
+struct FocusViewModel {
+    prism::Field<prism::Button> btn1{{"First"}};
+    prism::Field<prism::Label<>> label{{"text"}};
+    prism::Field<prism::Button> btn2{{"Second"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(btn2);
+        vb.widget(label);
+        vb.widget(btn1);
+    }
+};
+
+TEST_CASE("focus order follows view() placement order") {
+    FocusViewModel model;
+    prism::WidgetTree tree(model);
+    auto focus = tree.focus_order();
+    auto ids = tree.leaf_ids();
+    REQUIRE(focus.size() == 2);
+    CHECK(focus[0] == ids[0]);
+    CHECK(focus[1] == ids[2]);
+}
+
+// ── Task 10: dirty propagation ──────────────────────────────────────────────
+
+TEST_CASE("dirty propagation works for view()-placed widgets") {
+    ViewModelSimple model;
+    prism::WidgetTree tree(model);
+
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    tree.clear_dirty();
+    CHECK_FALSE(tree.any_dirty());
+
+    model.a.set(42);
+    CHECK(tree.any_dirty());
+
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    REQUIRE(snap2 != nullptr);
+    CHECK(snap2->version == 2);
+}
+
+// ── Task 11: regression guard ───────────────────────────────────────────────
+
+#include <string>
+
+struct PlainModel {
+    prism::Field<int> a{0};
+    prism::Field<std::string> b{"hello"};
+    prism::Field<bool> c{false};
+};
+
+TEST_CASE("model without view() still uses reflection walk") {
+    PlainModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 3);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap != nullptr);
+    CHECK(snap->geometry.size() == 3);
+
+    for (size_t i = 1; i < snap->geometry.size(); ++i) {
+        auto& [id_prev, r_prev] = snap->geometry[i - 1];
+        auto& [id_curr, r_curr] = snap->geometry[i];
+        CHECK(r_curr.origin.y.raw() >= r_prev.origin.y.raw() + r_prev.extent.h.raw());
+    }
+}
