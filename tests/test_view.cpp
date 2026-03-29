@@ -7,7 +7,7 @@
 
 TEST_CASE("WidgetNode has layout_kind defaulting to Default") {
     prism::WidgetNode node;
-    CHECK(node.layout_kind == prism::WidgetNode::LayoutKind::Default);
+    CHECK(node.layout_kind == prism::LayoutKind::Default);
 }
 
 struct RowModel {
@@ -304,8 +304,8 @@ TEST_CASE("model without view() still uses reflection walk") {
 
 TEST_CASE("WidgetNode LayoutKind::Canvas exists") {
     prism::WidgetNode node;
-    node.layout_kind = prism::WidgetNode::LayoutKind::Canvas;
-    CHECK(node.layout_kind == prism::WidgetNode::LayoutKind::Canvas);
+    node.layout_kind = prism::LayoutKind::Canvas;
+    CHECK(node.layout_kind == prism::LayoutKind::Canvas);
 }
 
 struct CanvasModel {

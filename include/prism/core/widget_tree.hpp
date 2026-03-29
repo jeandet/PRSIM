@@ -26,6 +26,8 @@
 
 namespace prism {
 
+enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas };
+
 struct WidgetNode {
     WidgetId id = 0;
     bool dirty = false;
@@ -40,7 +42,7 @@ struct WidgetNode {
     SenderHub<const InputEvent&> on_input;
     std::function<void(WidgetNode&)> wire;
     std::function<void(WidgetNode&)> record;
-    enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas } layout_kind = LayoutKind::Default;
+    LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
 };
 
@@ -725,11 +727,11 @@ public:
             current_parent().children.push_back(tree_.build_container(comp));
         }
 
-        void row(std::invocable auto&& fn)    { push_container(WidgetNode::LayoutKind::Row, fn); }
-        void column(std::invocable auto&& fn) { push_container(WidgetNode::LayoutKind::Column, fn); }
+        void row(std::invocable auto&& fn)    { push_container(LayoutKind::Row, fn); }
+        void column(std::invocable auto&& fn) { push_container(LayoutKind::Column, fn); }
 
     private:
-        void push_container(WidgetNode::LayoutKind kind, std::invocable auto&& fn) {
+        void push_container(LayoutKind kind, std::invocable auto&& fn) {
             WidgetNode container;
             container.id = tree_.next_id_++;
             container.is_container = true;
@@ -747,7 +749,7 @@ public:
             WidgetNode s;
             s.id = tree_.next_id_++;
             s.is_container = false;
-            s.layout_kind = WidgetNode::LayoutKind::Spacer;
+            s.layout_kind = LayoutKind::Spacer;
             current_parent().children.push_back(std::move(s));
         }
 
@@ -759,7 +761,7 @@ public:
             WidgetNode node;
             node.id = tree_.next_id_++;
             node.is_container = false;
-            node.layout_kind = WidgetNode::LayoutKind::Canvas;
+            node.layout_kind = LayoutKind::Canvas;
 
             node.record = [&model](WidgetNode& n) {
                 n.draws.clear();
@@ -789,7 +791,7 @@ public:
                 WidgetNode wrapper;
                 wrapper.id = tree_.next_id_++;
                 wrapper.is_container = true;
-                wrapper.layout_kind = WidgetNode::LayoutKind::Column;
+                wrapper.layout_kind = LayoutKind::Column;
                 wrapper.children = std::move(target_.children);
                 target_.children.clear();
                 target_.children.push_back(std::move(wrapper));
@@ -798,7 +800,7 @@ public:
             // when view() produces exactly one container (the common case).
             if (target_.children.size() == 1) {
                 auto lk = target_.children[0].layout_kind;
-                if (lk == WidgetNode::LayoutKind::Row || lk == WidgetNode::LayoutKind::Column) {
+                if (lk == LayoutKind::Row || lk == LayoutKind::Column) {
                     target_.layout_kind = lk;
                     target_.children = std::move(target_.children[0].children);
                 }
@@ -923,8 +925,8 @@ public:
 
         LayoutNode layout;
         // root_ is always a container; Spacer is only valid on non-container nodes
-        assert(root_.layout_kind != WidgetNode::LayoutKind::Spacer);
-        layout.kind = (root_.layout_kind == WidgetNode::LayoutKind::Row)
+        assert(root_.layout_kind != LayoutKind::Spacer);
+        layout.kind = (root_.layout_kind == LayoutKind::Row)
             ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
         layout.id = root_.id;
         for (auto& c : root_.children)
@@ -987,7 +989,7 @@ private:
 
     static size_t count_leaves(const WidgetNode& node) {
         if (!node.is_container)
-            return node.layout_kind == WidgetNode::LayoutKind::Spacer ? 0 : 1;
+            return node.layout_kind == LayoutKind::Spacer ? 0 : 1;
         size_t n = 0;
         for (auto& c : node.children) n += count_leaves(c);
         return n;
@@ -1016,7 +1018,7 @@ private:
 
     static void collect_leaf_ids(const WidgetNode& node, std::vector<WidgetId>& ids) {
         if (!node.is_container) {
-            if (node.layout_kind != WidgetNode::LayoutKind::Spacer)
+            if (node.layout_kind != LayoutKind::Spacer)
                 ids.push_back(node.id);
             return;
         }
@@ -1064,7 +1066,7 @@ private:
     }
 
     static void build_layout(WidgetNode& node, LayoutNode& parent) {
-        using LK = WidgetNode::LayoutKind;
+        using LK = LayoutKind;
 
         if (!node.is_container) {
             if (node.layout_kind == LK::Spacer) {
