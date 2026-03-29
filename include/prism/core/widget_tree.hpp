@@ -41,6 +41,7 @@ struct WidgetNode {
     std::function<void(WidgetNode&)> wire;
     std::function<void(WidgetNode&)> record;
     enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas } layout_kind = LayoutKind::Default;
+    Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
 };
 
 // Defined here (after WidgetNode is complete) for use in delegate.hpp bodies.
@@ -691,6 +692,23 @@ public:
         }
 
     public:
+        struct CanvasHandle {
+            WidgetNode& node_ref;
+            WidgetTree& tree_ref;
+
+            template <typename U>
+            CanvasHandle& depends_on(Field<U>& field) {
+                auto id = node_ref.id;
+                node_ref.connections.push_back(
+                    field.on_change().connect([&tree_ref = tree_ref, id](const U&) {
+                        tree_ref.mark_dirty_by_id(id);
+                    })
+                );
+                return *this;
+            }
+        };
+
+    public:
         ViewBuilder(WidgetTree& tree, WidgetNode& target)
             : tree_(tree), target_(target) {}
 
@@ -731,6 +749,26 @@ public:
             s.is_container = false;
             s.layout_kind = WidgetNode::LayoutKind::Spacer;
             current_parent().children.push_back(std::move(s));
+        }
+
+        template <typename T>
+            requires requires(T& t, DrawList& dl, Rect r, const WidgetNode& n) {
+                t.canvas(dl, r, n);
+            }
+        auto canvas(T& model) {
+            WidgetNode node;
+            node.id = tree_.next_id_++;
+            node.is_container = false;
+            node.layout_kind = WidgetNode::LayoutKind::Canvas;
+
+            node.record = [&model](WidgetNode& n) {
+                n.draws.clear();
+                model.canvas(n.draws, n.canvas_bounds, n);
+            };
+            node.record(node);
+
+            current_parent().children.push_back(std::move(node));
+            return CanvasHandle{current_parent().children.back(), tree_};
         }
 
         void finalize() {
@@ -863,6 +901,10 @@ public:
             set_focused(*std::prev(it));
     }
 
+    void mark_dirty_by_id(WidgetId id) {
+        mark_dirty(root_, id);
+    }
+
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
         refresh_dirty(root_);
 
@@ -988,6 +1030,13 @@ private:
                 spacer.kind = LayoutNode::Kind::Spacer;
                 spacer.id = node.id;
                 parent.children.push_back(std::move(spacer));
+            } else if (node.layout_kind == LK::Canvas) {
+                LayoutNode canvas;
+                canvas.kind = LayoutNode::Kind::Canvas;
+                canvas.id = node.id;
+                canvas.draws = node.draws;
+                canvas.overlay_draws = node.overlay_draws;
+                parent.children.push_back(std::move(canvas));
             } else {
                 LayoutNode leaf;
                 leaf.kind = LayoutNode::Kind::Leaf;

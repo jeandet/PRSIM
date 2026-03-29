@@ -307,3 +307,30 @@ TEST_CASE("WidgetNode LayoutKind::Canvas exists") {
     node.layout_kind = prism::WidgetNode::LayoutKind::Canvas;
     CHECK(node.layout_kind == prism::WidgetNode::LayoutKind::Canvas);
 }
+
+struct CanvasModel {
+    prism::Field<int> a{0};
+
+    void canvas(prism::DrawList&, prism::Rect, const prism::WidgetNode&) {}
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(a);
+        vb.canvas(*this);
+    }
+};
+
+TEST_CASE("canvas node expands to fill remaining space") {
+    CanvasModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 2);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    REQUIRE(snap != nullptr);
+    CHECK(snap->geometry.size() == 2);
+
+    auto& [id_a, r_a] = snap->geometry[0];
+    auto& [id_canvas, r_canvas] = snap->geometry[1];
+    CHECK(r_canvas.origin.y.raw() >= r_a.origin.y.raw() + r_a.extent.h.raw());
+    CHECK(r_canvas.extent.h.raw() > 0);
+    CHECK(r_canvas.extent.w.raw() == doctest::Approx(800));
+}

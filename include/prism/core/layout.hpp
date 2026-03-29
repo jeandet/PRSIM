@@ -33,6 +33,8 @@ struct LayoutNode {
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     switch (node.kind) {
     case LayoutNode::Kind::Spacer:
+        node.hint = {.preferred = 0, .expand = true};
+        return;
     case LayoutNode::Kind::Canvas:
         node.hint = {.preferred = 0, .expand = true};
         return;
@@ -141,7 +143,7 @@ inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
 inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
 
-    if (!node.draws.empty()) {
+    if (!node.draws.empty() || node.kind == LayoutNode::Kind::Canvas) {
         DX dx{node.allocated.origin.x.raw()};
         DY dy{node.allocated.origin.y.raw()};
         detail::translate_draw_list(node.draws, dx, dy);
