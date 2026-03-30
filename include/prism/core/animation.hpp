@@ -247,4 +247,147 @@ template <Lerpable T>
     return Animation<T>(clock, field, std::move(target), std::move(config));
 }
 
+template <Lerpable T>
+class TransitionGuard {
+public:
+    TransitionGuard() = default;
+
+    TransitionGuard(AnimationClock& clock, Field<T>& field, TimingConfig config)
+        : clock_(&clock), field_(&field), config_(std::move(config)),
+          current_animated_(field.get()), target_(field.get()) {
+        subscription_ = field_->on_change().connect([this](const T& new_val) {
+            on_field_changed(new_val);
+        });
+    }
+
+    ~TransitionGuard() {
+        subscription_.disconnect();
+        if (clock_ && clock_id_)
+            clock_->remove(clock_id_);
+    }
+
+    TransitionGuard(const TransitionGuard&) = delete;
+    TransitionGuard& operator=(const TransitionGuard&) = delete;
+
+    TransitionGuard(TransitionGuard&& o) noexcept
+        : clock_(o.clock_), field_(o.field_), config_(std::move(o.config_)),
+          clock_id_(o.clock_id_), subscription_(std::move(o.subscription_)),
+          current_animated_(std::move(o.current_animated_)),
+          target_(std::move(o.target_)), from_(std::move(o.from_)),
+          start_(o.start_), animating_(o.animating_) {
+        o.clock_ = nullptr;
+        o.clock_id_ = 0;
+        if (clock_ && clock_id_) {
+            clock_->remove(clock_id_);
+            clock_id_ = clock_->add([this](AnimationClock::time_point now) {
+                return tick(now);
+            });
+        }
+    }
+
+    TransitionGuard& operator=(TransitionGuard&& o) noexcept {
+        if (this != &o) {
+            subscription_.disconnect();
+            if (clock_ && clock_id_)
+                clock_->remove(clock_id_);
+            clock_ = o.clock_;
+            field_ = o.field_;
+            config_ = std::move(o.config_);
+            current_animated_ = std::move(o.current_animated_);
+            target_ = std::move(o.target_);
+            from_ = std::move(o.from_);
+            start_ = o.start_;
+            animating_ = o.animating_;
+            subscription_ = std::move(o.subscription_);
+            clock_id_ = 0;
+            o.clock_ = nullptr;
+            o.clock_id_ = 0;
+            if (clock_) {
+                clock_id_ = clock_->add([this](AnimationClock::time_point now) {
+                    return tick(now);
+                });
+            }
+        }
+        return *this;
+    }
+
+private:
+    AnimationClock* clock_ = nullptr;
+    Field<T>* field_ = nullptr;
+    TimingConfig config_{AnimationConfig{}};
+    uint64_t clock_id_ = 0;
+    Connection subscription_;
+    T current_animated_{};
+    T target_{};
+    T from_{};
+    AnimationClock::time_point start_{};
+    bool animating_ = false;
+
+    void on_field_changed(const T& new_val) {
+        if (animating_) return;
+
+        from_ = current_animated_;
+        target_ = new_val;
+        start_ = AnimationClock::clock::now();
+
+        if (!clock_id_) {
+            clock_id_ = clock_->add([this](AnimationClock::time_point now) {
+                return tick(now);
+            });
+        }
+    }
+
+    bool tick(AnimationClock::time_point now) {
+        auto elapsed = now - start_;
+        bool keep_going = std::visit([&](auto& cfg) {
+            return tick_with(cfg, elapsed);
+        }, config_);
+        if (!keep_going)
+            clock_id_ = 0;
+        return keep_going;
+    }
+
+    bool tick_with(const AnimationConfig& cfg, std::chrono::nanoseconds elapsed) {
+        float t = std::chrono::duration<float>(elapsed).count()
+                / std::chrono::duration<float>(cfg.duration).count();
+        // Small tolerance for wall-clock drift between now() and tick time
+        if (t >= 0.999f) {
+            animating_ = true;
+            field_->set(target_);
+            current_animated_ = target_;
+            animating_ = false;
+            return false;
+        }
+        auto eased = cfg.easing(Progress{std::clamp(t, 0.f, 1.f)});
+        current_animated_ = lerp(from_, target_, eased);
+        animating_ = true;
+        field_->set(current_animated_);
+        animating_ = false;
+        return true;
+    }
+
+    bool tick_with(const SpringConfig& cfg, std::chrono::nanoseconds elapsed) {
+        auto [progress, settled] = cfg.spring.evaluate(elapsed);
+        auto eased = EasedProgress{progress.raw()};
+        if (settled) {
+            animating_ = true;
+            field_->set(target_);
+            current_animated_ = target_;
+            animating_ = false;
+            return false;
+        }
+        current_animated_ = lerp(from_, target_, eased);
+        animating_ = true;
+        field_->set(current_animated_);
+        animating_ = false;
+        return true;
+    }
+};
+
+template <Lerpable T>
+[[nodiscard]] TransitionGuard<T> transition(AnimationClock& clock, Field<T>& field,
+                                             TimingConfig config) {
+    return TransitionGuard<T>(clock, field, std::move(config));
+}
+
 } // namespace prism

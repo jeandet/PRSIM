@@ -218,3 +218,83 @@ TEST_CASE("animate() RAII — dropping stops animation") {
     CHECK_FALSE(clock.active());
     CHECK(value.get() < 100.f); // did not reach target
 }
+
+TEST_CASE("transition() interpolates on set()") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    auto guard = prism::transition(clock, value,
+        AnimationConfig{.duration = 100ms, .easing = ease::linear});
+
+    auto t0 = AnimationClock::clock::now();
+
+    value.set(100.f);
+    CHECK(clock.active());
+
+    clock.tick(t0 + 50ms);
+    CHECK(value.get() == doctest::Approx(50.f).epsilon(5.f));
+
+    clock.tick(t0 + 100ms);
+    CHECK(value.get() == doctest::Approx(100.f));
+    CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("transition() rapid retarget") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    auto guard = prism::transition(clock, value,
+        AnimationConfig{.duration = 100ms, .easing = ease::linear});
+
+    auto t0 = AnimationClock::clock::now();
+
+    value.set(100.f);
+    clock.tick(t0 + 50ms);
+    float mid = value.get();
+    CHECK(mid == doctest::Approx(50.f).epsilon(5.f));
+
+    // Retarget to 0 mid-animation
+    value.set(0.f);
+    // The new animation starts from ~50, going to 0
+    clock.tick(t0 + 50ms + 50ms);
+    CHECK(value.get() == doctest::Approx(mid / 2.f).epsilon(5.f));
+
+    clock.tick(t0 + 50ms + 100ms);
+    CHECK(value.get() == doctest::Approx(0.f).epsilon(1.f));
+}
+
+TEST_CASE("transition() recursion guard — no infinite loop") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    auto guard = prism::transition(clock, value,
+        AnimationConfig{.duration = 100ms, .easing = ease::linear});
+
+    value.set(100.f);
+    auto t0 = AnimationClock::clock::now();
+
+    // Multiple ticks should not cause re-entrant set→callback→set loops
+    for (int i = 1; i <= 10; ++i) {
+        clock.tick(t0 + std::chrono::milliseconds(i * 10));
+    }
+    CHECK(value.get() == doctest::Approx(100.f));
+}
+
+TEST_CASE("transition() RAII — dropping stops interception") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    {
+        auto guard = prism::transition(clock, value,
+            AnimationConfig{.duration = 1s, .easing = ease::linear});
+        value.set(100.f);
+        CHECK(clock.active());
+    }
+    // guard destroyed — clock should be inactive
+    CHECK_FALSE(clock.active());
+
+    // Further set() should be instant (no transition)
+    value.set(50.f);
+    CHECK(value.get() == doctest::Approx(50.f));
+    CHECK_FALSE(clock.active());
+}
