@@ -1,0 +1,49 @@
+#pragma once
+
+#include <prism/core/types.hpp>
+
+namespace prism {
+
+namespace ease {
+
+inline EasedProgress linear(Progress t) {
+    return EasedProgress{t.raw()};
+}
+
+inline EasedProgress in_quad(Progress t) {
+    float v = t.raw();
+    return EasedProgress{v * v};
+}
+
+inline EasedProgress out_quad(Progress t) {
+    float v = t.raw();
+    return EasedProgress{v * (2.f - v)};
+}
+
+inline EasedProgress in_out_quad(Progress t) {
+    float v = t.raw();
+    return v < 0.5f
+        ? EasedProgress{2.f * v * v}
+        : EasedProgress{-1.f + (4.f - 2.f * v) * v};
+}
+
+inline EasedProgress in_cubic(Progress t) {
+    float v = t.raw();
+    return EasedProgress{v * v * v};
+}
+
+inline EasedProgress out_cubic(Progress t) {
+    float v = t.raw() - 1.f;
+    return EasedProgress{v * v * v + 1.f};
+}
+
+inline EasedProgress in_out_cubic(Progress t) {
+    float v = t.raw();
+    return v < 0.5f
+        ? EasedProgress{4.f * v * v * v}
+        : EasedProgress{(v - 1.f) * (2.f * v - 2.f) * (2.f * v - 2.f) + 1.f};
+}
+
+} // namespace ease
+
+} // namespace prism
