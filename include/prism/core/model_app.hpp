@@ -1,5 +1,6 @@
 #pragma once
 
+#include <prism/core/animation.hpp>
 #include <prism/core/backend.hpp>
 #include <prism/core/exec.hpp>
 #include <prism/core/hit_test.hpp>
@@ -16,11 +17,13 @@ class AppContext {
 public:
     using scheduler_type = decltype(std::declval<stdexec::run_loop>().get_scheduler());
 
-    explicit AppContext(scheduler_type s) : sched_(s) {}
+    explicit AppContext(scheduler_type s, AnimationClock& c) : sched_(s), clock_(&c) {}
     scheduler_type scheduler() const { return sched_; }
+    AnimationClock& clock() { return *clock_; }
 
 private:
     scheduler_type sched_;
+    AnimationClock* clock_;
 };
 
 template <typename Model>
@@ -30,6 +33,8 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
     auto sched = loop.get_scheduler();
 
     WidgetTree tree(model);
+    AnimationClock anim_clock;
+    bool tick_scheduled = false;
     int w = cfg.width, h = cfg.height;
     uint64_t version = 0;
 
@@ -41,6 +46,23 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
         backend.submit(current_snap);
         backend.wake();
         tree.clear_dirty();
+    };
+
+    std::function<void()> schedule_tick;
+    schedule_tick = [&] {
+        if (!anim_clock.active() || tick_scheduled) return;
+        tick_scheduled = true;
+        exec::start_detached(
+            stdexec::schedule(sched)
+            | stdexec::then([&] {
+                tick_scheduled = false;
+                anim_clock.tick(AnimationClock::clock::now());
+                if (tree.any_dirty())
+                    publish();
+                if (anim_clock.active())
+                    schedule_tick();
+            })
+        );
     };
 
     std::thread backend_thread([&] {
@@ -106,6 +128,7 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
 
                     if (tree.any_dirty() || needs_publish)
                         publish();
+                    schedule_tick();
                 })
             );
         });
@@ -115,8 +138,9 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
     publish();
 
     if (setup) {
-        auto ctx = AppContext(sched);
+        auto ctx = AppContext(sched, anim_clock);
         setup(ctx);
+        schedule_tick();
     }
 
     loop.run();
