@@ -77,3 +77,36 @@ TEST_CASE("Lerpable concept") {
     static_assert(prism::Lerpable<Color>);
     static_assert(!prism::Lerpable<std::string>);
 }
+
+#include <chrono>
+using namespace std::chrono_literals;
+
+TEST_CASE("Spring starts at zero progress") {
+    Spring spring{};
+    auto [progress, settled] = spring.evaluate(0ns);
+    CHECK(progress.raw() == doctest::Approx(0.f));
+    CHECK_FALSE(settled);
+}
+
+TEST_CASE("Spring converges to 1.0") {
+    Spring spring{.stiffness = 100.f, .damping = 10.f, .mass = 1.f};
+    auto [progress, settled] = spring.evaluate(5s);
+    CHECK(progress.raw() == doctest::Approx(1.f).epsilon(0.01f));
+    CHECK(settled);
+}
+
+TEST_CASE("Spring intermediate progress") {
+    Spring spring{.stiffness = 100.f, .damping = 10.f, .mass = 1.f};
+    auto [p1, s1] = spring.evaluate(100ms);
+    CHECK(p1.raw() > 0.f);
+    CHECK(p1.raw() < 1.f);
+    CHECK_FALSE(s1);
+}
+
+TEST_CASE("Stiffer spring converges faster") {
+    Spring soft{.stiffness = 50.f, .damping = 10.f, .mass = 1.f};
+    Spring stiff{.stiffness = 200.f, .damping = 20.f, .mass = 1.f};
+    auto [p_soft, _s1] = soft.evaluate(150ms);
+    auto [p_stiff, _s2] = stiff.evaluate(150ms);
+    CHECK(p_stiff.raw() > p_soft.raw());
+}

@@ -1,6 +1,9 @@
 #pragma once
 
 #include <prism/core/types.hpp>
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 
 namespace prism {
 
@@ -45,6 +48,38 @@ inline EasedProgress in_out_cubic(Progress t) {
 }
 
 } // namespace ease
+
+struct Spring {
+    float stiffness = 100.f;
+    float damping = 10.f;
+    float mass = 1.f;
+
+    std::pair<Progress, bool> evaluate(std::chrono::nanoseconds elapsed) const {
+        float t = std::chrono::duration<float>(elapsed).count();
+        float omega = std::sqrt(stiffness / mass);
+        float zeta = damping / (2.f * std::sqrt(stiffness * mass));
+
+        float x;
+        if (zeta < 1.f) {
+            float omega_d = omega * std::sqrt(1.f - zeta * zeta);
+            float env = std::exp(-zeta * omega * t);
+            x = -env * (std::cos(omega_d * t) + (zeta * omega / omega_d) * std::sin(omega_d * t));
+        } else if (zeta > 1.f) {
+            float s1 = -omega * (zeta + std::sqrt(zeta * zeta - 1.f));
+            float s2 = -omega * (zeta - std::sqrt(zeta * zeta - 1.f));
+            float c2 = (s1 + omega * zeta) / (s1 - s2);
+            float c1 = -1.f - c2;
+            x = c1 * std::exp(s1 * t) + c2 * std::exp(s2 * t);
+        } else {
+            float env = std::exp(-omega * t);
+            x = -(1.f + omega * t) * env;
+        }
+
+        float progress = std::clamp(1.f + x, 0.f, 1.f);
+        bool settled = std::abs(x) < 0.001f;
+        return {Progress{progress}, settled};
+    }
+};
 
 // lerp overloads
 inline float lerp(float a, float b, EasedProgress t) {
