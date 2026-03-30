@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/types.hpp>
+#include <prism/core/field.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -143,5 +144,107 @@ template <typename T>
 concept Lerpable = requires(T a, T b, EasedProgress t) {
     { lerp(a, b, t) } -> std::convertible_to<T>;
 };
+
+template <Lerpable T>
+class Animation {
+public:
+    Animation() = default;
+
+    Animation(AnimationClock& clock, Field<T>& field, T target, TimingConfig config)
+        : clock_(&clock), field_(&field), from_(field.get()),
+          to_(std::move(target)), config_(std::move(config)) {
+        start_ = AnimationClock::clock::now();
+        clock_id_ = clock_->add([this](AnimationClock::time_point now) {
+            return tick(now);
+        });
+    }
+
+    ~Animation() {
+        if (clock_ && clock_id_)
+            clock_->remove(clock_id_);
+    }
+
+    Animation(const Animation&) = delete;
+    Animation& operator=(const Animation&) = delete;
+
+    Animation(Animation&& o) noexcept
+        : clock_(o.clock_), field_(o.field_), from_(std::move(o.from_)),
+          to_(std::move(o.to_)), start_(o.start_), config_(std::move(o.config_)),
+          clock_id_(o.clock_id_) {
+        o.clock_ = nullptr;
+        o.clock_id_ = 0;
+        if (clock_ && clock_id_) {
+            clock_->remove(clock_id_);
+            clock_id_ = clock_->add([this](AnimationClock::time_point now) {
+                return tick(now);
+            });
+        }
+    }
+
+    Animation& operator=(Animation&& o) noexcept {
+        if (this != &o) {
+            if (clock_ && clock_id_)
+                clock_->remove(clock_id_);
+            clock_ = o.clock_;
+            field_ = o.field_;
+            from_ = std::move(o.from_);
+            to_ = std::move(o.to_);
+            start_ = o.start_;
+            config_ = std::move(o.config_);
+            clock_id_ = 0;
+            o.clock_ = nullptr;
+            o.clock_id_ = 0;
+            if (clock_) {
+                clock_id_ = clock_->add([this](AnimationClock::time_point now) {
+                    return tick(now);
+                });
+            }
+        }
+        return *this;
+    }
+
+private:
+    AnimationClock* clock_ = nullptr;
+    Field<T>* field_ = nullptr;
+    T from_{};
+    T to_{};
+    AnimationClock::time_point start_{};
+    TimingConfig config_{AnimationConfig{}};
+    uint64_t clock_id_ = 0;
+
+    bool tick(AnimationClock::time_point now) {
+        auto elapsed = now - start_;
+        return std::visit([&](auto& cfg) { return tick_with(cfg, elapsed); }, config_);
+    }
+
+    bool tick_with(const AnimationConfig& cfg, std::chrono::nanoseconds elapsed) {
+        float t = std::chrono::duration<float>(elapsed).count()
+                / std::chrono::duration<float>(cfg.duration).count();
+        if (t >= 1.f) {
+            field_->set(to_);
+            return false;
+        }
+        auto eased = cfg.easing(Progress{std::clamp(t, 0.f, 1.f)});
+        field_->set(lerp(from_, to_, eased));
+        return true;
+    }
+
+    bool tick_with(const SpringConfig& cfg, std::chrono::nanoseconds elapsed) {
+        auto [progress, settled] = cfg.spring.evaluate(elapsed);
+        auto eased = EasedProgress{progress.raw()};
+        if (settled) {
+            field_->set(to_);
+            return false;
+        }
+        field_->set(lerp(from_, to_, eased));
+        return true;
+    }
+};
+
+template <Lerpable T>
+[[nodiscard]] Animation<T> animate(AnimationClock& clock, Field<T>& field,
+                                    T target, TimingConfig config) {
+    return Animation<T>(clock, field, std::move(target), std::move(config));
+}
 
 } // namespace prism

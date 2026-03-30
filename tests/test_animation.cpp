@@ -3,6 +3,7 @@
 
 #include <prism/core/animation.hpp>
 #include <prism/core/draw_list.hpp>
+#include <prism/core/field.hpp>
 #include <string>
 
 using namespace prism;
@@ -157,4 +158,63 @@ TEST_CASE("AnimationClock remove during tick is safe") {
     auto t = AnimationClock::clock::now();
     clock.tick(t); // should not crash
     CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("animate() reaches target after duration") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    auto anim = prism::animate(clock, value, 100.f,
+        AnimationConfig{.duration = 100ms, .easing = ease::linear});
+
+    auto t0 = AnimationClock::clock::now();
+
+    clock.tick(t0 + 50ms);
+    CHECK(value.get() == doctest::Approx(50.f).epsilon(5.f));
+
+    clock.tick(t0 + 100ms);
+    CHECK(value.get() == doctest::Approx(100.f));
+    CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("animate() with Scalar type") {
+    AnimationClock clock;
+    Field<X> pos{X{0.f}};
+
+    auto anim = prism::animate(clock, pos, X{200.f},
+        AnimationConfig{.duration = 200ms, .easing = ease::linear});
+
+    auto t0 = AnimationClock::clock::now();
+    clock.tick(t0 + 100ms);
+    CHECK(pos.get().raw() == doctest::Approx(100.f).epsilon(5.f));
+
+    clock.tick(t0 + 200ms);
+    CHECK(pos.get().raw() == doctest::Approx(200.f));
+}
+
+TEST_CASE("animate() with spring") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    auto anim = prism::animate(clock, value, 1.f,
+        SpringConfig{.spring = {.stiffness = 100.f, .damping = 10.f, .mass = 1.f}});
+
+    auto t0 = AnimationClock::clock::now();
+    clock.tick(t0 + 5s);
+    CHECK(value.get() == doctest::Approx(1.f).epsilon(0.01f));
+    CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("animate() RAII — dropping stops animation") {
+    AnimationClock clock;
+    Field<float> value{0.f};
+
+    {
+        auto anim = prism::animate(clock, value, 100.f,
+            AnimationConfig{.duration = 1s, .easing = ease::linear});
+        CHECK(clock.active());
+    }
+    // anim destroyed
+    CHECK_FALSE(clock.active());
+    CHECK(value.get() < 100.f); // did not reach target
 }
