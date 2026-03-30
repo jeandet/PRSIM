@@ -191,10 +191,11 @@ public:
             to_ = std::move(o.to_);
             start_ = o.start_;
             config_ = std::move(o.config_);
+            auto src_clock_id = o.clock_id_;
             clock_id_ = 0;
             o.clock_ = nullptr;
             o.clock_id_ = 0;
-            if (clock_) {
+            if (clock_ && src_clock_id) {
                 clock_id_ = clock_->add([this](AnimationClock::time_point now) {
                     return tick(now);
                 });
@@ -299,10 +300,11 @@ public:
             start_ = o.start_;
             animating_ = o.animating_;
             subscription_ = std::move(o.subscription_);
+            auto src_clock_id = o.clock_id_;
             clock_id_ = 0;
             o.clock_ = nullptr;
             o.clock_id_ = 0;
-            if (clock_) {
+            if (clock_ && src_clock_id) {
                 clock_id_ = clock_->add([this](AnimationClock::time_point now) {
                     return tick(now);
                 });
