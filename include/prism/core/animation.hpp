@@ -4,6 +4,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <functional>
+#include <utility>
+#include <variant>
+#include <vector>
 
 namespace prism {
 
@@ -79,6 +83,49 @@ struct Spring {
         bool settled = std::abs(x) < 0.001f;
         return {Progress{progress}, settled};
     }
+};
+
+struct AnimationConfig {
+    std::chrono::milliseconds duration{300};
+    std::function<EasedProgress(Progress)> easing = ease::out_quad;
+};
+
+struct SpringConfig {
+    Spring spring{};
+    float settle_threshold = 0.001f;
+};
+
+using TimingConfig = std::variant<AnimationConfig, SpringConfig>;
+
+class AnimationClock {
+public:
+    using clock = std::chrono::steady_clock;
+    using time_point = clock::time_point;
+
+    uint64_t add(std::function<bool(time_point)> tick_fn) {
+        auto id = next_id_++;
+        animations_.push_back({id, std::move(tick_fn)});
+        return id;
+    }
+
+    void remove(uint64_t id) {
+        std::erase_if(animations_, [id](auto& e) { return e.first == id; });
+    }
+
+    void tick(time_point now) {
+        auto snapshot = animations_;
+        for (auto& [id, fn] : snapshot) {
+            if (!fn(now)) {
+                remove(id);
+            }
+        }
+    }
+
+    [[nodiscard]] bool active() const { return !animations_.empty(); }
+
+private:
+    uint64_t next_id_ = 1;
+    std::vector<std::pair<uint64_t, std::function<bool(time_point)>>> animations_;
 };
 
 // lerp overloads

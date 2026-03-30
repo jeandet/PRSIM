@@ -110,3 +110,51 @@ TEST_CASE("Stiffer spring converges faster") {
     auto [p_stiff, _s2] = stiff.evaluate(150ms);
     CHECK(p_stiff.raw() > p_soft.raw());
 }
+
+TEST_CASE("AnimationClock starts inactive") {
+    AnimationClock clock;
+    CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("AnimationClock becomes active on add") {
+    AnimationClock clock;
+    auto id = clock.add([](AnimationClock::time_point) { return true; });
+    CHECK(clock.active());
+    clock.remove(id);
+    CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("AnimationClock tick advances animations") {
+    AnimationClock clock;
+    int tick_count = 0;
+    clock.add([&](AnimationClock::time_point) {
+        ++tick_count;
+        return tick_count < 3;
+    });
+    CHECK(clock.active());
+
+    auto t = AnimationClock::clock::now();
+    clock.tick(t);
+    CHECK(tick_count == 1);
+    CHECK(clock.active());
+
+    clock.tick(t + 16ms);
+    CHECK(tick_count == 2);
+    CHECK(clock.active());
+
+    clock.tick(t + 32ms);
+    CHECK(tick_count == 3);
+    CHECK_FALSE(clock.active());
+}
+
+TEST_CASE("AnimationClock remove during tick is safe") {
+    AnimationClock clock;
+    uint64_t id = 0;
+    id = clock.add([&](AnimationClock::time_point) {
+        clock.remove(id);
+        return false;
+    });
+    auto t = AnimationClock::clock::now();
+    clock.tick(t); // should not crash
+    CHECK_FALSE(clock.active());
+}
