@@ -46,4 +46,20 @@ inline EasedProgress in_out_cubic(Progress t) {
 
 } // namespace ease
 
+// lerp overloads
+inline float lerp(float a, float b, EasedProgress t) {
+    return a + (b - a) * t.raw();
+}
+
+template <typename Tag>
+Scalar<Tag> lerp(Scalar<Tag> a, Scalar<Tag> b, EasedProgress t) {
+    return Scalar<Tag>{a.raw() + (b.raw() - a.raw()) * t.raw()};
+}
+
+// Lerpable concept
+template <typename T>
+concept Lerpable = requires(T a, T b, EasedProgress t) {
+    { lerp(a, b, t) } -> std::convertible_to<T>;
+};
+
 } // namespace prism
