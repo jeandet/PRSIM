@@ -32,7 +32,7 @@ inline void route_mouse_move(WidgetTree& tree, const SceneSnapshot& snap,
                              const MouseMove& mm) {
     tree.update_hover(hit_test(snap, mm.position));
     if (tree.in_scrollbar_drag()) {
-        tree.update_scrollbar_drag(mm.position.y.raw());
+        tree.update_scrollbar_drag(mm.position.y);
         return;
     }
     if (auto cid = tree.captured_id(); cid != 0) {
@@ -51,7 +51,7 @@ inline void route_mouse_button(WidgetTree& tree, const SceneSnapshot& snap,
     }
     if (mb.pressed) {
         if (auto oid = hit_test_overlay(snap, mb.position)) {
-            tree.begin_scrollbar_drag(*oid, mb.position.y.raw());
+            tree.begin_scrollbar_drag(*oid, mb.position.y);
             if (tree.in_scrollbar_drag()) return;
         }
     }

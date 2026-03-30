@@ -6,9 +6,20 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+
 #include <vector>
 
 namespace prism {
+
+namespace scrollbar {
+    inline constexpr Width track_width{6.f};
+    inline constexpr Width track_inset{8.f};
+    inline constexpr Height min_thumb_h{20.f};
+
+    inline Height thumb_height(Height viewport_h, Height content_h) {
+        return Height{std::max(min_thumb_h.raw(), viewport_h.raw() * (viewport_h.raw() / content_h.raw()))};
+    }
+}
 
 enum class LayoutAxis { Horizontal, Vertical };
 
@@ -222,23 +233,19 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
 
         // Scrollbar overlay (if content exceeds viewport)
         if (node.scroll_content_h.raw() > node.allocated.extent.h.raw()) {
-            constexpr float track_width = 6.f;
-            constexpr float track_inset = 8.f;
-            constexpr float min_thumb_h = 20.f;
-
             auto vp = node.allocated;
-            float viewport_h = vp.extent.h.raw();
-            float content_h = node.scroll_content_h.raw();
-            float thumb_h = std::max(min_thumb_h, viewport_h * (viewport_h / content_h));
-            float max_scroll = content_h - viewport_h;
+            Height viewport_h = vp.extent.h;
+            Height content_h = node.scroll_content_h;
+            Height thumb_h = scrollbar::thumb_height(viewport_h, content_h);
+            float max_scroll = content_h.raw() - viewport_h.raw();
             float thumb_y = (max_scroll > 0)
-                ? node.scroll_offset.raw() * (viewport_h - thumb_h) / max_scroll
+                ? node.scroll_offset.raw() * (viewport_h.raw() - thumb_h.raw()) / max_scroll
                 : 0.f;
 
             Rect thumb_rect{
-                Point{X{vp.origin.x.raw() + vp.extent.w.raw() - track_inset},
-                      Y{vp.origin.y.raw() + thumb_y}},
-                Size{Width{track_width}, Height{thumb_h}}};
+                Point{vp.origin.x + DX{vp.extent.w.raw() - scrollbar::track_inset.raw()},
+                      vp.origin.y + DY{thumb_y}},
+                Size{Width{scrollbar::track_width}, thumb_h}};
             snap.overlay.filled_rect(thumb_rect, Color::rgba(120, 120, 130, 160));
             snap.overlay_geometry.push_back({node.id, thumb_rect});
         }

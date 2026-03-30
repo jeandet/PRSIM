@@ -251,7 +251,7 @@ TEST_CASE("Scrollbar drag updates scroll offset") {
     REQUIRE(!snap->overlay_geometry.empty());
 
     auto [scroll_id, thumb_rect] = snap->overlay_geometry[0];
-    float thumb_center_y = thumb_rect.origin.y.raw() + thumb_rect.extent.h.raw() / 2.f;
+    Y thumb_center_y = thumb_rect.origin.y + DY{thumb_rect.extent.h.raw() / 2.f};
 
     tree.begin_scrollbar_drag(scroll_id, thumb_center_y);
     CHECK(tree.in_scrollbar_drag());
@@ -259,7 +259,7 @@ TEST_CASE("Scrollbar drag updates scroll offset") {
 
     // Drag downward by 20 pixels — should increase scroll offset
     tree.clear_dirty();
-    tree.update_scrollbar_drag(thumb_center_y + 20.f);
+    tree.update_scrollbar_drag(thumb_center_y + DY{20.f});
     CHECK(tree.any_dirty());
 
     auto snap2 = tree.build_snapshot(400, 100, 2);

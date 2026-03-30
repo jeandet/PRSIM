@@ -246,44 +246,24 @@ public:
         WidgetId current = target;
         while (current != 0) {
             auto it = index_.find(current);
-            if (it != index_.end() && it->second->layout_kind == LayoutKind::Scroll) {
-                auto& ss = ensure_scroll_state(*it->second);
-                DY max_offset{std::max(0.f, ss.content_h.raw() - ss.viewport_h.raw())};
-                DY new_offset{std::clamp(ss.offset_y.raw() + delta.raw(), 0.f, max_offset.raw())};
+            if (it != index_.end()) {
+                auto sv = get_scroll_view(*it->second);
+                if (sv) {
+                    DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+                    DY new_off{std::clamp(sv->offset.raw() + delta.raw(), 0.f, max_off.raw())};
 
-                if (std::abs(new_offset.raw() - ss.offset_y.raw()) < 0.001f) {
-                    if (ss.event_policy == ScrollEventPolicy::BubbleAtBounds) {
-                        auto pit = parent_map_.find(current);
-                        current = (pit != parent_map_.end()) ? pit->second : 0;
-                        continue;
-                    }
-                    return;
-                }
-
-                ss.offset_y = new_offset;
-                constexpr uint8_t scrollbar_visible_frames = 30;
-                ss.show_ticks = scrollbar_visible_frames;
-                set_dirty(current);
-                return;
-            }
-            if (it != index_.end() && it->second->layout_kind == LayoutKind::VirtualList) {
-                auto* vls = get_vlist_state(*it->second);
-                if (vls) {
-                    float content_h = static_cast<float>(vls->item_count.raw())
-                        * vls->item_height.raw();
-                    DY max_offset{std::max(0.f, content_h - vls->viewport_h.raw())};
-                    DY new_offset{std::clamp(
-                        vls->scroll_offset.raw() + delta.raw(), 0.f, max_offset.raw())};
-
-                    if (std::abs(new_offset.raw() - vls->scroll_offset.raw()) < 0.001f) {
-                        auto pit = parent_map_.find(current);
-                        current = (pit != parent_map_.end()) ? pit->second : 0;
-                        continue;
+                    if (std::abs(new_off.raw() - sv->offset.raw()) < 0.001f) {
+                        auto* ss = std::get_if<ScrollState>(&it->second->edit_state);
+                        if (ss && ss->event_policy == ScrollEventPolicy::BubbleAtBounds) {
+                            auto pit = parent_map_.find(current);
+                            current = (pit != parent_map_.end()) ? pit->second : 0;
+                            continue;
+                        }
+                        return;
                     }
 
-                    vls->scroll_offset = new_offset;
-                    constexpr uint8_t scrollbar_visible_frames = 30;
-                    vls->show_ticks = scrollbar_visible_frames;
+                    sv->offset = new_off;
+                    sv->show_ticks = 30;
                     set_dirty(current);
                     return;
                 }
@@ -296,18 +276,11 @@ public:
     void scroll_to(WidgetId id, DY offset) {
         auto it = index_.find(id);
         if (it == index_.end()) return;
-        if (auto* ss = std::get_if<ScrollState>(&it->second->edit_state)) {
-            DY max_offset{std::max(0.f, ss->content_h.raw() - ss->viewport_h.raw())};
-            ss->offset_y = DY{std::clamp(offset.raw(), 0.f, max_offset.raw())};
-            ss->show_ticks = 30;
-        } else if (auto* vls = get_vlist_state(*it->second)) {
-            float ch = static_cast<float>(vls->item_count.raw()) * vls->item_height.raw();
-            DY max_offset{std::max(0.f, ch - vls->viewport_h.raw())};
-            vls->scroll_offset = DY{std::clamp(offset.raw(), 0.f, max_offset.raw())};
-            vls->show_ticks = 30;
-        } else {
-            return;
-        }
+        auto sv = get_scroll_view(*it->second);
+        if (!sv) return;
+        DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+        sv->offset = DY{std::clamp(offset.raw(), 0.f, max_off.raw())};
+        sv->show_ticks = 30;
         set_dirty(id);
     }
 
@@ -348,50 +321,38 @@ public:
 
     struct ScrollbarDrag {
         WidgetId scroll_id = 0;
-        float anchor_y = 0;       // mouse Y at drag start (absolute)
-        float anchor_offset = 0;  // scroll offset at drag start
-        float viewport_h = 0;
-        float content_h = 0;
-        float thumb_h = 0;
+        Y anchor_y{0};       // mouse Y at drag start (absolute)
+        DY anchor_offset{0}; // scroll offset at drag start
+        Height viewport_h{0};
+        Height content_h{0};
+        Height thumb_h{0};
     };
 
-    void begin_scrollbar_drag(WidgetId id, float mouse_y) {
+    void begin_scrollbar_drag(WidgetId id, Y mouse_y) {
         auto it = index_.find(id);
         if (it == index_.end()) return;
-        float vh = 0, ch = 0, offset = 0;
-        if (auto* ss = std::get_if<ScrollState>(&it->second->edit_state)) {
-            vh = ss->viewport_h.raw();
-            ch = ss->content_h.raw();
-            offset = ss->offset_y.raw();
-        } else if (auto* vls = get_vlist_state(*it->second)) {
-            vh = vls->viewport_h.raw();
-            ch = static_cast<float>(vls->item_count.raw()) * vls->item_height.raw();
-            offset = vls->scroll_offset.raw();
-        } else {
-            return;
-        }
-        if (ch <= vh) return;
-        constexpr float min_thumb_h = 20.f;
+        auto sv = get_scroll_view(*it->second);
+        if (!sv || sv->content_h.raw() <= sv->viewport_h.raw()) return;
         scrollbar_drag_ = ScrollbarDrag{
             .scroll_id = id,
             .anchor_y = mouse_y,
-            .anchor_offset = offset,
-            .viewport_h = vh,
-            .content_h = ch,
-            .thumb_h = std::max(min_thumb_h, vh * (vh / ch)),
+            .anchor_offset = sv->offset,
+            .viewport_h = sv->viewport_h,
+            .content_h = sv->content_h,
+            .thumb_h = scrollbar::thumb_height(sv->viewport_h, sv->content_h),
         };
         captured_id_ = id;
     }
 
-    void update_scrollbar_drag(float mouse_y) {
+    void update_scrollbar_drag(Y mouse_y) {
         if (scrollbar_drag_.scroll_id == 0) return;
         auto& d = scrollbar_drag_;
-        float track_range = d.viewport_h - d.thumb_h;
+        float track_range = d.viewport_h.raw() - d.thumb_h.raw();
         if (track_range <= 0) return;
-        float max_scroll = d.content_h - d.viewport_h;
-        float dy_pixels = mouse_y - d.anchor_y;
+        float max_scroll = d.content_h.raw() - d.viewport_h.raw();
+        float dy_pixels = mouse_y.raw() - d.anchor_y.raw();
         float new_offset = std::clamp(
-            d.anchor_offset + dy_pixels * max_scroll / track_range, 0.f, max_scroll);
+            d.anchor_offset.raw() + dy_pixels * max_scroll / track_range, 0.f, max_scroll);
         scroll_to(d.scroll_id, DY{new_offset});
     }
 
@@ -510,6 +471,23 @@ private:
     static VirtualListState* get_vlist_state(WidgetNode& node) {
         auto* sp = std::get_if<std::shared_ptr<VirtualListState>>(&node.edit_state);
         return sp ? sp->get() : nullptr;
+    }
+
+    struct ScrollView {
+        DY& offset;
+        Height viewport_h;
+        Height content_h;
+        uint8_t& show_ticks;
+    };
+
+    static std::optional<ScrollView> get_scroll_view(WidgetNode& node) {
+        if (auto* ss = std::get_if<ScrollState>(&node.edit_state))
+            return ScrollView{ss->offset_y, ss->viewport_h, ss->content_h, ss->show_ticks};
+        if (auto* vls = get_vlist_state(node)) {
+            Height ch{static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
+            return ScrollView{vls->scroll_offset, vls->viewport_h, ch, vls->show_ticks};
+        }
+        return std::nullopt;
     }
 
     // --- Node → WidgetNode conversion ---
@@ -752,27 +730,22 @@ private:
                 ss.viewport_h = layout_node.allocated.extent.h;
                 ss.viewport_w = layout_node.allocated.extent.w;
                 ss.content_h = layout_node.scroll_content_h;
-                // Clamp offset in case viewport/content changed
-                DY max_offset{std::max(0.f, ss.content_h.raw() - ss.viewport_h.raw())};
-                ss.offset_y = DY{std::clamp(ss.offset_y.raw(), 0.f, max_offset.raw())};
-                layout_node.scroll_offset = ss.offset_y;
-                if (ss.show_ticks > 0) ss.show_ticks--;
             }
         }
         if (layout_node.kind == LayoutNode::Kind::VirtualList) {
             auto it = index_.find(layout_node.id);
             if (it != index_.end()) {
-                auto* vls = get_vlist_state(*it->second);
-                if (vls) {
+                if (auto* vls = get_vlist_state(*it->second))
                     vls->viewport_h = layout_node.allocated.extent.h;
-                    float content_h = static_cast<float>(vls->item_count.raw())
-                        * vls->item_height.raw();
-                    DY max_offset{std::max(0.f, content_h - vls->viewport_h.raw())};
-                    vls->scroll_offset = DY{std::clamp(
-                        vls->scroll_offset.raw(), 0.f, max_offset.raw())};
-                    layout_node.scroll_offset = vls->scroll_offset;
-                    if (vls->show_ticks > 0) vls->show_ticks--;
-                }
+            }
+        }
+        auto it = index_.find(layout_node.id);
+        if (it != index_.end()) {
+            if (auto sv = get_scroll_view(*it->second)) {
+                DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+                sv->offset = DY{std::clamp(sv->offset.raw(), 0.f, max_off.raw())};
+                layout_node.scroll_offset = sv->offset;
+                if (sv->show_ticks > 0) sv->show_ticks--;
             }
         }
         for (auto& child : layout_node.children)
