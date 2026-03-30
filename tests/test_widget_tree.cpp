@@ -222,6 +222,28 @@ TEST_CASE("Slider click through WidgetTree dispatch updates value") {
     CHECK(model.volume.get().value == doctest::Approx(0.0).epsilon(0.05));
 }
 
+TEST_CASE("Slider drag updates value on MouseMove while pressed") {
+    SentinelModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() == 3);
+    auto slider_id = ids[1];
+
+    // Press at 25%
+    tree.set_pressed(slider_id, true);
+    tree.dispatch(slider_id, prism::MouseButton{P(50, 15), 1, true});
+    CHECK(model.volume.get().value == doctest::Approx(0.25).epsilon(0.05));
+    CHECK(tree.captured_id() == slider_id);
+
+    // Drag to 75%
+    tree.dispatch(slider_id, prism::MouseMove{P(150, 15)});
+    CHECK(model.volume.get().value == doctest::Approx(0.75).epsilon(0.05));
+
+    // Release
+    tree.set_pressed(slider_id, false);
+    CHECK(tree.captured_id() == 0);
+}
+
 TEST_CASE("update_hover sets hovered state and marks dirty") {
     SimpleModel model;
     prism::WidgetTree tree(model);

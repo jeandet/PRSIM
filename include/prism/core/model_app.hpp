@@ -26,6 +26,81 @@ private:
     AnimationClock* clock_;
 };
 
+namespace detail {
+
+inline void route_mouse_move(WidgetTree& tree, const SceneSnapshot& snap,
+                             const MouseMove& mm) {
+    tree.update_hover(hit_test(snap, mm.position));
+    if (tree.in_scrollbar_drag()) {
+        tree.update_scrollbar_drag(mm.position.y.raw());
+        return;
+    }
+    if (auto cid = tree.captured_id(); cid != 0) {
+        auto rect = find_widget_rect(snap, cid);
+        InputEvent ev = mm;
+        tree.dispatch(cid, rect ? localize_mouse(ev, *rect) : ev);
+    }
+}
+
+inline void route_mouse_button(WidgetTree& tree, const SceneSnapshot& snap,
+                               const InputEvent& ev, const MouseButton& mb) {
+    if (!mb.pressed && tree.in_scrollbar_drag()) {
+        tree.end_scrollbar_drag();
+        tree.set_pressed(tree.captured_id(), false);
+        return;
+    }
+    if (mb.pressed) {
+        if (auto oid = hit_test_overlay(snap, mb.position)) {
+            tree.begin_scrollbar_drag(*oid, mb.position.y.raw());
+            if (tree.in_scrollbar_drag()) return;
+        }
+    }
+    auto id = hit_test(snap, mb.position);
+    if (id) {
+        tree.set_pressed(*id, mb.pressed);
+        if (mb.pressed) {
+            if (*id != tree.focused_id())
+                tree.close_overlays();
+            tree.set_focused(*id);
+        }
+        auto rect = find_widget_rect(snap, *id);
+        tree.dispatch(*id, rect ? localize_mouse(ev, *rect) : ev);
+    } else if (mb.pressed) {
+        tree.close_overlays();
+        tree.clear_focus();
+    }
+}
+
+inline void route_mouse_scroll(WidgetTree& tree, const SceneSnapshot& snap,
+                               const MouseScroll& ms) {
+    constexpr float wheel_multiplier = 60.f;
+    auto id = hit_test(snap, ms.position);
+    if (id)
+        tree.scroll_at(*id, DY{ms.dy.raw() * wheel_multiplier});
+}
+
+inline void route_key_press(WidgetTree& tree, const InputEvent& ev,
+                            const KeyPress& kp) {
+    constexpr float page_delta = 200.f;
+    if (kp.key == keys::tab) {
+        if (kp.mods & mods::shift) tree.focus_prev();
+        else tree.focus_next();
+    } else if (kp.key == keys::page_up && tree.focused_id() != 0) {
+        tree.scroll_at(tree.focused_id(), DY{-page_delta});
+    } else if (kp.key == keys::page_down && tree.focused_id() != 0) {
+        tree.scroll_at(tree.focused_id(), DY{page_delta});
+    } else if (tree.focused_id() != 0) {
+        tree.dispatch(tree.focused_id(), ev);
+    }
+}
+
+inline void route_text_input(WidgetTree& tree, const InputEvent& ev) {
+    if (tree.focused_id() != 0)
+        tree.dispatch(tree.focused_id(), ev);
+}
+
+} // namespace detail
+
 template <typename Model>
 void model_app(Backend backend, BackendConfig cfg, Model& model,
                std::function<void(AppContext&)> setup = nullptr) {
@@ -81,50 +156,18 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
                         h = resize->height;
                         needs_publish = true;
                     }
-                    if (auto* mm = std::get_if<MouseMove>(&ev); mm && current_snap) {
-                        tree.update_hover(hit_test(*current_snap, mm->position));
+                    if (current_snap) {
+                        if (auto* mm = std::get_if<MouseMove>(&ev))
+                            detail::route_mouse_move(tree, *current_snap, *mm);
+                        if (auto* mb = std::get_if<MouseButton>(&ev))
+                            detail::route_mouse_button(tree, *current_snap, ev, *mb);
+                        if (auto* ms = std::get_if<MouseScroll>(&ev))
+                            detail::route_mouse_scroll(tree, *current_snap, *ms);
                     }
-                    if (auto* mb = std::get_if<MouseButton>(&ev); mb && current_snap) {
-                        auto id = hit_test(*current_snap, mb->position);
-                        if (id) {
-                            tree.set_pressed(*id, mb->pressed);
-                            if (mb->pressed) {
-                                if (*id != tree.focused_id())
-                                    tree.close_overlays();
-                                tree.set_focused(*id);
-                            }
-                            auto rect = find_widget_rect(*current_snap, *id);
-                            tree.dispatch(*id, rect ? localize_mouse(ev, *rect) : ev);
-                        } else if (mb->pressed) {
-                            tree.close_overlays();
-                            tree.clear_focus();
-                        }
-                    }
-                    if (auto* ms = std::get_if<MouseScroll>(&ev); ms && current_snap) {
-                        constexpr float wheel_multiplier = 60.f;
-                        auto id = hit_test(*current_snap, ms->position);
-                        if (id)
-                            tree.scroll_at(*id, DY{ms->dy.raw() * wheel_multiplier});
-                    }
-                    if (auto* kp = std::get_if<KeyPress>(&ev)) {
-                        constexpr float page_delta = 200.f;
-                        if (kp->key == keys::tab) {
-                            if (kp->mods & mods::shift)
-                                tree.focus_prev();
-                            else
-                                tree.focus_next();
-                        } else if (kp->key == keys::page_up && tree.focused_id() != 0) {
-                            tree.scroll_at(tree.focused_id(), DY{-page_delta});
-                        } else if (kp->key == keys::page_down && tree.focused_id() != 0) {
-                            tree.scroll_at(tree.focused_id(), DY{page_delta});
-                        } else if (tree.focused_id() != 0) {
-                            tree.dispatch(tree.focused_id(), ev);
-                        }
-                    }
-                    if (auto* ti = std::get_if<TextInput>(&ev)) {
-                        if (tree.focused_id() != 0)
-                            tree.dispatch(tree.focused_id(), ev);
-                    }
+                    if (auto* kp = std::get_if<KeyPress>(&ev))
+                        detail::route_key_press(tree, ev, *kp);
+                    if (std::get_if<TextInput>(&ev))
+                        detail::route_text_input(tree, ev);
 
                     if (tree.any_dirty() || needs_publish)
                         publish();

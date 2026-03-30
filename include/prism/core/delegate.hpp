@@ -5,7 +5,7 @@
 #include <prism/core/input_event.hpp>
 
 #include <algorithm>
-#include <any>
+#include <memory>
 #if __cpp_impl_reflection
 #include <meta>
 #endif
@@ -208,6 +208,20 @@ struct DropdownEditState {
     Rect popup_rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
 };
 
+// Closed set of ephemeral widget states stored in WidgetNode::edit_state.
+// std::shared_ptr<void> holds type-erased lifetime (e.g. virtual list row Field<T>).
+struct VirtualListState;
+
+using EditState = std::variant<
+    std::monostate,
+    TextEditState,
+    TextAreaEditState,
+    DropdownEditState,
+    ScrollState,
+    std::shared_ptr<VirtualListState>,
+    std::shared_ptr<void>
+>;
+
 // WidgetNode is defined in widget_tree.hpp; declared here so delegate
 // signatures can take WidgetNode& without creating a circular include.
 // The accessor below lets delegate bodies reach visual_state without
@@ -232,7 +246,7 @@ template <typename T>
 struct Delegate {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<T>&, const WidgetNode& node) {
+    static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
         dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
@@ -246,7 +260,7 @@ template <StringLike T>
 struct Delegate<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node) {
+    static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
         dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
@@ -293,7 +307,7 @@ struct Delegate<Checkbox> {
     static constexpr float widget_w = 200.f, widget_h = 30.f;
     static constexpr float box_size = 16.f;
 
-    static void record(DrawList& dl, const Field<Checkbox>& field, const WidgetNode& node) {
+    static void record(DrawList& dl, const Field<Checkbox>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& cb = field.get();
 
@@ -331,7 +345,7 @@ template <>
 struct Delegate<bool> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<bool>& field, const WidgetNode& node) {
+    static void record(DrawList& dl, const Field<bool>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         constexpr float widget_w = 200.f, widget_h = 30.f;
         constexpr float box_size = 16.f;
@@ -361,7 +375,7 @@ template <StringLike T>
 struct Delegate<Label<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetNode&) {
+    static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode&) {
         dl.filled_rect(detail::make_rect(0, 0, 200, 24), Color::rgba(40, 40, 48));
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
                 detail::make_point(4, 4), 14, Color::rgba(180, 180, 190));
@@ -393,7 +407,7 @@ struct Delegate<Slider<T>> {
         return static_cast<float>(s.value - s.min) / static_cast<float>(s.max - s.min);
     }
 
-    static void record(DrawList& dl, const Field<Slider<T>>& field, const WidgetNode& node) {
+    static void record(DrawList& dl, const Field<Slider<T>>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& s = field.get();
         float r = ratio(s);
@@ -411,20 +425,25 @@ struct Delegate<Slider<T>> {
             dl.rect_outline(detail::make_rect(-1, -1, track_w + 2, widget_h + 2), Color::rgba(80, 160, 240), 2.0f);
     }
 
-    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetNode&) {
-        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-            float t = std::clamp(mb->position.x.raw() / track_w, 0.f, 1.f);
-            auto& s = field.get();
-            T raw = static_cast<T>(s.min + t * (s.max - s.min));
-            Slider<T> updated = s;
-            if (s.step != T{0}) {
-                T steps = static_cast<T>((raw - s.min + s.step / T{2}) / s.step);
-                updated.value = std::clamp(static_cast<T>(s.min + steps * s.step), s.min, s.max);
-            } else {
-                updated.value = raw;
-            }
-            field.set(updated);
+    static void apply_position(Field<Slider<T>>& field, float x) {
+        float t = std::clamp(x / track_w, 0.f, 1.f);
+        auto& s = field.get();
+        T raw = static_cast<T>(s.min + t * (s.max - s.min));
+        Slider<T> updated = s;
+        if (s.step != T{0}) {
+            T steps = static_cast<T>((raw - s.min + s.step / T{2}) / s.step);
+            updated.value = std::clamp(static_cast<T>(s.min + steps * s.step), s.min, s.max);
+        } else {
+            updated.value = raw;
         }
+        field.set(updated);
+    }
+
+    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetNode& node) {
+        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
+            apply_position(field, mb->position.x.raw());
+        if (auto* mm = std::get_if<MouseMove>(&ev); mm && node_vs(node).pressed)
+            apply_position(field, mm->position.x.raw());
     }
 };
 
@@ -439,7 +458,7 @@ template <>
 struct Delegate<Button> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<Button>& field, const WidgetNode& node) {
+    static void record(DrawList& dl, const Field<Button>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         Color bg = vs.pressed ? Color::rgba(30, 90, 160)
                  : vs.hovered ? Color::rgba(50, 120, 200)
@@ -478,7 +497,7 @@ struct Delegate<TextField<T>> {
     // Defined in widget_tree.hpp (after WidgetNode is complete).
     static const TextEditState& get_edit_state(const WidgetNode& node);
     static TextEditState& ensure_edit_state(WidgetNode& node);
-    static void record(DrawList& dl, const Field<TextField<T>>& field, const WidgetNode& node);
+    static void record(DrawList& dl, const Field<TextField<T>>& field, WidgetNode& node);
     static void handle_input(Field<TextField<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
@@ -493,7 +512,7 @@ struct Delegate<Password<T>> {
 
     static const TextEditState& get_edit_state(const WidgetNode& node);
     static TextEditState& ensure_edit_state(WidgetNode& node);
-    static void record(DrawList& dl, const Field<Password<T>>& field, const WidgetNode& node);
+    static void record(DrawList& dl, const Field<Password<T>>& field, WidgetNode& node);
     static void handle_input(Field<Password<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
@@ -508,7 +527,7 @@ struct Delegate<TextArea<T>> {
 
     static const TextAreaEditState& get_edit_state(const WidgetNode& node);
     static TextAreaEditState& ensure_edit_state(WidgetNode& node);
-    static void record(DrawList& dl, const Field<TextArea<T>>& field, const WidgetNode& node);
+    static void record(DrawList& dl, const Field<TextArea<T>>& field, WidgetNode& node);
     static void handle_input(Field<TextArea<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
@@ -518,7 +537,7 @@ template <ScopedEnum T>
 struct Delegate<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node);
+    static void record(DrawList& dl, const Field<T>& field, WidgetNode& node);
     static void handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node);
 };
 
@@ -526,7 +545,7 @@ template <ScopedEnum T>
 struct Delegate<Dropdown<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<Dropdown<T>>& field, const WidgetNode& node);
+    static void record(DrawList& dl, const Field<Dropdown<T>>& field, WidgetNode& node);
     static void handle_input(Field<Dropdown<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 

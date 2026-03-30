@@ -163,7 +163,7 @@ TEST_CASE("Enum delegate click opens popup") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
     prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == true);
     CHECK(es.highlighted == 0);  // Red is index 0
 }
@@ -172,7 +172,7 @@ TEST_CASE("Enum delegate click opens with current selection highlighted") {
     prism::Field<Color> field{Color::Blue};
     auto node = make_node({.focused = true});
     prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.highlighted == 2);  // Blue is index 2
 }
 
@@ -180,7 +180,7 @@ TEST_CASE("Enum delegate Space opens popup") {
     prism::Field<Color> field{Color::Green};
     auto node = make_node({.focused = true});
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == true);
     CHECK(es.highlighted == 1);
 }
@@ -189,7 +189,7 @@ TEST_CASE("Enum delegate Enter opens popup") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == true);
 }
 
@@ -199,7 +199,7 @@ TEST_CASE("Enum delegate Down navigates when open") {
 
     // Open
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.highlighted == 0);
 
     // Down
@@ -221,7 +221,7 @@ TEST_CASE("Enum delegate Up navigates when open") {
 
     // Open
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.highlighted == 2);
 
     // Up
@@ -246,7 +246,7 @@ TEST_CASE("Enum delegate Enter selects highlighted option") {
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
 
     CHECK(field.get() == Color::Blue);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == false);
 }
 
@@ -259,7 +259,7 @@ TEST_CASE("Enum delegate Escape closes without changing") {
     prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::escape, 0}, node);
 
     CHECK(field.get() == Color::Red);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == false);
 }
 
@@ -276,7 +276,7 @@ TEST_CASE("Enum delegate click on option selects and closes") {
     prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
 
     CHECK(field.get() == Color::Green);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == false);
 }
 
@@ -291,7 +291,7 @@ TEST_CASE("Enum delegate click outside popup closes without changing") {
     prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 124), 1, true}, node);
 
     CHECK(field.get() == Color::Red);
-    auto& es = std::any_cast<prism::DropdownEditState&>(node.edit_state);
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
     CHECK(es.open == false);
 }
 

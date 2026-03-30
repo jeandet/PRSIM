@@ -7,13 +7,12 @@
 
 namespace prism {
 
-template <typename T>
-struct Field {
-    static constexpr bool is_prism_field = true;
+template <typename T, typename Derived>
+struct ObservableValue {
     T value{};
 
-    Field() = default;
-    Field(T init) : value(std::move(init)) {}
+    ObservableValue() = default;
+    ObservableValue(T init) : value(std::move(init)) {}
 
     const T& get() const { return value; }
     operator const T&() const { return value; }
@@ -33,6 +32,12 @@ struct Field {
 private:
     SenderHub<const T&> changed_;
     std::vector<Connection> observers_;
+};
+
+template <typename T>
+struct Field : ObservableValue<T, Field<T>> {
+    static constexpr bool is_prism_field = true;
+    using ObservableValue<T, Field<T>>::ObservableValue;
 };
 
 } // namespace prism

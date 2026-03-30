@@ -53,9 +53,14 @@ public:
     }
 
     void emit(Args... args) const {
-        auto snapshot = receivers_;
-        for (auto& [id, cb] : snapshot) {
-            if (cb) cb(args...);
+        ++emit_depth_;
+        for (size_t i = 0; i < receivers_.size(); ++i) {
+            if (receivers_[i].cb) receivers_[i].cb(args...);
+        }
+        if (--emit_depth_ == 0 && !pending_removes_.empty()) {
+            for (auto id : pending_removes_)
+                std::erase_if(receivers_, [id](auto& e) { return e.id == id; });
+            pending_removes_.clear();
         }
     }
 
@@ -66,10 +71,15 @@ private:
     };
 
     uint64_t next_id_ = 0;
-    std::vector<Entry> receivers_;
+    mutable std::vector<Entry> receivers_;
+    mutable std::vector<uint64_t> pending_removes_;
+    mutable int emit_depth_ = 0;
 
     void remove(uint64_t id) {
-        std::erase_if(receivers_, [id](auto& e) { return e.id == id; });
+        if (emit_depth_ > 0)
+            pending_removes_.push_back(id);
+        else
+            std::erase_if(receivers_, [id](auto& e) { return e.id == id; });
     }
 };
 

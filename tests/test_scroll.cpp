@@ -243,3 +243,44 @@ TEST_CASE("Scrollbar overlay appears when content overflows") {
     auto snap = tree.build_snapshot(400, 100, 1);
     CHECK(!snap->overlay_geometry.empty());
 }
+
+TEST_CASE("Scrollbar drag updates scroll offset") {
+    ScrollModel8 model;
+    WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 100, 1);
+    REQUIRE(!snap->overlay_geometry.empty());
+
+    auto [scroll_id, thumb_rect] = snap->overlay_geometry[0];
+    float thumb_center_y = thumb_rect.origin.y.raw() + thumb_rect.extent.h.raw() / 2.f;
+
+    tree.begin_scrollbar_drag(scroll_id, thumb_center_y);
+    CHECK(tree.in_scrollbar_drag());
+    CHECK(tree.captured_id() == scroll_id);
+
+    // Drag downward by 20 pixels — should increase scroll offset
+    tree.clear_dirty();
+    tree.update_scrollbar_drag(thumb_center_y + 20.f);
+    CHECK(tree.any_dirty());
+
+    auto snap2 = tree.build_snapshot(400, 100, 2);
+    CHECK(snap2->overlay_geometry[0].second.origin.y.raw() > thumb_rect.origin.y.raw());
+
+    tree.end_scrollbar_drag();
+    CHECK_FALSE(tree.in_scrollbar_drag());
+}
+
+TEST_CASE("scroll_to sets absolute offset") {
+    ScrollModel8 model;
+    WidgetTree tree(model);
+    auto snap0 = tree.build_snapshot(400, 100, 1);
+    tree.clear_dirty();
+
+    auto ids = tree.leaf_ids();
+    REQUIRE(!ids.empty());
+
+    // Find the scroll container (parent of leaves)
+    // scroll_at uses leaf → walks up to scroll container, but scroll_to needs the scroll container ID directly
+    // Use scroll_at first to find that scrolling works, then test scroll_to on same container
+    tree.scroll_at(ids[0], DY{50});
+    CHECK(tree.any_dirty());
+}

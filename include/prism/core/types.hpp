@@ -103,6 +103,27 @@ constexpr Scalar<scale_result_t<Tag>> operator-(Scalar<Tag> a) {
     return Scalar<scale_result_t<Tag>>{-a.raw()};
 }
 
+// Compound assignment operators
+template <typename L, typename R> requires (Addable<L, R> && std::same_as<L, add_result_t<L, R>>)
+constexpr Scalar<L>& operator+=(Scalar<L>& a, Scalar<R> b) {
+    a = a + b; return a;
+}
+
+template <typename L, typename R> requires (Subtractable<L, R> && std::same_as<L, sub_result_t<L, R>>)
+constexpr Scalar<L>& operator-=(Scalar<L>& a, Scalar<R> b) {
+    a = a - b; return a;
+}
+
+template <typename Tag> requires Scalable<Tag>
+constexpr Scalar<Tag>& operator*=(Scalar<Tag>& a, float s) {
+    a = a * s; return a;
+}
+
+template <typename Tag> requires Scalable<Tag>
+constexpr Scalar<Tag>& operator/=(Scalar<Tag>& a, float s) {
+    a = a / s; return a;
+}
+
 // Integer scalar (for item indices and counts)
 template <typename Tag>
 struct IntScalar {

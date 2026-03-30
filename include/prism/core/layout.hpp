@@ -34,91 +34,61 @@ struct LayoutNode {
     float vlist_item_height = 0;     // uniform item height (VirtualList only)
 };
 
+inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
+
+namespace detail {
+
+inline void measure_linear(LayoutNode& node, LayoutAxis own_axis, LayoutAxis parent_axis) {
+    float sum = 0, max_cross = 0;
+    bool has_expander = false;
+    for (auto& child : node.children) {
+        layout_measure(child, own_axis);
+        sum += child.hint.preferred;
+        max_cross = std::max(max_cross, child.hint.cross);
+        if (child.hint.expand) has_expander = true;
+    }
+    bool aligned = (own_axis == parent_axis);
+    node.hint.preferred = aligned ? sum : max_cross;
+    node.hint.cross = aligned ? max_cross : sum;
+    if (has_expander) node.hint.expand = true;
+}
+
+inline void measure_scrollable(LayoutNode& node) {
+    float max_cross = 0;
+    for (auto& child : node.children) {
+        layout_measure(child, LayoutAxis::Vertical);
+        max_cross = std::max(max_cross, child.hint.cross);
+    }
+    node.hint.expand = true;
+    node.hint.preferred = 0;
+    node.hint.cross = max_cross;
+}
+
+} // namespace detail
+
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     switch (node.kind) {
     case LayoutNode::Kind::Spacer:
-        node.hint = {.preferred = 0, .expand = true};
-        return;
     case LayoutNode::Kind::Canvas:
         node.hint = {.preferred = 0, .expand = true};
         return;
     case LayoutNode::Kind::Leaf: {
         auto bb = node.draws.bounding_box();
-        if (parent_axis == LayoutAxis::Horizontal) {
-            node.hint.preferred = bb.extent.w.raw();
-            node.hint.cross = bb.extent.h.raw();
-        } else {
-            node.hint.preferred = bb.extent.h.raw();
-            node.hint.cross = bb.extent.w.raw();
-        }
+        bool horiz = (parent_axis == LayoutAxis::Horizontal);
+        node.hint.preferred = horiz ? bb.extent.w.raw() : bb.extent.h.raw();
+        node.hint.cross     = horiz ? bb.extent.h.raw() : bb.extent.w.raw();
         return;
     }
-    case LayoutNode::Kind::Row: {
-        LayoutAxis child_axis = LayoutAxis::Horizontal;
-        float sum = 0, max_cross = 0;
-        bool has_expander = false;
-        for (auto& child : node.children) {
-            layout_measure(child, child_axis);
-            sum += child.hint.preferred;
-            max_cross = std::max(max_cross, child.hint.cross);
-            if (child.hint.expand) has_expander = true;
-        }
-        if (parent_axis == LayoutAxis::Horizontal) {
-            node.hint.preferred = sum;
-            node.hint.cross = max_cross;
-            if (has_expander) node.hint.expand = true;
-        } else {
-            node.hint.preferred = max_cross;
-            node.hint.cross = sum;
-            // Cross-axis expander: child row wants to expand horizontally,
-            // but parent is vertical — propagate expand on main axis
-            if (has_expander) node.hint.expand = true;
-        }
+    case LayoutNode::Kind::Row:
+        detail::measure_linear(node, LayoutAxis::Horizontal, parent_axis);
         return;
-    }
-    case LayoutNode::Kind::Column: {
-        LayoutAxis child_axis = LayoutAxis::Vertical;
-        float sum = 0, max_cross = 0;
-        bool has_expander = false;
-        for (auto& child : node.children) {
-            layout_measure(child, child_axis);
-            sum += child.hint.preferred;
-            max_cross = std::max(max_cross, child.hint.cross);
-            if (child.hint.expand) has_expander = true;
-        }
-        if (parent_axis == LayoutAxis::Vertical) {
-            node.hint.preferred = sum;
-            node.hint.cross = max_cross;
-            if (has_expander) node.hint.expand = true;
-        } else {
-            node.hint.preferred = max_cross;
-            node.hint.cross = sum;
-            if (has_expander) node.hint.expand = true;
-        }
+    case LayoutNode::Kind::Column:
+        detail::measure_linear(node, LayoutAxis::Vertical, parent_axis);
         return;
-    }
-    case LayoutNode::Kind::Scroll: {
-        float max_cross = 0;
-        for (auto& child : node.children) {
-            layout_measure(child, LayoutAxis::Vertical);
-            max_cross = std::max(max_cross, child.hint.cross);
-        }
-        node.hint.expand = true;
-        node.hint.preferred = 0;
-        node.hint.cross = max_cross;
+    case LayoutNode::Kind::Scroll:
+    case LayoutNode::Kind::VirtualList:
+        detail::measure_scrollable(node);
         return;
-    }
-    case LayoutNode::Kind::VirtualList: {
-        float max_cross = 0;
-        for (auto& child : node.children) {
-            layout_measure(child, LayoutAxis::Vertical);
-            max_cross = std::max(max_cross, child.hint.cross);
-        }
-        node.hint.expand = true;
-        node.hint.preferred = 0;
-        node.hint.cross = max_cross;
-        return;
-    }
     }
 }
 

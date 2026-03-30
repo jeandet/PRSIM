@@ -33,4 +33,14 @@ namespace prism {
     return std::nullopt;
 }
 
+[[nodiscard]] inline std::optional<WidgetId> hit_test_overlay(
+    const SceneSnapshot& snap, Point pos)
+{
+    for (auto it = snap.overlay_geometry.rbegin(); it != snap.overlay_geometry.rend(); ++it) {
+        if (it->second.contains(pos))
+            return it->first;
+    }
+    return std::nullopt;
+}
+
 } // namespace prism
