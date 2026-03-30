@@ -809,9 +809,11 @@ public:
     public:
         struct CanvasHandle {
             Node& node_ref;
+            std::set<const void*>& placed_ref;
 
             template <typename U>
             CanvasHandle& depends_on(Field<U>& field) {
+                placed_ref.insert(&field);
                 node_ref.dependencies.push_back(
                     [&field](std::function<void()> cb) -> Connection {
                         return field.on_change().connect(
@@ -909,7 +911,7 @@ public:
             }
         auto canvas(T& model) {
             current_parent().children.push_back(node_canvas(model, tree_.next_id_));
-            return CanvasHandle{current_parent().children.back()};
+            return CanvasHandle{current_parent().children.back(), placed_};
         }
 
         template <typename T>

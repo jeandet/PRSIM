@@ -193,17 +193,19 @@ public:
         if (this != &o) {
             if (clock_ && clock_id_)
                 clock_->remove(clock_id_);
+            // Remove source's registration (it captures source's this)
+            if (o.clock_ && o.clock_id_)
+                o.clock_->remove(o.clock_id_);
             clock_ = o.clock_;
             field_ = o.field_;
             from_ = std::move(o.from_);
             to_ = std::move(o.to_);
             start_ = o.start_;
             config_ = std::move(o.config_);
-            auto src_clock_id = o.clock_id_;
             clock_id_ = 0;
             o.clock_ = nullptr;
             o.clock_id_ = 0;
-            if (clock_ && src_clock_id) {
+            if (clock_) {
                 clock_id_ = clock_->add([this](AnimationClock::time_point now) {
                     return tick(now);
                 });
@@ -299,6 +301,9 @@ public:
             subscription_.disconnect();
             if (clock_ && clock_id_)
                 clock_->remove(clock_id_);
+            // Remove source's registration (it captures source's this)
+            if (o.clock_ && o.clock_id_)
+                o.clock_->remove(o.clock_id_);
             clock_ = o.clock_;
             field_ = o.field_;
             config_ = std::move(o.config_);
@@ -308,11 +313,10 @@ public:
             start_ = o.start_;
             animating_ = o.animating_;
             subscription_ = std::move(o.subscription_);
-            auto src_clock_id = o.clock_id_;
             clock_id_ = 0;
             o.clock_ = nullptr;
             o.clock_id_ = 0;
-            if (clock_ && src_clock_id) {
+            if (clock_) {
                 clock_id_ = clock_->add([this](AnimationClock::time_point now) {
                     return tick(now);
                 });
