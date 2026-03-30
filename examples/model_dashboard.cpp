@@ -70,9 +70,29 @@ struct Waveform {
     }
 };
 
+struct ProgressBar {
+    prism::Field<float> progress{0.f};
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+        dl.filled_rect(bounds, prism::Color::rgba(40, 42, 54));
+        float fill_w = bounds.extent.w.raw() * std::clamp(progress.get(), 0.f, 1.f);
+        if (fill_w > 0.f) {
+            dl.filled_rect(
+                prism::Rect{bounds.origin,
+                            prism::Size{prism::Width{fill_w}, bounds.extent.h}},
+                prism::Color::rgba(0, 160, 220));
+        }
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.canvas(*this).depends_on(progress);
+    }
+};
+
 struct Dashboard {
     Settings settings;
     Waveform waveform;
+    ProgressBar progress_bar;
     prism::Field<prism::Label<>> status{{"All systems go"}};
     prism::Field<prism::TextArea<>> notes{{.placeholder = "Notes...", .rows = 4}};
     prism::Field<prism::Button> increment{{"Increment"}};
@@ -82,7 +102,7 @@ struct Dashboard {
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.scroll([&] {
-            vb.vstack(settings, waveform, status, notes, increment, counter);
+            vb.vstack(settings, waveform, progress_bar, status, notes, increment, counter);
         });
         vb.list(log_messages);
     }
@@ -91,8 +111,10 @@ struct Dashboard {
 int main() {
     Dashboard dashboard;
     std::vector<prism::Connection> connections;
+    prism::Animation<float> progress_anim;
 
     prism::model_app("PRISM Model Dashboard", dashboard, [&](prism::AppContext& ctx) {
+        using namespace std::chrono_literals;
         auto sched = ctx.scheduler();
 
         // Cross-component wiring: volume change updates status label (on app thread)
@@ -106,7 +128,7 @@ int main() {
               })
         );
 
-        // Button click increments counter and appends to log
+        // Button click increments counter, logs, and animates progress bar
         connections.push_back(
             dashboard.increment.on_change()
             | prism::on(sched)
@@ -116,6 +138,12 @@ int main() {
                   std::ostringstream oss;
                   oss << "Event #" << n << " — counter incremented";
                   dashboard.log_messages.push_back(oss.str());
+
+                  // Animate progress bar from 0 to 100% with spring physics
+                  dashboard.progress_bar.progress.set(0.f);
+                  progress_anim = prism::animate(ctx.clock(),
+                      dashboard.progress_bar.progress, 1.f,
+                      prism::SpringConfig{.spring = {.stiffness = 80.f, .damping = 10.f}});
               })
         );
 

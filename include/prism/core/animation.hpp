@@ -134,6 +134,14 @@ inline float lerp(float a, float b, EasedProgress t) {
     return a + (b - a) * t.raw();
 }
 
+inline int lerp(int a, int b, EasedProgress t) {
+    return a + static_cast<int>((b - a) * t.raw() + 0.5f);
+}
+
+inline double lerp(double a, double b, EasedProgress t) {
+    return a + (b - a) * static_cast<double>(t.raw());
+}
+
 template <typename Tag>
 Scalar<Tag> lerp(Scalar<Tag> a, Scalar<Tag> b, EasedProgress t) {
     return Scalar<Tag>{a.raw() + (b.raw() - a.raw()) * t.raw()};
