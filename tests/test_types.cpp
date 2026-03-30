@@ -234,3 +234,18 @@ TEST_CASE("Composite equality") {
     Size s2{Width{10.f}, Height{20.f}};
     CHECK(s1 == s2);
 }
+
+TEST_CASE("Progress strong type") {
+    auto p = Progress{0.5f};
+    CHECK(p.raw() == doctest::Approx(0.5f));
+
+    auto p0 = Progress{0.f};
+    auto p1 = Progress{1.f};
+    CHECK(p0 < p1);
+    CHECK(p0 == Progress{0.f});
+}
+
+TEST_CASE("EasedProgress strong type") {
+    auto e = EasedProgress{0.75f};
+    CHECK(e.raw() == doctest::Approx(0.75f));
+}

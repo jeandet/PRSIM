@@ -183,6 +183,13 @@ struct Rect {
     }
 };
 
+// Animation progress types
+struct ProgressTag {};
+struct EasedProgressTag {};
+
+using Progress = Scalar<ProgressTag>;
+using EasedProgress = Scalar<EasedProgressTag>;
+
 // Composite operators
 constexpr Offset operator-(Point a, Point b) { return {a.x - b.x, a.y - b.y}; }
 constexpr Point operator+(Point p, Offset o) { return {p.x + o.dx, p.y + o.dy}; }
