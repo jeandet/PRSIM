@@ -339,6 +339,71 @@ TEST_CASE("headers() builder overrides table headers") {
     CHECK(ts.header_overrides[0] == "Custom");
 }
 
+TEST_CASE("Full table workflow: render, scroll, select, observe") {
+    LargeColumnModel model;
+    prism::WidgetTree tree(model);
+
+    // Frame 1-2: stabilize
+    (void)tree.build_snapshot(800, 600, 1);
+    auto snap = tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    // Verify initial state
+    CHECK(ts.row_count() == 100);
+    CHECK(ts.selected_row.get() == std::nullopt);
+    CHECK(ts.scroll_y.raw() == 0.f);
+
+    // Observe selection changes
+    std::optional<size_t> observed_row;
+    ts.selected_row.observe([&](const std::optional<size_t>& r) {
+        observed_row = r;
+    });
+
+    // Select row via click
+    float row_h = ts.row_height.raw();
+    float header_h = row_h;
+    float click_y = header_h + row_h * 5.5f; // click on row 5
+    prism::MouseButton click{
+        .position = prism::Point{prism::X{10.f}, prism::Y{click_y}},
+        .button = 1,
+        .pressed = true};
+    tree.dispatch(table_node->id, prism::InputEvent{click});
+
+    CHECK(ts.selected_row.get().has_value());
+    CHECK(ts.selected_row.get().value() == 5);
+    CHECK(observed_row.has_value());
+    CHECK(observed_row.value() == 5);
+
+    // Scroll down via mouse wheel
+    prism::MouseScroll scroll{
+        .position = prism::Point{prism::X{10.f}, prism::Y{100.f}},
+        .dx = prism::DX{0}, .dy = prism::DY{5.f}};
+    tree.dispatch(table_node->id, prism::InputEvent{scroll});
+    CHECK(ts.scroll_y.raw() > 0.f);
+
+    // Re-render after scroll — should still produce valid output
+    snap = tree.build_snapshot(800, 600, 3);
+    CHECK(snap->geometry.size() > 0);
+    CHECK(snap->draw_lists.size() > 0);
+
+    // Arrow key moves selection
+    prism::KeyPress down{.key = prism::keys::down, .mods = 0};
+    tree.dispatch(table_node->id, prism::InputEvent{down});
+    CHECK(ts.selected_row.get().value() == 6);
+    CHECK(observed_row.value() == 6);
+}
+
 #if __cpp_impl_reflection
 #include <prism/core/list.hpp>
 
