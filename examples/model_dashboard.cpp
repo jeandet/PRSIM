@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -90,22 +91,29 @@ struct ProgressBar {
     }
 };
 
-struct SensorData {
-    std::vector<double> time = {0.0, 0.125, 0.25, 0.375, 0.5};
-    std::vector<double> density = {1.23e4, 1.19e4, 1.15e4, 9.87e3, 8.42e3};
-    std::vector<std::string> region = {"Solar Wind", "Solar Wind", "Magneto", "Magneto", "Bow Shock"};
+struct SignalTable {
+    static constexpr size_t N = 50;
+    const Waveform& wf;
 
-    size_t column_count() const { return 3; }
-    size_t row_count() const { return time.size(); }
+    size_t column_count() const { return 5; }
+    size_t row_count() const { return N; }
     std::string_view header(size_t c) const {
-        static constexpr std::array<const char*, 3> h = {"Time", "Density", "Region"};
+        static constexpr std::array<const char*, 5> h = {
+            "Sample", "Time", "Value", "Abs", "Phase"};
         return h[c];
     }
     std::string cell_text(size_t r, size_t c) const {
+        float freq = static_cast<float>(wf.frequency.get().value);
+        float amp = static_cast<float>(wf.amplitude.get().value);
+        float t = static_cast<float>(r) / static_cast<float>(N);
+        float val = amp * std::sin(2.0f * 3.14159265f * freq * t);
         switch (c) {
-            case 0: return std::to_string(time[r]);
-            case 1: return std::to_string(density[r]);
-            case 2: return region[r];
+            case 0: return std::to_string(r);
+            case 1: { char buf[16]; std::snprintf(buf, sizeof(buf), "%.3f", t); return buf; }
+            case 2: { char buf[16]; std::snprintf(buf, sizeof(buf), "%+.4f", val); return buf; }
+            case 3: { char buf[16]; std::snprintf(buf, sizeof(buf), "%.4f", std::abs(val)); return buf; }
+            case 4: { char buf[16]; std::snprintf(buf, sizeof(buf), "%.1f°",
+                       std::fmod(360.0f * freq * t, 360.0f)); return buf; }
             default: return "";
         }
     }
@@ -121,13 +129,15 @@ struct Dashboard {
     prism::Field<int> counter{0};
     prism::List<std::string> log_messages;
     prism::State<int> request_count{0};
-    SensorData sensor_data;
+    SignalTable signal_table{.wf = waveform};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.scroll([&] {
             vb.vstack(settings, waveform, progress_bar, status, notes, increment, counter);
         });
-        vb.table(sensor_data);
+        vb.table(signal_table)
+            .depends_on(waveform.frequency)
+            .depends_on(waveform.amplitude);
         vb.list(log_messages);
     }
 };
