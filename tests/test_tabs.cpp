@@ -6,6 +6,43 @@
 #include <prism/core/hit_test.hpp>
 #include <prism/core/widget_tree.hpp>
 
+// File-scope models for tests that use WidgetTree (reflection requires non-local types)
+
+struct TabsTwoPageModel {
+    prism::Field<prism::TabBar> tabs;
+    prism::Field<bool> page_a{false};
+    prism::Field<bool> page_b{true};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.tabs(tabs, [&] {
+            vb.tab("Alpha", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_a); });
+            vb.tab("Beta", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_b); });
+        });
+    }
+};
+
+struct TabsSinglePageModel {
+    prism::Field<prism::TabBar> tabs;
+    prism::Field<std::string> page{"hello"};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.tabs(tabs, [&] {
+            vb.tab("Only", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page); });
+        });
+    }
+};
+
+struct TabsOverlayModel {
+    prism::Field<prism::TabBar> tabs;
+    prism::Field<std::string> page_a{"hello"};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.tabs(tabs, [&] {
+            vb.tab("Alpha", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_a); });
+        });
+    }
+};
+
 
 TEST_CASE("TabBar default constructs with selected=0") {
     prism::TabBar tb;
@@ -83,20 +120,7 @@ TEST_CASE("tabs_handle_input: Left/Right switches tabs") {
 }
 
 TEST_CASE("ViewBuilder tabs() creates tree with two tabs") {
-    struct Model {
-        prism::Field<prism::TabBar> tabs;
-        prism::Field<std::string> page_a{"hello"};
-        prism::Field<bool> page_b{true};
-
-        void view(prism::WidgetTree::ViewBuilder& vb) {
-            vb.tabs(tabs, [&] {
-                vb.tab("Alpha", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_a); });
-                vb.tab("Beta", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_b); });
-            });
-        }
-    };
-
-    Model model;
+    TabsTwoPageModel model;
     prism::WidgetTree tree(model);
 
     CHECK(!tree.focus_order().empty());
@@ -104,4 +128,87 @@ TEST_CASE("ViewBuilder tabs() creates tree with two tabs") {
     auto snap = tree.build_snapshot(800, 600, 1);
     CHECK(snap != nullptr);
     CHECK(snap->geometry.size() >= 2);
+}
+
+TEST_CASE("Tab switch rematerializes content") {
+    TabsTwoPageModel model;
+    prism::WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    CHECK(snap1 != nullptr);
+
+    model.tabs.set(prism::TabBar{.selected = 1});
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    CHECK(snap2 != nullptr);
+    CHECK(!snap2->geometry.empty());
+}
+
+TEST_CASE("Inactive tab field changes reflected on switch back") {
+    TabsTwoPageModel model;
+    prism::WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    CHECK(snap1 != nullptr);
+
+    model.tabs.set(prism::TabBar{.selected = 1});
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    CHECK(snap2 != nullptr);
+
+    model.page_a.set(true);
+
+    model.tabs.set(prism::TabBar{.selected = 0});
+    auto snap3 = tree.build_snapshot(800, 600, 3);
+    CHECK(snap3 != nullptr);
+}
+
+TEST_CASE("Single tab produces valid snapshot") {
+    TabsSinglePageModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK(snap != nullptr);
+    CHECK(!snap->geometry.empty());
+}
+
+TEST_CASE("Tab bar is in focus order, Tab key moves to content") {
+    TabsTwoPageModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK(snap != nullptr);
+
+    CHECK(tree.focus_order().size() >= 2);
+
+    tree.focus_next();
+    auto bar_id = tree.focused_id();
+    CHECK(bar_id != 0);
+
+    tree.focus_next();
+    auto content_id = tree.focused_id();
+    CHECK(content_id != bar_id);
+}
+
+TEST_CASE("Click on tab header switches tab") {
+    TabsTwoPageModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK(snap != nullptr);
+
+    tree.focus_next();
+    auto bar_id = tree.focused_id();
+
+    // Second tab starts after "Alpha" (5 chars * 8px + 32px padding = 72px)
+    prism::MouseButton click{prism::Point{prism::X{80}, prism::Y{10}}, 1, true};
+    tree.dispatch(bar_id, click);
+
+    CHECK(model.tabs.get().selected == 1);
+}
+
+TEST_CASE("close_overlays does not destroy tabs state") {
+    TabsOverlayModel model;
+    prism::WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    CHECK(snap1 != nullptr);
+
+    tree.close_overlays();
+
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    CHECK(snap2 != nullptr);
+    CHECK(!snap2->geometry.empty());
 }

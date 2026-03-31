@@ -320,9 +320,9 @@ public:
                 current_tabs_state_->tab_names = std::make_shared<std::vector<std::string>>();
             current_tabs_state_->tab_names->push_back(std::string(name));
             current_tabs_state_->tab_node_builders.push_back(
-                [this, cb = std::forward<F>(content_builder)]
+                [&tree = tree_, cb = std::forward<F>(content_builder)]
                 (Node& target) mutable {
-                    ViewBuilder vb{tree_, target};
+                    ViewBuilder vb{tree, target};
                     cb(vb);
                 });
         }
