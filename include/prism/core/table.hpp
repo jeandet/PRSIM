@@ -28,6 +28,20 @@ concept ColumnStorage = requires(const T& t, size_t r, size_t c) {
     { t.header(c) } -> std::convertible_to<std::string_view>;
 };
 
+template <ColumnStorage T>
+TableSource wrap_column_storage(T& data) {
+    return TableSource{
+        .column_count = [&data] { return data.column_count(); },
+        .row_count = [&data] { return data.row_count(); },
+        .cell_text = [&data](size_t r, size_t c) -> std::string {
+            return std::string(data.cell_text(r, c));
+        },
+        .header = [&data](size_t c) -> std::string_view {
+            return data.header(c);
+        },
+    };
+}
+
 // Intentionally minimal: only gates overload selection. The actual row-element
 // constraints are enforced by wrap_row_storage (Task 3) via reflection.
 template <typename T>
