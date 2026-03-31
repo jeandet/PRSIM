@@ -122,6 +122,8 @@ struct TableState {
     ItemIndex visible_end{0};
     ItemCount overscan{2};
 
+    uint8_t show_ticks = 0;
+
     DX scroll_x{0};
     Width viewport_w{0};
     Width total_columns_w{0};

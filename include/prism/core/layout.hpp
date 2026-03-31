@@ -266,13 +266,14 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         snap.draw_lists.push_back(std::move(body_clip));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
 
-        // Flatten visible children with scroll offset + header offset
+        // Flatten visible children with scroll offset only
+        // (header offset already applied during layout_arrange)
         DY scroll_dy = node.scroll_offset;
+        DY neg_scroll{-scroll_dy.raw()};
         for (auto& child : node.children) {
-            DY total_offset{-scroll_dy.raw() + header_h};
-            detail::offset_subtree_y(child, total_offset);
+            detail::offset_subtree_y(child, neg_scroll);
             layout_flatten(child, snap);
-            detail::offset_subtree_y(child, DY{-total_offset.raw()});
+            detail::offset_subtree_y(child, DY{scroll_dy.raw()});
         }
 
         DrawList body_clip_pop;

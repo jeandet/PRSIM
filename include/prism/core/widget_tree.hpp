@@ -502,22 +502,31 @@ public:
         refresh_dirty(root_);
         materialize_all_virtual_lists(root_);
 
-        LayoutNode layout;
-        // root_ is always a container; Spacer is only valid on non-container nodes
-        assert(root_.layout_kind != LayoutKind::Spacer);
-        layout.kind = (root_.layout_kind == LayoutKind::Row)
-            ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
-        layout.id = root_.id;
-        for (auto& c : root_.children)
-            build_layout(c, layout);
+        auto do_layout = [&] {
+            LayoutNode layout;
+            assert(root_.layout_kind != LayoutKind::Spacer);
+            layout.kind = (root_.layout_kind == LayoutKind::Row)
+                ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
+            layout.id = root_.id;
+            for (auto& c : root_.children)
+                build_layout(c, layout);
 
-        layout_measure(layout, LayoutAxis::Vertical);
-        layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
+            layout_measure(layout, LayoutAxis::Vertical);
+            layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
+            update_scroll_state(layout);
+            return layout;
+        };
 
-        // Post-layout: sync scroll state (viewport/content sizes, offset clamping)
-        update_scroll_state(layout);
+        LayoutNode layout = do_layout();
 
-        // Post-layout: update canvas nodes with their resolved bounds and re-record
+        // Tables and virtual lists depend on viewport sizes set by update_scroll_state.
+        // On the first frame those are zero, producing wrong cell positions.
+        // Re-materialize and re-layout once viewport sizes are known.
+        if (check_dirty(root_)) {
+            materialize_all_virtual_lists(root_);
+            layout = do_layout();
+        }
+
         update_canvas_bounds(layout);
 
         auto snap = std::make_unique<SceneSnapshot>();
@@ -566,6 +575,10 @@ private:
         if (auto* vls = get_vlist_state(node)) {
             Height ch{static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
             return ScrollView{vls->scroll_offset, vls->viewport_h, ch, vls->show_ticks};
+        }
+        if (auto* ts = get_table_state(node)) {
+            Height ch{static_cast<float>(ts->row_count()) * ts->row_height.raw()};
+            return ScrollView{ts->scroll_y, ts->viewport_h, ch, ts->show_ticks};
         }
         return std::nullopt;
     }
@@ -803,7 +816,8 @@ private:
     }
 
     static void close_overlays_impl(WidgetNode& node) {
-        if (!node.overlay_draws.empty()) {
+        // Table nodes use overlay_draws for their header, not for dropdown overlays
+        if (!node.overlay_draws.empty() && node.layout_kind != LayoutKind::Table) {
             node.overlay_draws.clear();
             node.edit_state = std::monostate{};
             node.dirty = true;
@@ -853,8 +867,11 @@ private:
             auto it = index_.find(layout_node.id);
             if (it != index_.end()) {
                 if (auto* ts = get_table_state(*it->second)) {
+                    bool was_zero = ts->viewport_w.raw() == 0.f;
                     ts->viewport_h = Height{layout_node.allocated.extent.h.raw() - ts->row_height.raw()};
                     ts->viewport_w = layout_node.allocated.extent.w;
+                    if (was_zero && ts->viewport_w.raw() > 0.f)
+                        it->second->dirty = true;
                 }
             }
         }
