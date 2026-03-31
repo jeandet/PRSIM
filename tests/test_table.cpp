@@ -102,6 +102,108 @@ TEST_CASE("Table header text appears in draw commands") {
     CHECK(found_name);
 }
 
+TEST_CASE("Click on table row sets selected_row") {
+    ColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table) {
+            table_node = &c;
+            break;
+        }
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    float row_h = ts.row_height.raw();
+    float header_h = row_h;
+    float click_y = header_h + row_h * 1.5f;
+
+    prism::MouseButton click{
+        .position = prism::Point{prism::X{10.f}, prism::Y{click_y}},
+        .button = 1,
+        .pressed = true};
+    tree.dispatch(table_node->id, prism::InputEvent{click});
+
+    CHECK(ts.selected_row.get().has_value());
+    CHECK(ts.selected_row.get().value() == 1);
+}
+
+TEST_CASE("Click selected row deselects") {
+    ColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    ts.selected_row.set(std::optional<size_t>{1});
+
+    float row_h = ts.row_height.raw();
+    float click_y = row_h + row_h * 1.5f;
+    prism::MouseButton click{
+        .position = prism::Point{prism::X{10.f}, prism::Y{click_y}},
+        .button = 1,
+        .pressed = true};
+    tree.dispatch(table_node->id, prism::InputEvent{click});
+
+    CHECK(ts.selected_row.get() == std::nullopt);
+}
+
+TEST_CASE("Arrow keys move selection") {
+    ColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    // Arrow down with no selection -> select row 0
+    prism::KeyPress down{.key = prism::keys::down, .mods = 0};
+    tree.dispatch(table_node->id, prism::InputEvent{down});
+    CHECK(ts.selected_row.get() == std::optional<size_t>{0});
+
+    // Arrow down -> row 1
+    tree.dispatch(table_node->id, prism::InputEvent{down});
+    CHECK(ts.selected_row.get() == std::optional<size_t>{1});
+
+    // Arrow up -> row 0
+    prism::KeyPress up_key{.key = prism::keys::up, .mods = 0};
+    tree.dispatch(table_node->id, prism::InputEvent{up_key});
+    CHECK(ts.selected_row.get() == std::optional<size_t>{0});
+
+    // Arrow up at row 0 -> stays at 0
+    tree.dispatch(table_node->id, prism::InputEvent{up_key});
+    CHECK(ts.selected_row.get() == std::optional<size_t>{0});
+}
+
 #if __cpp_impl_reflection
 #include <prism/core/list.hpp>
 

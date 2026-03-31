@@ -269,6 +269,9 @@ public:
     WidgetTree(const WidgetTree&) = delete;
     WidgetTree& operator=(const WidgetTree&) = delete;
 
+    [[nodiscard]] WidgetNode& root() { return root_; }
+    [[nodiscard]] const WidgetNode& root() const { return root_; }
+
     [[nodiscard]] size_t leaf_count() const { return count_leaves(root_); }
     [[nodiscard]] bool any_dirty() const { return check_dirty(root_); }
 
@@ -974,6 +977,44 @@ private:
                 Point{X{cx + 4.f}, Y{4.f}},
                 14.f, Color::rgba(136, 136, 204));
         }
+
+        // Wire input handler for selection
+        node.connections.clear();
+        node.connections.push_back(
+            node.on_input.connect([ts_ptr = &(*ts), &node](const InputEvent& ev) {
+                auto& ts = *ts_ptr;
+                if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed && mb->button == 1) {
+                    float header_h = ts.row_height.raw();
+                    float local_y = mb->position.y.raw();
+                    if (local_y < header_h) return;
+                    float body_y = local_y - header_h + ts.scroll_y.raw();
+                    size_t row = static_cast<size_t>(body_y / ts.row_height.raw());
+                    if (row < ts.row_count()) {
+                        auto current = ts.selected_row.get();
+                        if (current.has_value() && current.value() == row)
+                            ts.selected_row.set(std::nullopt);
+                        else
+                            ts.selected_row.set(row);
+                        node.dirty = true;
+                    }
+                }
+                if (auto* kp = std::get_if<KeyPress>(&ev)) {
+                    auto current = ts.selected_row.get();
+                    if (kp->key == keys::down) {
+                        size_t next = current.has_value() ? current.value() + 1 : 0;
+                        if (next < ts.row_count()) {
+                            ts.selected_row.set(next);
+                            node.dirty = true;
+                        }
+                    } else if (kp->key == keys::up) {
+                        if (current.has_value() && current.value() > 0) {
+                            ts.selected_row.set(current.value() - 1);
+                            node.dirty = true;
+                        }
+                    }
+                }
+            })
+        );
     }
 
     void materialize_all_virtual_lists(WidgetNode& node) {
