@@ -33,6 +33,7 @@ struct WidgetNode {
     std::function<void(WidgetNode&)> record;
     LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
+    bool table_input_wired = false;
 };
 
 struct VirtualListState {

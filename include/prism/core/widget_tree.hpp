@@ -773,7 +773,8 @@ private:
             node.wire(node);
             node.wire = nullptr;
         }
-        if (!node.is_container && node.focus_policy != FocusPolicy::none)
+        if (node.focus_policy != FocusPolicy::none &&
+            (!node.is_container || node.layout_kind == LayoutKind::Table))
             focus_order_.push_back(node.id);
         for (auto& c : node.children) {
             parent_map_[c.id] = node.id;
@@ -1043,76 +1044,80 @@ private:
         }
 
         // Wire input handler for selection (only once)
-        if (!node.wire) {
-        node.wire = [](WidgetNode&) {}; // mark as wired
+        if (!node.table_input_wired) {
+        node.table_input_wired = true;
+        auto node_id = node.id;
         node.connections.push_back(
-            node.on_input.connect([ts_ptr = &(*ts), &node](const InputEvent& ev) {
-                auto& ts = *ts_ptr;
+            node.on_input.connect([ts, node_id, this](const InputEvent& ev) {
+                auto it = index_.find(node_id);
+                if (it == index_.end()) return;
+                auto& n = *it->second;
+                auto& t = *ts;
                 if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed && mb->button == 1) {
-                    float header_h = ts.row_height.raw();
+                    float header_h = t.row_height.raw();
                     float local_y = mb->position.y.raw();
                     if (local_y < header_h) return;
-                    float body_y = local_y - header_h + ts.scroll_y.raw();
-                    size_t row = static_cast<size_t>(body_y / ts.row_height.raw());
-                    if (row < ts.row_count()) {
-                        auto current = ts.selected_row.get();
+                    float body_y = local_y - header_h + t.scroll_y.raw();
+                    size_t row = static_cast<size_t>(body_y / t.row_height.raw());
+                    if (row < t.row_count()) {
+                        auto current = t.selected_row.get();
                         if (current.has_value() && current.value() == row)
-                            ts.selected_row.set(std::nullopt);
+                            t.selected_row.set(std::nullopt);
                         else
-                            ts.selected_row.set(row);
-                        node.dirty = true;
+                            t.selected_row.set(row);
+                        n.dirty = true;
                     }
                 }
                 if (auto* ms = std::get_if<MouseScroll>(&ev)) {
                     float max_scroll = std::max(0.f,
-                        ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
+                        t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
                     if (ms->dy.raw() != 0.f) {
-                        float scroll_amount = ms->dy.raw() * ts.row_height.raw() * 3.f;
-                        ts.scroll_y = DY{std::clamp(ts.scroll_y.raw() + scroll_amount, 0.f, max_scroll)};
-                        node.dirty = true;
+                        float scroll_amount = ms->dy.raw() * t.row_height.raw() * 3.f;
+                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() + scroll_amount, 0.f, max_scroll)};
+                        n.dirty = true;
                     }
                 }
                 if (auto* kp = std::get_if<KeyPress>(&ev)) {
-                    auto current = ts.selected_row.get();
+                    auto current = t.selected_row.get();
                     if (kp->key == keys::down) {
                         size_t next = current.has_value() ? current.value() + 1 : 0;
-                        if (next < ts.row_count()) {
-                            ts.selected_row.set(next);
-                            node.dirty = true;
+                        if (next < t.row_count()) {
+                            t.selected_row.set(next);
+                            n.dirty = true;
                         }
                     } else if (kp->key == keys::up) {
                         if (current.has_value() && current.value() > 0) {
-                            ts.selected_row.set(current.value() - 1);
-                            node.dirty = true;
+                            t.selected_row.set(current.value() - 1);
+                            n.dirty = true;
                         }
                     } else if (kp->key == keys::page_down) {
                         float max_scroll = std::max(0.f,
-                            ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
-                        ts.scroll_y = DY{std::clamp(ts.scroll_y.raw() + ts.viewport_h.raw(), 0.f, max_scroll)};
-                        node.dirty = true;
+                            t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
+                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() + t.viewport_h.raw(), 0.f, max_scroll)};
+                        n.dirty = true;
                     } else if (kp->key == keys::page_up) {
                         float max_scroll = std::max(0.f,
-                            ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
-                        ts.scroll_y = DY{std::clamp(ts.scroll_y.raw() - ts.viewport_h.raw(), 0.f, max_scroll)};
-                        node.dirty = true;
+                            t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
+                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() - t.viewport_h.raw(), 0.f, max_scroll)};
+                        n.dirty = true;
                     }
                     // Scroll selected row into view
-                    if (auto sel = ts.selected_row.get(); sel.has_value()) {
-                        float row_top = static_cast<float>(sel.value()) * ts.row_height.raw();
-                        float row_bottom = row_top + ts.row_height.raw();
-                        float vp_top = ts.scroll_y.raw();
-                        float vp_bottom = vp_top + ts.viewport_h.raw();
+                    if (auto sel = t.selected_row.get(); sel.has_value()) {
+                        float row_top = static_cast<float>(sel.value()) * t.row_height.raw();
+                        float row_bottom = row_top + t.row_height.raw();
+                        float vp_top = t.scroll_y.raw();
+                        float vp_bottom = vp_top + t.viewport_h.raw();
                         float max_scroll = std::max(0.f,
-                            ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
+                            t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
                         if (row_bottom > vp_bottom)
-                            ts.scroll_y = DY{std::clamp(row_bottom - ts.viewport_h.raw(), 0.f, max_scroll)};
+                            t.scroll_y = DY{std::clamp(row_bottom - t.viewport_h.raw(), 0.f, max_scroll)};
                         else if (row_top < vp_top)
-                            ts.scroll_y = DY{std::clamp(row_top, 0.f, max_scroll)};
+                            t.scroll_y = DY{std::clamp(row_top, 0.f, max_scroll)};
                     }
                 }
             })
         );
-        } // if (!node.wire)
+        } // if (!node.table_input_wired)
     }
 
     void materialize_all_virtual_lists(WidgetNode& node) {
