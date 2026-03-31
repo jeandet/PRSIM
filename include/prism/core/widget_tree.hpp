@@ -33,6 +33,7 @@ public:
         Node& target_;
         std::vector<Node*> stack_;
         std::set<const void*> placed_;
+        TabsState* current_tabs_state_ = nullptr;
 
         Node& current_parent() {
             return stack_.empty() ? target_ : *stack_.back();
@@ -273,6 +274,58 @@ public:
             return TableBuilder{current_parent().children.back(), placed_};
         }
 #endif // __cpp_impl_reflection
+
+        void tabs(Field<TabBar>& field, std::invocable auto&& builder) {
+            placed_.insert(&field);
+
+            auto state = std::make_shared<TabsState>();
+            state->get_selected = [&field]() { return field.get().selected; };
+
+            auto* prev_tabs_state = current_tabs_state_;
+            current_tabs_state_ = state.get();
+            builder();
+            current_tabs_state_ = prev_tabs_state;
+
+            Node tabs_node;
+            tabs_node.id = tree_.next_id_++;
+            tabs_node.is_leaf = false;
+            tabs_node.layout_kind = LayoutKind::Tabs;
+            tabs_node.tabs_state = state;
+
+            // Tab bar leaf (child 0)
+            auto bar = node_leaf(field, tree_.next_id_);
+            auto bar_build = bar.build_widget;
+            auto names_ptr = state->tab_names;
+            bar.build_widget = [bar_build, names_ptr](WidgetNode& wn) {
+                wn.tab_names = names_ptr;
+                if (bar_build) bar_build(wn);
+            };
+            tabs_node.children.push_back(std::move(bar));
+
+            // Content container (child 1) — filled by materialize_tabs on first frame
+            Node content;
+            content.id = tree_.next_id_++;
+            content.is_leaf = false;
+            content.layout_kind = LayoutKind::Column;
+            tabs_node.children.push_back(std::move(content));
+
+            current_parent().children.push_back(std::move(tabs_node));
+        }
+
+        template <typename F>
+            requires std::invocable<F, ViewBuilder&>
+        void tab(std::string_view name, F&& content_builder) {
+            if (!current_tabs_state_) return;
+            if (!current_tabs_state_->tab_names)
+                current_tabs_state_->tab_names = std::make_shared<std::vector<std::string>>();
+            current_tabs_state_->tab_names->push_back(std::string(name));
+            current_tabs_state_->tab_node_builders.push_back(
+                [this, cb = std::forward<F>(content_builder)]
+                (Node& target) mutable {
+                    ViewBuilder vb{tree_, target};
+                    cb(vb);
+                });
+        }
 
         void finalize() {
             if (target_.children.size() > 1) {
@@ -564,6 +617,11 @@ private:
         return sp ? sp->get() : nullptr;
     }
 
+    static TabsState* get_tabs_state_ptr(WidgetNode& node) {
+        auto* sp = std::get_if<std::shared_ptr<TabsState>>(&node.edit_state);
+        return sp ? sp->get() : nullptr;
+    }
+
     struct ScrollView {
         DY& offset;
         Height viewport_h;
@@ -613,8 +671,14 @@ private:
             } else if (node.layout_kind == LayoutKind::Table && node.table_state) {
                 wn.edit_state = node.table_state;
                 wn.focus_policy = FocusPolicy::tab_and_click;
+            } else if (node.layout_kind == LayoutKind::Tabs && node.tabs_state) {
+                wn.edit_state = node.tabs_state;
+                for (auto& child : node.children)
+                    wn.children.push_back(build_widget_node(child));
             }
-            if (node.layout_kind != LayoutKind::VirtualList && node.layout_kind != LayoutKind::Table) {
+            if (node.layout_kind != LayoutKind::VirtualList
+                && node.layout_kind != LayoutKind::Table
+                && node.layout_kind != LayoutKind::Tabs) {
                 for (auto& child : node.children)
                     wn.children.push_back(build_widget_node(child));
             }
@@ -707,6 +771,18 @@ private:
                     );
                 }
                 return; // no child nodes to recurse into
+            }
+
+            if (node.layout_kind == LayoutKind::Tabs) {
+                if (node.children.size() >= 1 && wn.children.size() >= 1)
+                    connect_dirty(node.children[0], wn.children[0]);
+                auto id = wn.id;
+                if (node.children.size() >= 1 && node.children[0].on_change) {
+                    wn.connections.push_back(
+                        node.children[0].on_change([this, id]() { set_dirty(id); })
+                    );
+                }
+                return;
             }
 
             assert(node.children.size() == wn.children.size());
@@ -818,8 +894,10 @@ private:
     }
 
     static void close_overlays_impl(WidgetNode& node) {
-        // Table nodes use overlay_draws for their header, not for dropdown overlays
-        if (!node.overlay_draws.empty() && node.layout_kind != LayoutKind::Table) {
+        // Table/Tabs nodes use overlay_draws for their header, not for dropdown overlays
+        if (!node.overlay_draws.empty()
+            && node.layout_kind != LayoutKind::Table
+            && node.layout_kind != LayoutKind::Tabs) {
             node.overlay_draws.clear();
             node.edit_state = std::monostate{};
             node.dirty = true;
@@ -906,6 +984,51 @@ private:
         }
         for (auto& child : layout_node.children)
             update_canvas_bounds(child);
+    }
+
+    void unindex_subtree(WidgetNode& node) {
+        index_.erase(node.id);
+        parent_map_.erase(node.id);
+        std::erase(focus_order_, node.id);
+        node.connections.clear();
+        for (auto& c : node.children)
+            unindex_subtree(c);
+    }
+
+    void materialize_tabs(WidgetNode& node) {
+        auto* ts = get_tabs_state_ptr(node);
+        if (!ts || !ts->get_selected) return;
+        if (node.children.size() < 2) return;
+
+        size_t selected = ts->get_selected();
+        if (selected == ts->active_tab) return;
+        ts->active_tab = selected;
+
+        auto& content_wn = node.children[1];
+
+        for (auto& c : content_wn.children)
+            unindex_subtree(c);
+        content_wn.children.clear();
+
+        if (selected < ts->tab_node_builders.size()) {
+            Node content_node;
+            content_node.id = next_id_++;
+            content_node.is_leaf = false;
+            content_node.layout_kind = LayoutKind::Column;
+
+            ts->tab_node_builders[selected](content_node);
+
+            for (auto& child_node : content_node.children) {
+                auto child_wn = build_widget_node(child_node);
+                connect_dirty(child_node, child_wn);
+                parent_map_[child_wn.id] = content_wn.id;
+                content_wn.children.push_back(std::move(child_wn));
+            }
+
+            for (auto& c : content_wn.children)
+                build_index(c);
+        }
+        content_wn.dirty = true;
     }
 
     void materialize_virtual_list(WidgetNode& node) {
@@ -1140,6 +1263,8 @@ private:
             materialize_virtual_list(node);
         else if (node.layout_kind == LayoutKind::Table)
             materialize_table(node);
+        else if (node.layout_kind == LayoutKind::Tabs)
+            materialize_tabs(node);
         for (auto& c : node.children)
             materialize_all_virtual_lists(c);
     }
@@ -1206,6 +1331,13 @@ private:
                 container.table_scroll_x = ts->scroll_x;
             }
             container.overlay_draws = node.overlay_draws;
+            for (auto& c : node.children)
+                build_layout(c, container);
+            parent.children.push_back(std::move(container));
+        } else if (node.layout_kind == LK::Tabs) {
+            LayoutNode container;
+            container.kind = LayoutNode::Kind::Tabs;
+            container.id = node.id;
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));

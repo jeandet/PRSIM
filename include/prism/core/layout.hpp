@@ -38,7 +38,7 @@ struct LayoutNode {
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
-    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table } kind = Kind::Leaf;
+    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table, Tabs } kind = Kind::Leaf;
     DY scroll_offset{0};        // only for Kind::Scroll and VirtualList
     Height scroll_content_h{0}; // total content height, for scrollbar rendering
     size_t vlist_visible_start = 0;  // first materialized item index (VirtualList only)
@@ -104,6 +104,15 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     case LayoutNode::Kind::Table:
         detail::measure_scrollable(node);
         return;
+    case LayoutNode::Kind::Tabs: {
+        if (node.children.size() >= 1)
+            layout_measure(node.children[0], LayoutAxis::Horizontal);
+        if (node.children.size() >= 2)
+            detail::measure_linear(node.children[1], LayoutAxis::Vertical, parent_axis);
+        node.hint.expand = true;
+        node.hint.preferred = 0;
+        return;
+    }
     }
 }
 
@@ -155,6 +164,23 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
             offset += main_size;
         }
         node.scroll_content_h = Height{offset};
+        return;
+    }
+
+    if (node.kind == LayoutNode::Kind::Tabs) {
+        float bar_h = node.children.size() >= 1 ? node.children[0].hint.cross : 0;
+        if (node.children.size() >= 1) {
+            layout_arrange(node.children[0], {
+                available.origin,
+                Size{available.extent.w, Height{bar_h}}
+            });
+        }
+        if (node.children.size() >= 2) {
+            layout_arrange(node.children[1], {
+                Point{available.origin.x, available.origin.y + DY{bar_h}},
+                Size{available.extent.w, Height{available.extent.h.raw() - bar_h}}
+            });
+        }
         return;
     }
 
@@ -217,6 +243,12 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
 
 inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
+
+    if (node.kind == LayoutNode::Kind::Tabs) {
+        for (auto& child : node.children)
+            layout_flatten(child, snap);
+        return;
+    }
 
     if (node.kind == LayoutNode::Kind::Table) {
         auto vp = node.allocated;

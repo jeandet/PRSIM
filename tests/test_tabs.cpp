@@ -81,3 +81,27 @@ TEST_CASE("tabs_handle_input: Left/Right switches tabs") {
         field, prism::KeyPress{prism::keys::left, 0}, node);
     CHECK(field.get().selected == 2);
 }
+
+TEST_CASE("ViewBuilder tabs() creates tree with two tabs") {
+    struct Model {
+        prism::Field<prism::TabBar> tabs;
+        prism::Field<std::string> page_a{"hello"};
+        prism::Field<bool> page_b{true};
+
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.tabs(tabs, [&] {
+                vb.tab("Alpha", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_a); });
+                vb.tab("Beta", [&](prism::WidgetTree::ViewBuilder& tvb) { tvb.widget(page_b); });
+            });
+        }
+    };
+
+    Model model;
+    prism::WidgetTree tree(model);
+
+    CHECK(!tree.focus_order().empty());
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK(snap != nullptr);
+    CHECK(snap->geometry.size() >= 2);
+}

@@ -42,6 +42,9 @@ struct Node {
 
     // Table metadata (only meaningful when layout_kind == Table)
     std::shared_ptr<TableState> table_state;
+
+    // Tabs metadata (only meaningful when layout_kind == Tabs)
+    std::shared_ptr<TabsState> tabs_state;
 };
 
 } // namespace prism

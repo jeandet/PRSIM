@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -51,6 +52,13 @@ struct VirtualListState {
     std::vector<WidgetNode> pool;
     std::function<void(WidgetNode&, size_t index)> bind_row;
     std::function<void(WidgetNode&)> unbind_row;
+};
+
+struct TabsState {
+    std::shared_ptr<std::vector<std::string>> tab_names;
+    std::vector<std::function<void(Node&)>> tab_node_builders;
+    std::function<size_t()> get_selected;
+    size_t active_tab = std::numeric_limits<size_t>::max();
 };
 
 inline std::pair<ItemIndex, ItemIndex> compute_visible_range(
