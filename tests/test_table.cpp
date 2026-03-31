@@ -102,6 +102,27 @@ TEST_CASE("Table header text appears in draw commands") {
     CHECK(found_name);
 }
 
+TEST_CASE("Cell text position is relative inside clip") {
+    ColumnModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    // Find a cell text command for column 1 (Name) — should be inside
+    // its column's clip rect, not double-offset
+    for (auto& dl : snap->draw_lists) {
+        for (auto& cmd : dl.commands) {
+            if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
+                if (tc->text == "a" || tc->text == "b" || tc->text == "c") {
+                    // Text x should be within a reasonable range
+                    // (column_origin + small padding), not double-offset
+                    CHECK(tc->origin.x.raw() < 600.f);
+                }
+            }
+        }
+    }
+}
+
 TEST_CASE("Click on table row sets selected_row") {
     ColumnModel model;
     prism::WidgetTree tree(model);

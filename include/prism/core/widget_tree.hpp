@@ -1025,7 +1025,7 @@ private:
                     Point{X{cx}, Y{0}},
                     Size{Width{col_w}, ts->row_height});
                 wn.draws.text(std::move(txt),
-                    Point{X{cx + 4.f}, Y{4.f}},
+                    Point{X{4.f}, Y{4.f}},
                     14.f, Color::rgba(200, 200, 220));
                 wn.draws.clip_pop();
 
@@ -1049,11 +1049,8 @@ private:
 
         // Render header text into overlay_draws (picked up by table flatten)
         node.overlay_draws.clear();
-        float col_w_for_header = ts->column_count > 0
-            ? std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))
-            : 120.f;
         for (size_t c = 0; c < ts->column_count; ++c) {
-            float cx = static_cast<float>(c) * col_w_for_header;
+            float cx = static_cast<float>(c) * col_w;
             auto hdr = ts->column_header(c);
             node.overlay_draws.text(std::string(hdr),
                 Point{X{cx + 4.f}, Y{4.f}},
