@@ -9,7 +9,7 @@
 // File-scope models for tests that use WidgetTree (reflection requires non-local types)
 
 struct TabsTwoPageModel {
-    prism::Field<prism::TabBar> tabs;
+    prism::Field<prism::TabBar<>> tabs;
     prism::Field<bool> page_a{false};
     prism::Field<bool> page_b{true};
 
@@ -22,7 +22,7 @@ struct TabsTwoPageModel {
 };
 
 struct TabsSinglePageModel {
-    prism::Field<prism::TabBar> tabs;
+    prism::Field<prism::TabBar<>> tabs;
     prism::Field<std::string> page{"hello"};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
@@ -33,7 +33,7 @@ struct TabsSinglePageModel {
 };
 
 struct TabsOverlayModel {
-    prism::Field<prism::TabBar> tabs;
+    prism::Field<prism::TabBar<>> tabs;
     prism::Field<std::string> page_a{"hello"};
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
@@ -45,13 +45,13 @@ struct TabsOverlayModel {
 
 
 TEST_CASE("TabBar default constructs with selected=0") {
-    prism::TabBar tb;
+    prism::TabBar<> tb;
     CHECK(tb.selected == 0);
 }
 
 TEST_CASE("TabBar equality") {
-    prism::TabBar a{.selected = 0};
-    prism::TabBar b{.selected = 1};
+    prism::TabBar<> a{.selected = 0};
+    prism::TabBar<> b{.selected = 1};
     CHECK(a == a);
     CHECK(a != b);
 }
@@ -76,17 +76,17 @@ prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
 }
 
 TEST_CASE("Delegate<TabBar> focus policy is tab_and_click") {
-    static_assert(prism::Delegate<prism::TabBar>::focus_policy == prism::FocusPolicy::tab_and_click);
+    static_assert(prism::Delegate<prism::TabBar<>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 TEST_CASE("Delegate<TabBar> records header text") {
-    prism::Field<prism::TabBar> field{{.selected = 0}};
+    prism::Field<prism::TabBar<>> field{{.selected = 0}};
     auto node = make_node();
     auto names = std::make_shared<std::vector<std::string>>(
         std::vector<std::string>{"Alpha", "Beta"});
     node.tab_names = names;
     prism::DrawList dl;
-    prism::Delegate<prism::TabBar>::record(dl, field, node);
+    prism::Delegate<prism::TabBar<>>::record(dl, field, node);
 
     CHECK(!dl.commands.empty());
 
@@ -96,25 +96,25 @@ TEST_CASE("Delegate<TabBar> records header text") {
 }
 
 TEST_CASE("tabs_handle_input: Left/Right switches tabs") {
-    prism::Field<prism::TabBar> field{{.selected = 0}};
+    prism::Field<prism::TabBar<>> field{{.selected = 0}};
     auto node = make_node({.focused = true});
     auto names = std::make_shared<std::vector<std::string>>(
         std::vector<std::string>{"A", "B", "C"});
     node.tab_names = names;
 
     prism::DrawList dl;
-    prism::Delegate<prism::TabBar>::record(dl, field, node);
+    prism::Delegate<prism::TabBar<>>::record(dl, field, node);
 
-    prism::Delegate<prism::TabBar>::handle_input(
+    prism::Delegate<prism::TabBar<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
     CHECK(field.get().selected == 1);
 
-    prism::Delegate<prism::TabBar>::handle_input(
+    prism::Delegate<prism::TabBar<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
     CHECK(field.get().selected == 0);
 
     // Left wraps to last
-    prism::Delegate<prism::TabBar>::handle_input(
+    prism::Delegate<prism::TabBar<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
     CHECK(field.get().selected == 2);
 }
@@ -136,7 +136,7 @@ TEST_CASE("Tab switch rematerializes content") {
     auto snap1 = tree.build_snapshot(800, 600, 1);
     CHECK(snap1 != nullptr);
 
-    model.tabs.set(prism::TabBar{.selected = 1});
+    model.tabs.set(prism::TabBar<>{.selected = 1});
     auto snap2 = tree.build_snapshot(800, 600, 2);
     CHECK(snap2 != nullptr);
     CHECK(!snap2->geometry.empty());
@@ -148,13 +148,13 @@ TEST_CASE("Inactive tab field changes reflected on switch back") {
     auto snap1 = tree.build_snapshot(800, 600, 1);
     CHECK(snap1 != nullptr);
 
-    model.tabs.set(prism::TabBar{.selected = 1});
+    model.tabs.set(prism::TabBar<>{.selected = 1});
     auto snap2 = tree.build_snapshot(800, 600, 2);
     CHECK(snap2 != nullptr);
 
     model.page_a.set(true);
 
-    model.tabs.set(prism::TabBar{.selected = 0});
+    model.tabs.set(prism::TabBar<>{.selected = 0});
     auto snap3 = tree.build_snapshot(800, 600, 3);
     CHECK(snap3 != nullptr);
 }
@@ -212,3 +212,41 @@ TEST_CASE("close_overlays does not destroy tabs state") {
     CHECK(snap2 != nullptr);
     CHECK(!snap2->geometry.empty());
 }
+
+#if __cpp_impl_reflection
+struct GeneralPage {
+    prism::Field<std::string> username{"jean"};
+    void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(username); }
+};
+
+struct AdvancedPage {
+    prism::Field<bool> dark_mode{false};
+    void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(dark_mode); }
+};
+
+struct Pages {
+    GeneralPage general;
+    AdvancedPage advanced;
+};
+
+struct ReflectiveTabModel {
+    prism::Field<prism::TabBar<Pages>> tabs;
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.tabs(tabs);
+    }
+};
+
+TEST_CASE("TabBar<S> reflective mode: tabs from struct members") {
+    ReflectiveTabModel model;
+    prism::WidgetTree tree(model);
+
+    auto snap = tree.build_snapshot(800, 600, 1);
+    CHECK(snap != nullptr);
+    CHECK(!snap->geometry.empty());
+
+    model.tabs.value.selected = 1;
+    model.tabs.on_change().emit(model.tabs.value);
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    CHECK(snap2 != nullptr);
+}
+#endif

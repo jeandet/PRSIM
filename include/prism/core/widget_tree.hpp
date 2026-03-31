@@ -275,7 +275,7 @@ public:
         }
 #endif // __cpp_impl_reflection
 
-        void tabs(Field<TabBar>& field, std::invocable auto&& builder) {
+        void tabs(Field<TabBar<>>& field, std::invocable auto&& builder) {
             placed_.insert(&field);
 
             auto state = std::make_shared<TabsState>();
@@ -326,6 +326,82 @@ public:
                     cb(vb);
                 });
         }
+
+#if __cpp_impl_reflection
+        template <typename S>
+            requires (!std::is_void_v<S>)
+        void tabs(Field<TabBar<S>>& field) {
+            placed_.insert(&field);
+
+            auto state = std::make_shared<TabsState>();
+            state->tab_names = std::make_shared<std::vector<std::string>>();
+            state->get_selected = [&field]() { return field.get().selected; };
+
+            static constexpr auto members = std::define_static_array(
+                std::meta::nonstatic_data_members_of(
+                    ^^S, std::meta::access_context::unchecked()));
+
+            template for (constexpr auto m : members) {
+                state->tab_names->push_back(
+                    std::string(std::meta::identifier_of(m)));
+
+                auto& member = field.value.pages.[:m:];
+                state->tab_node_builders.push_back(
+                    [&member, &tree = tree_](Node& target) {
+                        target.children.push_back(tree.build_node_tree(member));
+                    });
+            }
+
+            Node tabs_node;
+            tabs_node.id = tree_.next_id_++;
+            tabs_node.is_leaf = false;
+            tabs_node.layout_kind = LayoutKind::Tabs;
+            tabs_node.tabs_state = state;
+
+            // Tab bar leaf — custom build since we don't have a Field<TabBar<>>
+            Node bar;
+            bar.id = tree_.next_id_++;
+            bar.is_leaf = true;
+            auto names_ptr = state->tab_names;
+            bar.build_widget = [&field, names_ptr](WidgetNode& wn) {
+                wn.focus_policy = FocusPolicy::tab_and_click;
+                wn.tab_names = names_ptr;
+                wn.record = [&field, names_ptr](WidgetNode& node) {
+                    node.draws.clear();
+                    node.overlay_draws.clear();
+                    detail::tabs_record(node.draws, node, field.get().selected, *names_ptr);
+                };
+                wn.record(wn);
+                wn.wire = [&field, names_ptr](WidgetNode& node) {
+                    node.connections.push_back(
+                        node.on_input.connect([&field, names_ptr, &node](const InputEvent& ev) {
+                            size_t count = names_ptr->size();
+                            if (count == 0) return;
+                            detail::tabs_handle_input(ev, node, field.get().selected, count,
+                                [&field](size_t idx) {
+                                    field.value.selected = idx;
+                                    field.on_change().emit(field.value);
+                                });
+                        })
+                    );
+                };
+            };
+            bar.on_change = [&field](std::function<void()> cb) -> Connection {
+                return field.on_change().connect(
+                    [cb = std::move(cb)](const TabBar<S>&) { cb(); });
+            };
+            tabs_node.children.push_back(std::move(bar));
+
+            // Content container
+            Node content;
+            content.id = tree_.next_id_++;
+            content.is_leaf = false;
+            content.layout_kind = LayoutKind::Column;
+            tabs_node.children.push_back(std::move(content));
+
+            current_parent().children.push_back(std::move(tabs_node));
+        }
+#endif
 
         void finalize() {
             if (target_.children.size() > 1) {

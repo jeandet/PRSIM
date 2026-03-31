@@ -209,9 +209,19 @@ struct DropdownEditState {
 };
 
 // Sentinel: tab bar — selected index only; tab names defined in view()
+template <typename S = void>
 struct TabBar {
     size_t selected = 0;
     bool operator==(const TabBar&) const = default;
+};
+
+template <typename S>
+    requires (!std::is_void_v<S>)
+struct TabBar<S> {
+    size_t selected = 0;
+    S pages{};
+    // Only compare selected — pages contains non-copyable sub-components
+    bool operator==(const TabBar& other) const { return selected == other.selected; }
 };
 
 // Ephemeral state for tab bar hover tracking and header hit regions
@@ -567,11 +577,11 @@ struct Delegate<Dropdown<T>> {
 };
 
 template <>
-struct Delegate<TabBar> {
+struct Delegate<TabBar<>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
-    static void record(DrawList& dl, const Field<TabBar>& field, WidgetNode& node);
-    static void handle_input(Field<TabBar>& field, const InputEvent& ev, WidgetNode& node);
+    static void record(DrawList& dl, const Field<TabBar<>>& field, WidgetNode& node);
+    static void handle_input(Field<TabBar<>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 } // namespace prism
