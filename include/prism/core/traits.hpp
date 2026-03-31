@@ -34,4 +34,15 @@ inline constexpr bool is_state_v = is_state<T>::value;
 template <typename T>
 concept component_type = std::is_class_v<T> && !is_field_v<T> && !is_state_v<T>;
 
+template <typename> class List;
+
+template <typename T>
+struct is_list : std::false_type {};
+
+template <typename T>
+struct is_list<List<T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_list_v = is_list<T>::value;
+
 } // namespace prism

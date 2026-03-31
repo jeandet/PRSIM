@@ -1,7 +1,7 @@
 #pragma once
 
 #include <prism/core/field.hpp>
-#include <prism/core/list.hpp>
+#include <prism/core/traits.hpp>
 #include <prism/core/types.hpp>
 #include <prism/core/widget_node.hpp>
 
@@ -9,20 +9,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <vector>
 
 namespace prism {
-
-// Type trait: is T a List<U> for some U?
-template <typename T>
-struct is_list : std::false_type {};
-
-template <typename T>
-struct is_list<List<T>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool is_list_v = is_list<T>::value;
 
 struct TableSource {
     std::function<size_t()> column_count;
@@ -39,6 +28,8 @@ concept ColumnStorage = requires(const T& t, size_t r, size_t c) {
     { t.header(c) } -> std::convertible_to<std::string_view>;
 };
 
+// Intentionally minimal: only gates overload selection. The actual row-element
+// constraints are enforced by wrap_row_storage (Task 3) via reflection.
 template <typename T>
 concept RowStorage = requires {
     requires is_list_v<std::remove_cvref_t<T>>;
