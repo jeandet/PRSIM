@@ -3,6 +3,7 @@
 #include <prism/core/dropdown_delegates.hpp>
 #include <prism/core/layout.hpp>
 #include <prism/core/list.hpp>
+#include <prism/core/table.hpp>
 #include <prism/core/text_delegates.hpp>
 #include <prism/core/traits.hpp>
 #include <prism/core/widget_node.hpp>
@@ -200,6 +201,39 @@ public:
 
             current_parent().children.push_back(std::move(container));
         }
+
+        template <ColumnStorage T>
+        void table(T& data) {
+            Node container;
+            container.id = tree_.next_id_++;
+            container.is_leaf = false;
+            container.layout_kind = LayoutKind::Table;
+
+            auto state = std::make_shared<TableState>();
+            state->source = wrap_column_storage(data);
+            state->column_count = data.column_count();
+            container.table_state = state;
+
+            current_parent().children.push_back(std::move(container));
+        }
+
+#if __cpp_impl_reflection
+        template <typename T>
+            requires RowStorage<List<T>>
+        void table(List<T>& list) {
+            Node container;
+            container.id = tree_.next_id_++;
+            container.is_leaf = false;
+            container.layout_kind = LayoutKind::Table;
+
+            auto state = std::make_shared<TableState>();
+            state->source = wrap_row_storage(list);
+            state->column_count = state->source.column_count();
+            container.table_state = state;
+
+            current_parent().children.push_back(std::move(container));
+        }
+#endif // __cpp_impl_reflection
 
         void finalize() {
             if (target_.children.size() > 1) {
@@ -468,6 +502,11 @@ private:
         return std::get<ScrollState>(node.edit_state);
     }
 
+    static TableState* get_table_state(WidgetNode& node) {
+        auto* sp = std::get_if<std::shared_ptr<TableState>>(&node.edit_state);
+        return sp ? sp->get() : nullptr;
+    }
+
     static VirtualListState* get_vlist_state(WidgetNode& node) {
         auto* sp = std::get_if<std::shared_ptr<VirtualListState>>(&node.edit_state);
         return sp ? sp->get() : nullptr;
@@ -515,8 +554,11 @@ private:
                 if (node.vlist_bind_row) vls->bind_row = node.vlist_bind_row;
                 if (node.vlist_unbind_row) vls->unbind_row = node.vlist_unbind_row;
                 wn.edit_state = vls;
+            } else if (node.layout_kind == LayoutKind::Table && node.table_state) {
+                wn.edit_state = node.table_state;
+                wn.focus_policy = FocusPolicy::tab_and_click;
             }
-            if (node.layout_kind != LayoutKind::VirtualList) {
+            if (node.layout_kind != LayoutKind::VirtualList && node.layout_kind != LayoutKind::Table) {
                 for (auto& child : node.children)
                     wn.children.push_back(build_widget_node(child));
             }
@@ -739,6 +781,15 @@ private:
                     vls->viewport_h = layout_node.allocated.extent.h;
             }
         }
+        if (layout_node.kind == LayoutNode::Kind::Table) {
+            auto it = index_.find(layout_node.id);
+            if (it != index_.end()) {
+                if (auto* ts = get_table_state(*it->second)) {
+                    ts->viewport_h = Height{layout_node.allocated.extent.h.raw() - ts->row_height.raw()};
+                    ts->viewport_w = layout_node.allocated.extent.w;
+                }
+            }
+        }
         auto it = index_.find(layout_node.id);
         if (it != index_.end()) {
             if (auto sv = get_scroll_view(*it->second)) {
@@ -829,9 +880,94 @@ private:
         vls->visible_end = new_end;
     }
 
+    void materialize_table(WidgetNode& node) {
+        auto* ts = get_table_state(node);
+        if (!ts || !ts->source.row_count) return;
+
+        if (ts->row_height.raw() <= 0.f)
+            ts->row_height = Height{24.f};
+
+        size_t total_rows = ts->row_count();
+        auto [new_start, new_end] = compute_visible_range(
+            ItemCount{total_rows}, ts->row_height, ts->scroll_y,
+            ts->viewport_h, ts->overscan);
+
+        for (auto it = node.children.rbegin(); it != node.children.rend(); ++it) {
+            index_.erase(it->id);
+            parent_map_.erase(it->id);
+            std::erase(focus_order_, it->id);
+            ts->pool.push_back(std::move(*it));
+        }
+        node.children.clear();
+
+        float col_w = ts->column_count > 0
+            ? std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))
+            : 120.f;
+
+        size_t range_size = new_end.raw() - new_start.raw();
+        node.children.reserve(range_size);
+        for (size_t i = new_start.raw(); i < new_end.raw(); ++i) {
+            WidgetNode wn;
+            if (!ts->pool.empty()) {
+                wn = std::move(ts->pool.back());
+                ts->pool.pop_back();
+            } else {
+                wn.id = next_id_++;
+            }
+            wn.dirty = true;
+            wn.draws.clear();
+
+            size_t row_idx = i;
+            bool selected = ts->selected_row.get().has_value() &&
+                            ts->selected_row.get().value() == row_idx;
+
+            auto bg = (row_idx % 2 == 0)
+                ? Color::rgba(30, 30, 50)
+                : Color::rgba(26, 26, 46);
+            if (selected)
+                bg = Color::rgba(50, 50, 120);
+
+            float total_w = col_w * static_cast<float>(ts->column_count);
+            wn.draws.filled_rect(
+                Rect{Point{X{0}, Y{0}},
+                     Size{Width{total_w}, ts->row_height}},
+                bg);
+
+            for (size_t c = 0; c < ts->column_count; ++c) {
+                std::string txt = ts->source.cell_text(row_idx, c);
+                float cx = static_cast<float>(c) * col_w;
+                wn.draws.clip_push(
+                    Point{X{cx}, Y{0}},
+                    Size{Width{col_w}, ts->row_height});
+                wn.draws.text(std::move(txt),
+                    Point{X{cx + 4.f}, Y{4.f}},
+                    14.f, Color::rgba(200, 200, 220));
+                wn.draws.clip_pop();
+
+                if (c > 0) {
+                    wn.draws.filled_rect(
+                        Rect{Point{X{cx}, Y{0}},
+                             Size{Width{1.f}, ts->row_height}},
+                        Color::rgba(50, 50, 70));
+                }
+            }
+
+            parent_map_[wn.id] = node.id;
+            node.children.push_back(std::move(wn));
+        }
+
+        for (auto& c : node.children)
+            index_[c.id] = &c;
+
+        ts->visible_start = new_start;
+        ts->visible_end = new_end;
+    }
+
     void materialize_all_virtual_lists(WidgetNode& node) {
         if (node.layout_kind == LayoutKind::VirtualList)
             materialize_virtual_list(node);
+        else if (node.layout_kind == LayoutKind::Table)
+            materialize_table(node);
         for (auto& c : node.children)
             materialize_all_virtual_lists(c);
     }
@@ -879,6 +1015,23 @@ private:
                     static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
                 container.vlist_visible_start = vls->visible_start.raw();
                 container.vlist_item_height = vls->item_height.raw();
+            }
+            for (auto& c : node.children)
+                build_layout(c, container);
+            parent.children.push_back(std::move(container));
+        } else if (node.layout_kind == LK::Table) {
+            LayoutNode container;
+            container.kind = LayoutNode::Kind::Table;
+            container.id = node.id;
+            if (auto* ts = get_table_state(node)) {
+                container.scroll_offset = ts->scroll_y;
+                container.scroll_content_h = Height{
+                    static_cast<float>(ts->row_count()) * ts->row_height.raw()};
+                container.vlist_visible_start = ts->visible_start.raw();
+                container.vlist_item_height = ts->row_height.raw();
+                container.table_column_count = ts->column_count;
+                container.table_header_h = ts->row_height.raw();
+                container.table_scroll_x = ts->scroll_x;
             }
             for (auto& c : node.children)
                 build_layout(c, container);

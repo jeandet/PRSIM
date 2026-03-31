@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
 namespace prism {
@@ -38,6 +39,9 @@ struct Node {
     std::function<Connection(size_t, std::function<void()>)> vlist_on_remove;
     std::function<Connection(size_t, std::function<void()>)> vlist_on_update;
     size_t vlist_item_count = 0;
+
+    // Table metadata (only meaningful when layout_kind == Table)
+    std::shared_ptr<TableState> table_state;
 };
 
 } // namespace prism

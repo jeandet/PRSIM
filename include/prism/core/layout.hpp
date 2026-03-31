@@ -38,11 +38,14 @@ struct LayoutNode {
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
-    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList } kind = Kind::Leaf;
+    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table } kind = Kind::Leaf;
     DY scroll_offset{0};        // only for Kind::Scroll and VirtualList
     Height scroll_content_h{0}; // total content height, for scrollbar rendering
     size_t vlist_visible_start = 0;  // first materialized item index (VirtualList only)
     float vlist_item_height = 0;     // uniform item height (VirtualList only)
+    DX table_scroll_x{0};
+    size_t table_column_count = 0;
+    float table_header_h = 0;
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
@@ -98,6 +101,7 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
         return;
     case LayoutNode::Kind::Scroll:
     case LayoutNode::Kind::VirtualList:
+    case LayoutNode::Kind::Table:
         detail::measure_scrollable(node);
         return;
     }
@@ -105,6 +109,22 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
 
 inline void layout_arrange(LayoutNode& node, Rect available) {
     node.allocated = available;
+
+    if (node.kind == LayoutNode::Kind::Table) {
+        float item_h = node.vlist_item_height;
+        if (item_h <= 0) item_h = 24.f;
+        float header_h = node.table_header_h > 0 ? node.table_header_h : item_h;
+        float body_top = available.origin.y.raw() + header_h;
+        float start_y = body_top + static_cast<float>(node.vlist_visible_start) * item_h;
+        for (auto& child : node.children) {
+            layout_arrange(child, {
+                Point{available.origin.x, Y{start_y}},
+                Size{available.extent.w, Height{item_h}}
+            });
+            start_y += item_h;
+        }
+        return;
+    }
 
     if (node.kind == LayoutNode::Kind::VirtualList) {
         float item_h = node.vlist_item_height;
@@ -197,6 +217,71 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
 
 inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
+
+    if (node.kind == LayoutNode::Kind::Table) {
+        auto vp = node.allocated;
+        float item_h = node.vlist_item_height > 0 ? node.vlist_item_height : 24.f;
+        float header_h = node.table_header_h > 0 ? node.table_header_h : item_h;
+
+        snap.geometry.push_back({node.id, vp});
+
+        // Header background (fixed at top, doesn't scroll vertically)
+        DrawList header_dl;
+        header_dl.clip_push(vp.origin, Size{vp.extent.w, Height{header_h}});
+        header_dl.filled_rect(
+            Rect{vp.origin, Size{vp.extent.w, Height{header_h}}},
+            Color::rgba(42, 42, 74));
+        header_dl.filled_rect(
+            Rect{Point{vp.origin.x, vp.origin.y + DY{header_h - 2.f}},
+                 Size{vp.extent.w, Height{2.f}}},
+            Color::rgba(74, 74, 106));
+        header_dl.clip_pop();
+        snap.draw_lists.push_back(std::move(header_dl));
+        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+
+        // Body region (clipped, scrollable)
+        Rect body_rect{
+            Point{vp.origin.x, vp.origin.y + DY{header_h}},
+            Size{vp.extent.w, Height{vp.extent.h.raw() - header_h}}};
+
+        DrawList body_clip;
+        body_clip.clip_push(body_rect.origin, body_rect.extent);
+        snap.geometry.push_back({0, body_rect});
+        snap.draw_lists.push_back(std::move(body_clip));
+        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+
+        // Flatten visible children with scroll offset + header offset
+        DY scroll_dy = node.scroll_offset;
+        for (auto& child : node.children) {
+            DY total_offset{-scroll_dy.raw() + header_h};
+            detail::offset_subtree_y(child, total_offset);
+            layout_flatten(child, snap);
+            detail::offset_subtree_y(child, DY{-total_offset.raw()});
+        }
+
+        DrawList body_clip_pop;
+        body_clip_pop.clip_pop();
+        snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
+        snap.draw_lists.push_back(std::move(body_clip_pop));
+        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+
+        // Vertical scrollbar
+        if (node.scroll_content_h.raw() > body_rect.extent.h.raw()) {
+            Height thumb_h = scrollbar::thumb_height(body_rect.extent.h, node.scroll_content_h);
+            float max_scroll = node.scroll_content_h.raw() - body_rect.extent.h.raw();
+            float thumb_y = max_scroll > 0
+                ? scroll_dy.raw() * (body_rect.extent.h.raw() - thumb_h.raw()) / max_scroll
+                : 0.f;
+            snap.overlay.filled_rect(
+                Rect{Point{body_rect.origin.x + DX{body_rect.extent.w.raw() - scrollbar::track_inset.raw()},
+                           body_rect.origin.y + DY{thumb_y}},
+                     Size{Width{scrollbar::track_width}, thumb_h}},
+                Color::rgba(120, 120, 130, 160));
+            snap.overlay_geometry.push_back({node.id, vp});
+        }
+
+        return;
+    }
 
     if (node.kind == LayoutNode::Kind::Scroll || node.kind == LayoutNode::Kind::VirtualList) {
         // ClipPush for the viewport
