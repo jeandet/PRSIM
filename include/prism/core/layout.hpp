@@ -289,12 +289,15 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
             float thumb_y = max_scroll > 0
                 ? scroll_dy.raw() * (body_rect.extent.h.raw() - thumb_h.raw()) / max_scroll
                 : 0.f;
+            Rect track_rect{
+                Point{body_rect.origin.x + DX{body_rect.extent.w.raw() - scrollbar::track_inset.raw()},
+                      body_rect.origin.y},
+                Size{Width{scrollbar::track_inset}, body_rect.extent.h}};
             snap.overlay.filled_rect(
-                Rect{Point{body_rect.origin.x + DX{body_rect.extent.w.raw() - scrollbar::track_inset.raw()},
-                           body_rect.origin.y + DY{thumb_y}},
+                Rect{Point{track_rect.origin.x, body_rect.origin.y + DY{thumb_y}},
                      Size{Width{scrollbar::track_width}, thumb_h}},
                 Color::rgba(120, 120, 130, 160));
-            snap.overlay_geometry.push_back({node.id, vp});
+            snap.overlay_geometry.push_back({node.id, track_rect});
         }
 
         return;
@@ -362,9 +365,17 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
         auto hit_rect = (node.kind == LayoutNode::Kind::Canvas)
             ? node.allocated : node.draws.bounding_box();
+
+        DrawList clipped;
+        clipped.clip_push(node.allocated.origin, node.allocated.extent);
+        clipped.commands.insert(clipped.commands.end(),
+            std::make_move_iterator(node.draws.commands.begin()),
+            std::make_move_iterator(node.draws.commands.end()));
+        clipped.clip_pop();
+
         auto idx = static_cast<uint16_t>(snap.geometry.size());
         snap.geometry.push_back({node.id, hit_rect});
-        snap.draw_lists.push_back(std::move(node.draws));
+        snap.draw_lists.push_back(std::move(clipped));
         snap.z_order.push_back(idx);
     }
 

@@ -268,10 +268,10 @@ TEST_CASE("flatten translates draw commands to absolute coordinates") {
     CHECK(snap.geometry[0].second.origin.x.raw() == 30);
     CHECK(snap.geometry[0].second.origin.y.raw() == 40);
 
-    // The draw command should be translated
+    // The draw commands are: ClipPush (allocation clip), FilledRect, ClipPop
     auto& dl = snap.draw_lists[0];
-    CHECK(dl.commands.size() == 1);
-    auto* fr = std::get_if<prism::FilledRect>(&dl.commands[0]);
+    CHECK(dl.commands.size() == 3);
+    auto* fr = std::get_if<prism::FilledRect>(&dl.commands[1]);
     REQUIRE(fr != nullptr);
     CHECK(fr->rect.origin.x.raw() == 30);
     CHECK(fr->rect.origin.y.raw() == 40);

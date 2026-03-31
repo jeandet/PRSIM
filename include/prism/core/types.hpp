@@ -202,6 +202,20 @@ struct Rect {
                 Size{Width{(bottom_right.x - top_left.x).raw()},
                      Height{(bottom_right.y - top_left.y).raw()}}};
     }
+
+    [[nodiscard]] constexpr Rect intersect(Rect other) const {
+        float ax1 = origin.x.raw(), ay1 = origin.y.raw();
+        float ax2 = ax1 + extent.w.raw(), ay2 = ay1 + extent.h.raw();
+        float bx1 = other.origin.x.raw(), by1 = other.origin.y.raw();
+        float bx2 = bx1 + other.extent.w.raw(), by2 = by1 + other.extent.h.raw();
+        float ix1 = ax1 > bx1 ? ax1 : bx1;
+        float iy1 = ay1 > by1 ? ay1 : by1;
+        float ix2 = ax2 < bx2 ? ax2 : bx2;
+        float iy2 = ay2 < by2 ? ay2 : by2;
+        float w = ix2 > ix1 ? ix2 - ix1 : 0.f;
+        float h = iy2 > iy1 ? iy2 - iy1 : 0.f;
+        return {Point{X{ix1}, Y{iy1}}, Size{Width{w}, Height{h}}};
+    }
 };
 
 // Animation progress types

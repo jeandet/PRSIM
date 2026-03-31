@@ -3,6 +3,7 @@
 
 #include <prism/core/table.hpp>
 #include <prism/core/delegate.hpp>
+#include <prism/core/hit_test.hpp>
 #include <prism/core/widget_tree.hpp>
 
 #include <array>
@@ -102,6 +103,173 @@ TEST_CASE("Table header text appears in draw commands") {
     CHECK(found_name);
 }
 
+TEST_CASE("Table in column layout: no overlap with sibling") {
+    // Mimics dashboard: scroll area + table + list in a column
+    struct Model {
+        prism::Field<std::string> label1{"one"};
+        prism::Field<std::string> label2{"two"};
+        prism::Field<std::string> label3{"three"};
+        prism::Field<std::string> label4{"four"};
+        prism::Field<std::string> label5{"five"};
+        ColumnModel table_data;
+        prism::List<std::string> list_data;
+
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.scroll([&] {
+                vb.vstack(label1, label2, label3, label4, label5);
+            });
+            vb.table(table_data);
+            vb.list(list_data);
+        }
+    };
+
+    Model model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    snap = tree.build_snapshot(400, 300, 2);
+
+    // Dump all text commands with their Y positions
+    for (auto& dl : snap->draw_lists) {
+        for (auto& cmd : dl.commands) {
+            if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
+                MESSAGE("text '", tc->text, "' at y=", tc->origin.y.raw());
+            }
+            if (auto* cp = std::get_if<prism::ClipPush>(&cmd)) {
+                MESSAGE("clip_push y=", cp->rect.origin.y.raw(),
+                        " h=", cp->rect.extent.h.raw());
+            }
+        }
+    }
+
+    // Verify: all table cell text Y positions should be >= scroll_area_height
+    // The scroll gets ~100px (1/3 of 300), so table starts at ~100
+    float third = 100.f;
+    for (auto& dl : snap->draw_lists) {
+        for (auto& cmd : dl.commands) {
+            if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
+                // Table cell text should not be in the scroll area
+                if (tc->text == "a" || tc->text == "b" || tc->text == "c") {
+                    CHECK(tc->origin.y.raw() >= third - 5.f);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Click selects row via hit_test in multi-widget layout") {
+    struct Model {
+        prism::Field<std::string> label{"hello"};
+        ColumnModel table_data;
+        prism::List<std::string> list_data;
+
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.scroll([&] { vb.widget(label); });
+            vb.table(table_data);
+            vb.list(list_data);
+        }
+    };
+
+    Model model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    snap = tree.build_snapshot(400, 300, 2);
+
+    // Find table node
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : tree.root().children)
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    REQUIRE(table_node != nullptr);
+
+    auto table_rect = prism::find_widget_rect(*snap, table_node->id);
+    REQUIRE(table_rect.has_value());
+    MESSAGE("table rect: y=", table_rect->origin.y.raw(),
+            " h=", table_rect->extent.h.raw());
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    // Click in the table body area (window coords)
+    float row_h = ts.row_height.raw();
+    float abs_y = table_rect->origin.y.raw() + row_h + row_h * 0.5f;  // header + half a row
+    MESSAGE("clicking at abs_y=", abs_y);
+
+    // Verify hit_test returns the table
+    auto hit = prism::hit_test(*snap, prism::Point{prism::X{50.f}, prism::Y{abs_y}});
+    REQUIRE(hit.has_value());
+    CHECK(*hit == table_node->id);
+
+    // Simulate what route_mouse_button does: localize and dispatch
+    prism::MouseButton click{
+        .position = prism::Point{prism::X{50.f}, prism::Y{abs_y}},
+        .button = 1, .pressed = true};
+    prism::InputEvent ev{click};
+    auto localized = prism::localize_mouse(ev, *table_rect);
+    tree.dispatch(table_node->id, localized);
+
+    CHECK(ts.selected_row.get().has_value());
+    CHECK(ts.selected_row.get().value() == 0);
+}
+
+TEST_CASE("Table selection via full route_mouse_button path") {
+    // Mimic dashboard: scroll + table + list, with many fields in scroll
+    struct BigModel {
+        prism::Field<std::string> f1{"a"}, f2{"b"}, f3{"c"}, f4{"d"};
+        prism::Field<std::string> f5{"e"}, f6{"f"}, f7{"g"}, f8{"h"};
+        ColumnModel table_data;
+        prism::List<std::string> list_data;
+
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.scroll([&] { vb.vstack(f1, f2, f3, f4, f5, f6, f7, f8); });
+            vb.table(table_data);
+            vb.list(list_data);
+        }
+    };
+
+    BigModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    // Find table
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : tree.root().children)
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    REQUIRE(table_node != nullptr);
+
+    auto table_rect = prism::find_widget_rect(*snap, table_node->id);
+    REQUIRE(table_rect.has_value());
+    MESSAGE("table y=", table_rect->origin.y.raw(), " h=", table_rect->extent.h.raw());
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    // Click in the middle of table body (absolute coords)
+    float row_h = ts.row_height.raw();
+    float abs_y = table_rect->origin.y.raw() + row_h + row_h * 0.5f;
+    prism::Point click_pos{prism::X{50.f}, prism::Y{abs_y}};
+
+    // What does hit_test return?
+    auto hit = prism::hit_test(*snap, click_pos);
+    MESSAGE("hit_test returned id=", hit.value_or(999));
+    MESSAGE("table id=", table_node->id);
+
+    // Dump ALL geometry entries that contain this point
+    for (size_t i = 0; i < snap->geometry.size(); ++i) {
+        auto& [id, rect] = snap->geometry[i];
+        if (rect.contains(click_pos)) {
+            MESSAGE("geometry[", i, "] id=", id,
+                    " y=", rect.origin.y.raw(), " h=", rect.extent.h.raw());
+        }
+    }
+
+    REQUIRE(hit.has_value());
+    CHECK(*hit == table_node->id);
+}
+
 TEST_CASE("Cell text position is relative inside clip") {
     ColumnModel model;
     prism::WidgetTree tree(model);
@@ -153,6 +321,52 @@ TEST_CASE("Click on table row sets selected_row") {
         .pressed = true};
     tree.dispatch(table_node->id, prism::InputEvent{click});
 
+    CHECK(ts.selected_row.get().has_value());
+    CHECK(ts.selected_row.get().value() == 1);
+}
+
+TEST_CASE("hit_test finds table, not cells") {
+    ColumnModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    // Find the table node to get its ID
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    // Find table rect in geometry
+    auto table_rect = prism::find_widget_rect(*snap, table_node->id);
+    REQUIRE(table_rect.has_value());
+    MESSAGE("table rect: y=", table_rect->origin.y.raw(),
+            " h=", table_rect->extent.h.raw());
+
+    // Click in the middle of the table body
+    float mid_y = table_rect->origin.y.raw() + table_rect->extent.h.raw() * 0.5f;
+    float mid_x = table_rect->origin.x.raw() + table_rect->extent.w.raw() * 0.5f;
+    auto hit_id = prism::hit_test(*snap, prism::Point{prism::X{mid_x}, prism::Y{mid_y}});
+    REQUIRE(hit_id.has_value());
+    CHECK(*hit_id == table_node->id);
+
+    // Now dispatch a localized click on row 1 and verify selection works
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    float row_h = ts.row_height.raw();
+    float header_h = row_h;
+    // local_y = header + 1.5 rows → row index 1
+    float local_y = header_h + row_h * 1.5f;
+    MESSAGE("local_y=", local_y, " row_h=", row_h, " row_count=", ts.row_count());
+    prism::MouseButton click{
+        .position = prism::Point{prism::X{10.f}, prism::Y{local_y}},
+        .button = 1, .pressed = true};
+    tree.dispatch(table_node->id, prism::InputEvent{click});
     CHECK(ts.selected_row.get().has_value());
     CHECK(ts.selected_row.get().value() == 1);
 }

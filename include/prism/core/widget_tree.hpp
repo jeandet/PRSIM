@@ -532,6 +532,7 @@ public:
         auto snap = std::make_unique<SceneSnapshot>();
         snap->version = version;
         layout_flatten(layout, *snap);
+        resolve_clips(*snap);
         return snap;
     }
 
@@ -996,9 +997,8 @@ private:
             if (!ts->pool.empty()) {
                 wn = std::move(ts->pool.back());
                 ts->pool.pop_back();
-            } else {
-                wn.id = next_id_++;
             }
+            wn.id = 0;  // cells are hit-test transparent; the table container handles input
             wn.dirty = true;
             wn.draws.clear();
 

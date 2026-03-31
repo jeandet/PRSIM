@@ -184,8 +184,6 @@ void SoftwareBackend::render_cmd(const TextCmd& cmd) {
 void SoftwareBackend::render_cmd(const ClipPush& cmd) {
     SDL_Rect r = {static_cast<int>(cmd.rect.origin.x.raw()), static_cast<int>(cmd.rect.origin.y.raw()),
                   static_cast<int>(cmd.rect.extent.w.raw()), static_cast<int>(cmd.rect.extent.h.raw())};
-    if (!clip_stack_.empty())
-        SDL_GetRectIntersection(&clip_stack_.back(), &r, &r);
     clip_stack_.push_back(r);
     SDL_SetRenderClipRect(renderer_, &r);
 }

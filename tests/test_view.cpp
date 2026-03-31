@@ -346,8 +346,10 @@ TEST_CASE("canvas record() receives allocated bounds from layout") {
     auto& canvas_draws = snap->draw_lists[1];
     REQUIRE_FALSE(canvas_draws.empty());
 
-    auto& cmd = canvas_draws.commands[0];
-    auto* fr = std::get_if<prism::FilledRect>(&cmd);
+    // First command is ClipPush (allocation clip), actual draw follows
+    auto* clip = std::get_if<prism::ClipPush>(&canvas_draws.commands[0]);
+    REQUIRE(clip != nullptr);
+    auto* fr = std::get_if<prism::FilledRect>(&canvas_draws.commands[1]);
     REQUIRE(fr != nullptr);
     CHECK(fr->rect.extent.w.raw() > 0);
     CHECK(fr->rect.extent.h.raw() > 0);

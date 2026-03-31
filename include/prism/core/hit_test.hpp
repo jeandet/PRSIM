@@ -15,10 +15,10 @@ namespace prism {
         if (rect.contains(pos))
             return id;
     }
-    // Then normal widget geometry, back-to-front
+    // Then normal widget geometry, back-to-front (skip synthetic entries with id=0)
     for (auto it = snap.z_order.rbegin(); it != snap.z_order.rend(); ++it) {
         auto& [id, rect] = snap.geometry[*it];
-        if (rect.contains(pos))
+        if (id != 0 && rect.contains(pos))
             return id;
     }
     return std::nullopt;
