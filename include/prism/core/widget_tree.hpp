@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/dropdown_delegates.hpp>
+#include <prism/core/tabs_delegates.hpp>
 #include <prism/core/layout.hpp>
 #include <prism/core/list.hpp>
 #include <prism/core/table.hpp>

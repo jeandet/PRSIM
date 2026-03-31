@@ -566,4 +566,12 @@ struct Delegate<Dropdown<T>> {
     static void handle_input(Field<Dropdown<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
+template <>
+struct Delegate<TabBar> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
+    static void record(DrawList& dl, const Field<TabBar>& field, WidgetNode& node);
+    static void handle_input(Field<TabBar>& field, const InputEvent& ev, WidgetNode& node);
+};
+
 } // namespace prism

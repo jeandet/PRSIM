@@ -34,6 +34,7 @@ struct WidgetNode {
     LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
     bool table_input_wired = false;
+    std::shared_ptr<std::vector<std::string>> tab_names;
 };
 
 struct VirtualListState {
