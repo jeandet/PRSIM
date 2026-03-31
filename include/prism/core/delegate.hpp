@@ -33,7 +33,7 @@ concept StringLike = requires(const T& t) {
 
 enum class FocusPolicy : uint8_t { none, tab_and_click };
 
-enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table };
+enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table, Tabs };
 
 enum class ScrollBarPolicy : uint8_t { Auto, Always, Never };
 enum class ScrollEventPolicy : uint8_t { ConsumeAlways, BubbleAtBounds };
@@ -208,10 +208,23 @@ struct DropdownEditState {
     Rect popup_rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
 };
 
+// Sentinel: tab bar — selected index only; tab names defined in view()
+struct TabBar {
+    size_t selected = 0;
+    bool operator==(const TabBar&) const = default;
+};
+
+// Ephemeral state for tab bar hover tracking and header hit regions
+struct TabBarEditState {
+    std::optional<size_t> hovered_tab;
+    std::vector<std::pair<float, float>> header_x_ranges;
+};
+
 // Closed set of ephemeral widget states stored in WidgetNode::edit_state.
 // std::shared_ptr<void> holds type-erased lifetime (e.g. virtual list row Field<T>).
 struct VirtualListState;
 struct TableState;
+struct TabsState;
 
 using EditState = std::variant<
     std::monostate,
@@ -219,8 +232,10 @@ using EditState = std::variant<
     TextAreaEditState,
     DropdownEditState,
     ScrollState,
+    TabBarEditState,
     std::shared_ptr<VirtualListState>,
     std::shared_ptr<TableState>,
+    std::shared_ptr<TabsState>,
     std::shared_ptr<void>
 >;
 
