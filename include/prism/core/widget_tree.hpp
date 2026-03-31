@@ -38,6 +38,29 @@ public:
         }
 
     public:
+        struct TableBuilder {
+            Node& node_ref;
+            std::set<const void*>& placed_ref;
+
+            template <typename U>
+            TableBuilder& depends_on(Field<U>& field) {
+                placed_ref.insert(&field);
+                node_ref.dependencies.push_back(
+                    [&field](std::function<void()> cb) -> Connection {
+                        return field.on_change().connect(
+                            [cb = std::move(cb)](const U&) { cb(); });
+                    }
+                );
+                return *this;
+            }
+
+            TableBuilder& headers(std::vector<std::string> hdrs) {
+                if (node_ref.table_state)
+                    node_ref.table_state->header_overrides = std::move(hdrs);
+                return *this;
+            }
+        };
+
         struct CanvasHandle {
             Node& node_ref;
             std::set<const void*>& placed_ref;
@@ -203,7 +226,7 @@ public:
         }
 
         template <ColumnStorage T>
-        void table(T& data) {
+        TableBuilder table(T& data) {
             Node container;
             container.id = tree_.next_id_++;
             container.is_leaf = false;
@@ -215,12 +238,13 @@ public:
             container.table_state = state;
 
             current_parent().children.push_back(std::move(container));
+            return TableBuilder{current_parent().children.back(), placed_};
         }
 
 #if __cpp_impl_reflection
         template <typename T>
             requires RowStorage<List<T>>
-        void table(List<T>& list) {
+        TableBuilder table(List<T>& list) {
             Node container;
             container.id = tree_.next_id_++;
             container.is_leaf = false;
@@ -231,7 +255,21 @@ public:
             state->column_count = state->source.column_count();
             container.table_state = state;
 
+            container.vlist_on_insert = [&list](size_t, std::function<void()> cb) -> Connection {
+                return list.on_insert().connect(
+                    [cb = std::move(cb)](size_t, const auto&) { cb(); });
+            };
+            container.vlist_on_remove = [&list](size_t, std::function<void()> cb) -> Connection {
+                return list.on_remove().connect(
+                    [cb = std::move(cb)](size_t) { cb(); });
+            };
+            container.vlist_on_update = [&list](size_t, std::function<void()> cb) -> Connection {
+                return list.on_update().connect(
+                    [cb = std::move(cb)](size_t, const auto&) { cb(); });
+            };
+
             current_parent().children.push_back(std::move(container));
+            return TableBuilder{current_parent().children.back(), placed_};
         }
 #endif // __cpp_impl_reflection
 
@@ -589,6 +627,32 @@ private:
                 wn.connections.push_back(
                     node.on_change([this, id]() { set_dirty(id); })
                 );
+            }
+
+            // Table: connect List<T> signals (RowStorage) and depends_on (ColumnStorage)
+            if (node.layout_kind == LayoutKind::Table) {
+                auto id = wn.id;
+                if (node.vlist_on_insert) {
+                    wn.connections.push_back(
+                        node.vlist_on_insert(0, [this, id]() { set_dirty(id); })
+                    );
+                }
+                if (node.vlist_on_remove) {
+                    wn.connections.push_back(
+                        node.vlist_on_remove(0, [this, id]() { set_dirty(id); })
+                    );
+                }
+                if (node.vlist_on_update) {
+                    wn.connections.push_back(
+                        node.vlist_on_update(0, [this, id]() { set_dirty(id); })
+                    );
+                }
+                for (auto& dep : node.dependencies) {
+                    wn.connections.push_back(
+                        dep([this, id]() { set_dirty(id); })
+                    );
+                }
+                return;
             }
 
             // Virtual list: connect List<T> signals
@@ -978,8 +1042,9 @@ private:
                 14.f, Color::rgba(136, 136, 204));
         }
 
-        // Wire input handler for selection
-        node.connections.clear();
+        // Wire input handler for selection (only once)
+        if (!node.wire) {
+        node.wire = [](WidgetNode&) {}; // mark as wired
         node.connections.push_back(
             node.on_input.connect([ts_ptr = &(*ts), &node](const InputEvent& ev) {
                 auto& ts = *ts_ptr;
@@ -1047,6 +1112,7 @@ private:
                 }
             })
         );
+        } // if (!node.wire)
     }
 
     void materialize_all_virtual_lists(WidgetNode& node) {

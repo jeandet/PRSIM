@@ -280,6 +280,65 @@ TEST_CASE("Arrow key selection scrolls into view") {
     CHECK(ts.scroll_y.raw() > 0.f);
 }
 
+struct DynamicColumnModel {
+    std::vector<double> values = {1.0, 2.0};
+    prism::Field<bool> data_updated{false};
+
+    size_t column_count() const { return 1; }
+    size_t row_count() const { return values.size(); }
+    std::string_view header(size_t) const { return "Val"; }
+    std::string cell_text(size_t r, size_t) const { return std::to_string(values[r]); }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.table(*this).depends_on(data_updated);
+    }
+};
+
+TEST_CASE("ColumnStorage table re-renders on depends_on trigger") {
+    DynamicColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+    tree.clear_dirty();
+
+    model.data_updated.set(true);
+    CHECK(tree.any_dirty());
+}
+
+struct HeaderOverrideModel {
+    std::vector<double> x = {1.0, 2.0};
+
+    size_t column_count() const { return 1; }
+    size_t row_count() const { return x.size(); }
+    std::string_view header(size_t) const { return "X"; }
+    std::string cell_text(size_t r, size_t) const { return std::to_string(x[r]); }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.table(*this).headers({"Custom"});
+    }
+};
+
+TEST_CASE("headers() builder overrides table headers") {
+    HeaderOverrideModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+    REQUIRE(ts.header_overrides.size() == 1);
+    CHECK(ts.header_overrides[0] == "Custom");
+}
+
 #if __cpp_impl_reflection
 #include <prism/core/list.hpp>
 
@@ -319,5 +378,27 @@ TEST_CASE("ViewBuilder.table() with RowStorage creates Table node") {
     RowModel model;
     prism::WidgetTree tree(model);
     CHECK(true);
+}
+
+TEST_CASE("RowStorage table updates on List insert") {
+    RowModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+    tree.clear_dirty();
+
+    model.rows.push_back(TestRow{.label = {"C"}, .value = {3.0}});
+    CHECK(tree.any_dirty());
+}
+
+TEST_CASE("RowStorage table updates on List remove") {
+    RowModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+    tree.clear_dirty();
+
+    model.rows.erase(0);
+    CHECK(tree.any_dirty());
 }
 #endif // __cpp_impl_reflection
