@@ -33,7 +33,7 @@ concept StringLike = requires(const T& t) {
 
 enum class FocusPolicy : uint8_t { none, tab_and_click };
 
-enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll, VirtualList };
+enum class LayoutKind : uint8_t { Default, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table };
 
 enum class ScrollBarPolicy : uint8_t { Auto, Always, Never };
 enum class ScrollEventPolicy : uint8_t { ConsumeAlways, BubbleAtBounds };
@@ -211,6 +211,7 @@ struct DropdownEditState {
 // Closed set of ephemeral widget states stored in WidgetNode::edit_state.
 // std::shared_ptr<void> holds type-erased lifetime (e.g. virtual list row Field<T>).
 struct VirtualListState;
+struct TableState;
 
 using EditState = std::variant<
     std::monostate,
@@ -219,6 +220,7 @@ using EditState = std::variant<
     DropdownEditState,
     ScrollState,
     std::shared_ptr<VirtualListState>,
+    std::shared_ptr<TableState>,
     std::shared_ptr<void>
 >;
 
