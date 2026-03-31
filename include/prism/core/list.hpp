@@ -10,6 +10,7 @@ namespace prism {
 template <typename T>
 class List {
 public:
+    using value_type = T;
     void push_back(T item) {
         items_.push_back(std::move(item));
         inserted_.emit(items_.size() - 1, items_.back());

@@ -45,3 +45,26 @@ TEST_CASE("wrap_column_storage produces valid TableSource") {
     CHECK(src.header(1) == "Label");
     CHECK(src.cell_text(1, 1) == "SW");
 }
+
+#if __cpp_impl_reflection
+#include <prism/core/list.hpp>
+
+struct TestRow {
+    prism::Field<std::string> label{""};
+    prism::Field<double> value{0.0};
+};
+
+TEST_CASE("wrap_row_storage produces valid TableSource") {
+    prism::List<TestRow> rows;
+    rows.push_back(TestRow{.label = {"Alpha"}, .value = {1.5}});
+    rows.push_back(TestRow{.label = {"Beta"}, .value = {2.7}});
+
+    auto src = prism::wrap_row_storage(rows);
+    CHECK(src.column_count() == 2);
+    CHECK(src.row_count() == 2);
+    CHECK(src.header(0) == "label");
+    CHECK(src.header(1) == "value");
+    CHECK(src.cell_text(0, 0) == "Alpha");
+    CHECK(src.cell_text(1, 1) == std::to_string(2.7));
+}
+#endif // __cpp_impl_reflection

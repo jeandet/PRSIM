@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/field.hpp>
+#include <prism/core/list.hpp>
 #include <prism/core/traits.hpp>
 #include <prism/core/types.hpp>
 #include <prism/core/widget_node.hpp>
@@ -10,6 +11,10 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#if __cpp_impl_reflection
+#include <meta>
+#endif
 
 namespace prism {
 
@@ -48,6 +53,64 @@ template <typename T>
 concept RowStorage = requires {
     requires is_list_v<std::remove_cvref_t<T>>;
 };
+
+#if __cpp_impl_reflection
+
+namespace detail {
+template <typename T>
+std::string field_to_string(const Field<T>& f) {
+    if constexpr (std::is_same_v<T, std::string>)
+        return f.get();
+    else if constexpr (std::is_arithmetic_v<T>)
+        return std::to_string(f.get());
+    else
+        return "?";
+}
+} // namespace detail
+
+template <RowStorage L>
+TableSource wrap_row_storage(L& list) {
+    using Row = typename std::remove_cvref_t<L>::value_type;
+    static constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^Row, std::meta::access_context::unchecked()));
+
+    // Build header names at static-init time
+    static const auto headers = [] {
+        std::vector<std::string> h;
+        template for (constexpr auto m : members) {
+            using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
+            if constexpr (is_field_v<M>) {
+                h.emplace_back(std::meta::identifier_of(m));
+            }
+        }
+        return h;
+    }();
+
+    return TableSource{
+        .column_count = [&list] { return headers.size(); },
+        .row_count = [&list] { return list.size(); },
+        .cell_text = [&list](size_t row, size_t col) -> std::string {
+            size_t idx = 0;
+            std::string result;
+            const auto& r = list[row];
+            template for (constexpr auto m : members) {
+                auto& member = r.[:m:];
+                using M = std::remove_cvref_t<decltype(member)>;
+                if constexpr (is_field_v<M>) {
+                    if (idx == col)
+                        result = detail::field_to_string(member);
+                    ++idx;
+                }
+            }
+            return result;
+        },
+        .header = [](size_t col) -> std::string_view {
+            return headers[col];
+        },
+    };
+}
+
+#endif // __cpp_impl_reflection
 
 struct TableState {
     size_t column_count = 0;
