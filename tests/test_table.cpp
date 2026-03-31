@@ -204,6 +204,82 @@ TEST_CASE("Arrow keys move selection") {
     CHECK(ts.selected_row.get() == std::optional<size_t>{0});
 }
 
+struct LargeColumnModel {
+    std::vector<double> values;
+
+    LargeColumnModel() : values(100) {
+        for (size_t i = 0; i < 100; ++i) values[i] = static_cast<double>(i);
+    }
+
+    size_t column_count() const { return 1; }
+    size_t row_count() const { return values.size(); }
+    std::string_view header(size_t) const { return "Value"; }
+    std::string cell_text(size_t r, size_t) const { return std::to_string(values[r]); }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.table(*this);
+    }
+};
+
+TEST_CASE("Mouse wheel scrolls table vertically") {
+    LargeColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    CHECK(ts.scroll_y.raw() == 0.f);
+
+    prism::MouseScroll scroll{
+        .position = prism::Point{prism::X{10.f}, prism::Y{100.f}},
+        .dx = prism::DX{0}, .dy = prism::DY{3.f}};
+    tree.dispatch(table_node->id, prism::InputEvent{scroll});
+
+    CHECK(ts.scroll_y.raw() > 0.f);
+}
+
+TEST_CASE("Arrow key selection scrolls into view") {
+    LargeColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children) {
+        if (c.layout_kind == prism::LayoutKind::Table)
+            table_node = &c;
+    }
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    auto& ts = **sp;
+
+    // Select a row near the bottom of viewport, then press down past it
+    size_t visible_rows = ts.viewport_h.raw() > 0
+        ? static_cast<size_t>(ts.viewport_h.raw() / ts.row_height.raw())
+        : 10;
+    ts.selected_row.set(std::optional<size_t>{visible_rows - 1});
+
+    prism::KeyPress down{.key = prism::keys::down, .mods = 0};
+    tree.dispatch(table_node->id, prism::InputEvent{down});
+
+    CHECK(ts.selected_row.get().value() == visible_rows);
+    CHECK(ts.scroll_y.raw() > 0.f);
+}
+
 #if __cpp_impl_reflection
 #include <prism/core/list.hpp>
 

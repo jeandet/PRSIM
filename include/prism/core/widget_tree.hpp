@@ -998,6 +998,15 @@ private:
                         node.dirty = true;
                     }
                 }
+                if (auto* ms = std::get_if<MouseScroll>(&ev)) {
+                    float max_scroll = std::max(0.f,
+                        ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
+                    if (ms->dy.raw() != 0.f) {
+                        float scroll_amount = ms->dy.raw() * ts.row_height.raw() * 3.f;
+                        ts.scroll_y = DY{std::clamp(ts.scroll_y.raw() + scroll_amount, 0.f, max_scroll)};
+                        node.dirty = true;
+                    }
+                }
                 if (auto* kp = std::get_if<KeyPress>(&ev)) {
                     auto current = ts.selected_row.get();
                     if (kp->key == keys::down) {
@@ -1011,6 +1020,29 @@ private:
                             ts.selected_row.set(current.value() - 1);
                             node.dirty = true;
                         }
+                    } else if (kp->key == keys::page_down) {
+                        float max_scroll = std::max(0.f,
+                            ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
+                        ts.scroll_y = DY{std::clamp(ts.scroll_y.raw() + ts.viewport_h.raw(), 0.f, max_scroll)};
+                        node.dirty = true;
+                    } else if (kp->key == keys::page_up) {
+                        float max_scroll = std::max(0.f,
+                            ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
+                        ts.scroll_y = DY{std::clamp(ts.scroll_y.raw() - ts.viewport_h.raw(), 0.f, max_scroll)};
+                        node.dirty = true;
+                    }
+                    // Scroll selected row into view
+                    if (auto sel = ts.selected_row.get(); sel.has_value()) {
+                        float row_top = static_cast<float>(sel.value()) * ts.row_height.raw();
+                        float row_bottom = row_top + ts.row_height.raw();
+                        float vp_top = ts.scroll_y.raw();
+                        float vp_bottom = vp_top + ts.viewport_h.raw();
+                        float max_scroll = std::max(0.f,
+                            ts.row_height.raw() * static_cast<float>(ts.row_count()) - ts.viewport_h.raw());
+                        if (row_bottom > vp_bottom)
+                            ts.scroll_y = DY{std::clamp(row_bottom - ts.viewport_h.raw(), 0.f, max_scroll)};
+                        else if (row_top < vp_top)
+                            ts.scroll_y = DY{std::clamp(row_top, 0.f, max_scroll)};
                     }
                 }
             })
