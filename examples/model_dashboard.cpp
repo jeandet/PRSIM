@@ -1,5 +1,6 @@
 #include <prism/prism.hpp>
 
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <sstream>
@@ -89,6 +90,27 @@ struct ProgressBar {
     }
 };
 
+struct SensorData {
+    std::vector<double> time = {0.0, 0.125, 0.25, 0.375, 0.5};
+    std::vector<double> density = {1.23e4, 1.19e4, 1.15e4, 9.87e3, 8.42e3};
+    std::vector<std::string> region = {"Solar Wind", "Solar Wind", "Magneto", "Magneto", "Bow Shock"};
+
+    size_t column_count() const { return 3; }
+    size_t row_count() const { return time.size(); }
+    std::string_view header(size_t c) const {
+        static constexpr std::array<const char*, 3> h = {"Time", "Density", "Region"};
+        return h[c];
+    }
+    std::string cell_text(size_t r, size_t c) const {
+        switch (c) {
+            case 0: return std::to_string(time[r]);
+            case 1: return std::to_string(density[r]);
+            case 2: return region[r];
+            default: return "";
+        }
+    }
+};
+
 struct Dashboard {
     Settings settings;
     Waveform waveform;
@@ -99,11 +121,13 @@ struct Dashboard {
     prism::Field<int> counter{0};
     prism::List<std::string> log_messages;
     prism::State<int> request_count{0};
+    SensorData sensor_data;
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.scroll([&] {
             vb.vstack(settings, waveform, progress_bar, status, notes, increment, counter);
         });
+        vb.table(sensor_data);
         vb.list(log_messages);
     }
 };
