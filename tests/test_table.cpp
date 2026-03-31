@@ -83,6 +83,25 @@ TEST_CASE("Table layout: produces geometry") {
     CHECK(snap->draw_lists.size() > 0);
 }
 
+TEST_CASE("Table header text appears in draw commands") {
+    ColumnModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    bool found_x = false, found_name = false;
+    for (auto& dl : snap->draw_lists) {
+        for (auto& cmd : dl.commands) {
+            if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
+                if (tc->text == "X") found_x = true;
+                if (tc->text == "Name") found_name = true;
+            }
+        }
+    }
+    CHECK(found_x);
+    CHECK(found_name);
+}
+
 #if __cpp_impl_reflection
 #include <prism/core/list.hpp>
 

@@ -961,6 +961,19 @@ private:
 
         ts->visible_start = new_start;
         ts->visible_end = new_end;
+
+        // Render header text into overlay_draws (picked up by table flatten)
+        node.overlay_draws.clear();
+        float col_w_for_header = ts->column_count > 0
+            ? std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))
+            : 120.f;
+        for (size_t c = 0; c < ts->column_count; ++c) {
+            float cx = static_cast<float>(c) * col_w_for_header;
+            auto hdr = ts->column_header(c);
+            node.overlay_draws.text(std::string(hdr),
+                Point{X{cx + 4.f}, Y{4.f}},
+                14.f, Color::rgba(136, 136, 204));
+        }
     }
 
     void materialize_all_virtual_lists(WidgetNode& node) {
@@ -1033,6 +1046,7 @@ private:
                 container.table_header_h = ts->row_height.raw();
                 container.table_scroll_x = ts->scroll_x;
             }
+            container.overlay_draws = node.overlay_draws;
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));

@@ -235,6 +235,22 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
             Rect{Point{vp.origin.x, vp.origin.y + DY{header_h - 2.f}},
                  Size{vp.extent.w, Height{2.f}}},
             Color::rgba(74, 74, 106));
+        // Header cell text
+        DX hdr_dx{vp.origin.x.raw()};
+        DY hdr_dy{vp.origin.y.raw()};
+        for (auto& cmd : node.overlay_draws.commands) {
+            auto translated = cmd;
+            std::visit([hdr_dx, hdr_dy](auto& c) {
+                if constexpr (requires { c.rect; }) {
+                    c.rect.origin.x = X{c.rect.origin.x.raw() + hdr_dx.raw()};
+                    c.rect.origin.y = Y{c.rect.origin.y.raw() + hdr_dy.raw()};
+                } else if constexpr (requires { c.origin; }) {
+                    c.origin.x = X{c.origin.x.raw() + hdr_dx.raw()};
+                    c.origin.y = Y{c.origin.y.raw() + hdr_dy.raw()};
+                }
+            }, translated);
+            header_dl.commands.push_back(std::move(translated));
+        }
         header_dl.clip_pop();
         snap.draw_lists.push_back(std::move(header_dl));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
