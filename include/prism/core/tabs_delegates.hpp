@@ -30,12 +30,13 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
                         size_t selected, const std::vector<std::string>& names) {
     auto& vs = node_vs(node);
     auto& es = ensure_tabs_state(node);
+    auto& t = *node.theme;
 
     float total_w = 0;
     for (auto& name : names)
         total_w += tab_padding * 2 + static_cast<float>(name.size()) * tab_char_width;
 
-    dl.filled_rect(make_rect(0, 0, total_w, tab_h), Color::rgba(42, 42, 58));
+    dl.filled_rect(make_rect(0, 0, total_w, tab_h), t.tab_bar_bg);
 
     es.header_x_ranges.clear();
     es.header_x_ranges.reserve(names.size());
@@ -47,24 +48,24 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
         bool is_selected = (i == selected);
         bool is_hovered = es.hovered_tab.has_value() && es.hovered_tab.value() == i;
 
-        auto bg = is_selected ? Color::rgba(30, 30, 46)
-                : is_hovered  ? Color::rgba(55, 55, 68)
-                :               Color::rgba(42, 42, 58);
+        auto bg = is_selected ? t.tab_active_bg
+                : is_hovered  ? t.surface_hover
+                :               t.tab_bar_bg;
         dl.filled_rect(make_rect(x, 0, w, tab_h), bg);
 
-        auto text_color = is_selected ? Color::rgba(220, 220, 240)
-                                      : Color::rgba(140, 140, 160);
+        auto text_color = is_selected ? t.tab_text_active
+                                      : t.tab_text;
         dl.text(names[i], make_point(x + tab_padding, 8), tab_font_size, text_color);
 
         if (is_selected)
             dl.filled_rect(make_rect(x, tab_h - tab_accent_h, w, tab_accent_h),
-                           Color::rgba(124, 111, 255));
+                           t.tab_accent);
         x += w;
     }
 
     if (vs.focused)
         dl.rect_outline(make_rect(-1, -1, total_w + 2, tab_h + 2),
-                        Color::rgba(80, 160, 240), 2.0f);
+                        t.focus_ring, 2.0f);
 }
 
 inline bool tabs_handle_input(const InputEvent& ev, WidgetNode& node,

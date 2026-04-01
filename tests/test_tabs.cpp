@@ -68,9 +68,11 @@ TEST_CASE("LayoutKind::Tabs exists") {
 }
 
 namespace {
+prism::Theme test_theme;
 prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
     prism::WidgetNode node;
     node.visual_state = vs;
+    node.theme = &test_theme;
     return node;
 }
 }
