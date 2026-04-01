@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/connection.hpp>
+#include <prism/core/context.hpp>
 #include <prism/core/delegate.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/field.hpp>
@@ -36,6 +37,7 @@ struct WidgetNode {
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
     bool expand = false;
     ExpandAxis expand_axis = ExpandAxis::None;
+    const Theme* theme = nullptr;
     bool table_input_wired = false;
     std::shared_ptr<std::vector<std::string>> tab_names;
     Height viewport_height{0};

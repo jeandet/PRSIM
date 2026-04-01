@@ -429,6 +429,7 @@ public:
     explicit WidgetTree(Model& model) {
         auto node_tree = build_node_tree(model);
         root_ = build_widget_node(node_tree);
+        propagate_theme(root_);
         connect_dirty(node_tree, root_);
         build_index(root_);
         clear_dirty();
@@ -444,6 +445,8 @@ public:
     [[nodiscard]] bool any_dirty() const { return check_dirty(root_); }
 
     void clear_dirty() { clear_dirty_impl(root_); }
+
+    const Theme& theme() const { return theme_; }
 
     void close_overlays() { close_overlays_impl(root_); }
 
@@ -668,6 +671,7 @@ public:
 
 private:
     WidgetNode root_;
+    Theme theme_;
     WidgetId next_id_ = 1;
     WidgetId hovered_id_ = 0;
     WidgetId focused_id_ = 0;
@@ -964,6 +968,12 @@ private:
         return false;
     }
 
+    void propagate_theme(WidgetNode& node) {
+        node.theme = &theme_;
+        for (auto& child : node.children)
+            propagate_theme(child);
+    }
+
     static void clear_dirty_impl(WidgetNode& node) {
         node.dirty = false;
         for (auto& c : node.children) clear_dirty_impl(c);
@@ -1118,6 +1128,7 @@ private:
 
             for (auto& child_node : content_node.children) {
                 auto child_wn = build_widget_node(child_node);
+                propagate_theme(child_wn);
                 connect_dirty(child_node, child_wn);
                 parent_map_[child_wn.id] = content_wn.id;
                 content_wn.children.push_back(std::move(child_wn));
@@ -1168,6 +1179,7 @@ private:
             } else {
                 wn.id = next_id_++;
             }
+            wn.theme = &theme_;
             vls->bind_row(wn, i);
             parent_map_[wn.id] = node.id;
             if (wn.focus_policy != FocusPolicy::none)
@@ -1223,6 +1235,7 @@ private:
             wn.id = 0;  // cells are hit-test transparent; the table container handles input
             wn.dirty = true;
             wn.draws.clear();
+            wn.theme = &theme_;
 
             size_t row_idx = i;
             bool selected = ts->selected_row.get().has_value() &&
