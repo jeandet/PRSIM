@@ -65,13 +65,6 @@ struct ViewTransform {
     bool operator==(const ViewTransform&) const = default;
 };
 
-struct CursorState {
-    double data_x = 0.0;
-    double data_y = 0.0;
-    bool visible = false;
-    bool operator==(const CursorState&) const = default;
-};
-
 enum class DragMode { None, Pan };
 
 inline PlotMapping compute_mapping(Rect bounds,

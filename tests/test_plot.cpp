@@ -131,3 +131,103 @@ TEST_CASE("compute_mapping subtracts margins from bounds")
     CHECK(map.plot_area.extent.w.raw() < 400.f);
     CHECK(map.plot_area.extent.h.raw() < 300.f);
 }
+
+TEST_CASE("draw_background emits filled rect and border")
+{
+    using namespace prism;
+    DrawList dl;
+    Rect area{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}};
+    Theme t = default_theme();
+
+    prism::plot::draw_background(dl, area, t);
+    CHECK(dl.size() == 2);
+    CHECK(std::holds_alternative<FilledRect>(dl.commands[0]));
+    CHECK(std::holds_alternative<RectOutline>(dl.commands[1]));
+}
+
+TEST_CASE("draw_grid emits grid lines and tick labels")
+{
+    using namespace prism;
+    DrawList dl;
+    prism::plot::PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 100.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+
+    prism::plot::draw_grid(dl, map, t);
+    CHECK(dl.size() > 0);
+
+    bool has_line = false, has_text = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<Line>(cmd)) has_line = true;
+        if (std::holds_alternative<TextCmd>(cmd)) has_text = true;
+    }
+    CHECK(has_line);
+    CHECK(has_text);
+}
+
+TEST_CASE("draw_series emits polylines for each series")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    DrawList dl;
+    PlotMapping map{
+        .x_range = {0.0, 2.0},
+        .y_range = {0.0, 4.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+
+    Series s(XYData{{0.0, 1.0, 2.0}, {0.0, 2.0, 4.0}},
+             SeriesStyle{Color::rgba(255, 0, 0), 2.f});
+    std::array<Series, 1> arr = {std::move(s)};
+
+    draw_series(dl, map, arr);
+    CHECK(dl.size() == 3);
+    CHECK(std::holds_alternative<ClipPush>(dl.commands[0]));
+    CHECK(std::holds_alternative<Polyline>(dl.commands[1]));
+    CHECK(std::holds_alternative<ClipPop>(dl.commands[2]));
+
+    auto& poly = std::get<Polyline>(dl.commands[1]);
+    CHECK(poly.points.size() == 3);
+}
+
+TEST_CASE("draw_cursor emits crosshair when visible")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    DrawList dl;
+    PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 10.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+
+    CursorState cursor{5.0, 5.0, true};
+    draw_cursor(dl, map, cursor, t);
+    CHECK(dl.size() >= 3);
+
+    bool has_line = false;
+    for (auto& cmd : dl.commands)
+        if (std::holds_alternative<Line>(cmd)) has_line = true;
+    CHECK(has_line);
+}
+
+TEST_CASE("draw_cursor emits nothing when not visible")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    DrawList dl;
+    PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 10.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+
+    CursorState cursor{5.0, 5.0, false};
+    draw_cursor(dl, map, cursor, t);
+    CHECK(dl.size() == 0);
+}
