@@ -44,7 +44,8 @@ struct Waveform {
     prism::Field<prism::Checkbox> harmonics{{.checked = false, .label = "Show harmonics"}};
     prism::Field<prism::Label<>> stats{{""}};
 
-    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
+        auto& t = *node.theme;
         auto w = bounds.extent.w.raw();
         auto h = bounds.extent.h.raw();
         float cy = h * 0.5f;
@@ -53,13 +54,13 @@ struct Waveform {
         float amp = static_cast<float>(amplitude.get().value);
         bool show_harm = harmonics.get().checked;
 
-        dl.filled_rect(bounds, prism::Color::rgba(20, 22, 30));
+        dl.filled_rect(bounds, t.canvas_bg);
 
         // Center line
         dl.filled_rect(
             prism::Rect{prism::Point{prism::X{0}, prism::Y{cy}},
                         prism::Size{prism::Width{w}, prism::Height{1}}},
-            prism::Color::rgba(60, 60, 80));
+            t.track);
 
         int steps = std::max(2, static_cast<int>(w));
         auto sample = [&](int i) -> float {
@@ -74,7 +75,7 @@ struct Waveform {
             return cy - y_val * h * 0.45f;
         };
 
-        auto color = prism::Color::rgba(0, 220, 100);
+        auto color = t.accent;
         constexpr float thickness = 2.f;
         float prev_y = sample(0);
         for (int i = 1; i < steps; ++i) {
@@ -147,14 +148,15 @@ struct SignalTable {
 struct ProgressBar {
     prism::Field<float> progress{0.f};
 
-    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
-        dl.filled_rect(bounds, prism::Color::rgba(40, 42, 54));
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
+        auto& t = *node.theme;
+        dl.filled_rect(bounds, t.surface);
         float fill_w = bounds.extent.w.raw() * std::clamp(progress.get(), 0.f, 1.f);
         if (fill_w > 0.f) {
             dl.filled_rect(
                 prism::Rect{bounds.origin,
                             prism::Size{prism::Width{fill_w}, bounds.extent.h}},
-                prism::Color::rgba(0, 160, 220));
+                t.accent_hover);
         }
     }
 
