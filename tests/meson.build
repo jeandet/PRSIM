@@ -32,6 +32,7 @@ headless_tests = {
   'tabs' : files('test_tabs.cpp'),
   'window' : files('test_window.cpp'),
   'theme' : files('test_theme.cpp'),
+  'svg_export' : files('test_svg_export.cpp'),
 }
 
 foreach name, src : headless_tests
