@@ -272,3 +272,41 @@ TEST_CASE("bounding_box includes all polyline points") {
     CHECK(bb.extent.w.raw() == 80.f);
     CHECK(bb.extent.h.raw() == 70.f);
 }
+
+TEST_CASE("DrawList circle command") {
+    prism::DrawList dl;
+    dl.circle(P(50, 50), 25.f, prism::Color::rgba(0, 0, 255));
+    REQUIRE(dl.size() == 1);
+    auto& ci = std::get<prism::Circle>(dl.commands[0]);
+    CHECK(ci.center.x.raw() == 50.f);
+    CHECK(ci.center.y.raw() == 50.f);
+    CHECK(ci.radius == 25.f);
+    CHECK(ci.thickness == 0.f);
+}
+
+TEST_CASE("DrawList circle stroke") {
+    prism::DrawList dl;
+    dl.circle(P(50, 50), 25.f, prism::Color::rgba(0, 0, 0), 2.f);
+    auto& ci = std::get<prism::Circle>(dl.commands[0]);
+    CHECK(ci.thickness == 2.f);
+}
+
+TEST_CASE("clip_push offsets circle center") {
+    prism::DrawList dl;
+    dl.clip_push(P(10.f, 20.f), S(200.f, 200.f));
+    dl.circle(P(0, 0), 15.f, prism::Color::rgba(0, 0, 0));
+    dl.clip_pop();
+    auto& ci = std::get<prism::Circle>(dl.commands[1]);
+    CHECK(ci.center.x.raw() == 10.f);
+    CHECK(ci.center.y.raw() == 20.f);
+}
+
+TEST_CASE("bounding_box includes circle") {
+    prism::DrawList dl;
+    dl.circle(P(50, 50), 20.f, prism::Color::rgba(0, 0, 0));
+    auto bb = dl.bounding_box();
+    CHECK(bb.origin.x.raw() == 30.f);
+    CHECK(bb.origin.y.raw() == 30.f);
+    CHECK(bb.extent.w.raw() == 40.f);
+    CHECK(bb.extent.h.raw() == 40.f);
+}

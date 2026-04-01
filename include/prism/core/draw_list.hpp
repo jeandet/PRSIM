@@ -71,8 +71,15 @@ struct Polyline {
     float thickness;
 };
 
+struct Circle {
+    Point center;
+    float radius;
+    Color color;
+    float thickness;  // 0 = filled, >0 = stroke only
+};
+
 using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop,
-                             RoundedRect, Line, Polyline>;
+                             RoundedRect, Line, Polyline, Circle>;
 
 struct DrawList {
     std::vector<DrawCmd> commands;
@@ -89,6 +96,13 @@ struct DrawList {
         auto o = current_offset();
         commands.emplace_back(RectOutline{
             {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, thickness});
+    }
+
+    void circle(Point center, float radius, Color c, float thickness = 0.f)
+    {
+        auto o = current_offset();
+        commands.emplace_back(Circle{
+            Point{center.x + o.dx, center.y + o.dy}, radius, c, thickness});
     }
 
     void polyline(std::vector<Point> pts, Color c, float thickness = 1.f)
@@ -163,6 +177,10 @@ struct DrawList {
             std::visit([&](const auto& c) {
                 if constexpr (requires { c.rect; })
                     expand(c.rect);
+                else if constexpr (requires { c.center; c.radius; }) {
+                    expand({Point{X{c.center.x.raw() - c.radius}, Y{c.center.y.raw() - c.radius}},
+                            Size{Width{2 * c.radius}, Height{2 * c.radius}}});
+                }
                 else if constexpr (requires { c.points; }) {
                     for (const auto& p : c.points)
                         expand({p, Size{Width{0}, Height{0}}});
