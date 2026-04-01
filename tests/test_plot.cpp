@@ -231,3 +231,64 @@ TEST_CASE("draw_cursor emits nothing when not visible")
     draw_cursor(dl, map, cursor, t);
     CHECK(dl.size() == 0);
 }
+
+TEST_CASE("PlotModel canvas produces draw commands")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.add_series(XYData{{0.0, 1.0, 2.0}, {0.0, 1.0, 0.0}},
+                    SeriesStyle{Color::rgba(255, 0, 0), 2.f});
+
+    DrawList dl;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    node.canvas_bounds = bounds;
+
+    plot.canvas(dl, bounds, node);
+
+    CHECK(dl.size() > 0);
+    bool has_filled = false, has_polyline = false, has_line = false;
+    for (auto& cmd : dl.commands) {
+        if (std::holds_alternative<FilledRect>(cmd)) has_filled = true;
+        if (std::holds_alternative<Polyline>(cmd)) has_polyline = true;
+        if (std::holds_alternative<Line>(cmd)) has_line = true;
+    }
+    CHECK(has_filled);
+    CHECK(has_polyline);
+    CHECK(has_line);
+}
+
+TEST_CASE("PlotModel series management")
+{
+    using namespace prism::plot;
+
+    PlotModel plot;
+    CHECK(plot.series_count() == 0);
+
+    plot.add_series(XYData{{1.0, 2.0}, {3.0, 4.0}}, SeriesStyle{});
+    CHECK(plot.series_count() == 1);
+
+    plot.add_series(XYData{{5.0}, {6.0}}, SeriesStyle{});
+    CHECK(plot.series_count() == 2);
+
+    plot.remove_series(0);
+    CHECK(plot.series_count() == 1);
+
+    plot.clear_series();
+    CHECK(plot.series_count() == 0);
+}
+
+TEST_CASE("PlotModel notify bumps revision")
+{
+    using namespace prism::plot;
+
+    PlotModel plot;
+    auto r0 = plot.revision.get();
+    plot.notify();
+    CHECK(plot.revision.get() == r0 + 1);
+}

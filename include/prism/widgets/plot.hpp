@@ -93,4 +93,60 @@ inline PlotMapping compute_mapping(Rect bounds,
     return PlotMapping{eff_x, eff_y, plot_area};
 }
 
+struct PlotModel {
+    // Reactive state
+    Field<AxisRange> x_range{};
+    Field<AxisRange> y_range{};
+    Field<std::string> x_label{""};
+    Field<std::string> y_label{""};
+    Field<ViewTransform> view{};
+    Field<CursorState> cursor{};
+    Field<uint32_t> revision{0};
+
+    // Transient interaction state
+    DragMode drag_mode = DragMode::None;
+    Point drag_start_pixel{};
+    ViewTransform drag_start_view{};
+
+    // Series management
+    template <PlotSource S>
+    void add_series(S source, SeriesStyle style)
+    {
+        series_.emplace_back(std::move(source), style);
+    }
+
+    void remove_series(size_t index)
+    {
+        if (index < series_.size())
+            series_.erase(series_.begin() + static_cast<ptrdiff_t>(index));
+    }
+
+    void clear_series() { series_.clear(); }
+    size_t series_count() const { return series_.size(); }
+
+    void notify()
+    {
+        revision.set(revision.get() + 1);
+    }
+
+    // Canvas interface
+    void canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
+    {
+        auto& t = *node.theme;
+        auto map = compute_mapping(bounds, x_range, y_range, view,
+                                   std::span<const Series>(series_));
+
+        draw_background(dl, map.plot_area, t);
+        draw_grid(dl, map, t);
+        draw_series(dl, map, std::span<const Series>(series_));
+        draw_cursor(dl, map, cursor.get(), t);
+        draw_axes_labels(dl, map, x_label.get(), y_label.get(), t);
+    }
+
+    inline void handle_canvas_input(const InputEvent&, WidgetNode&, Rect) {}
+
+  private:
+    std::vector<Series> series_;
+};
+
 } // namespace prism::plot
