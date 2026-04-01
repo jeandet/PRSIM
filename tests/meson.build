@@ -31,6 +31,7 @@ headless_tests = {
   'table' : files('test_table.cpp'),
   'tabs' : files('test_tabs.cpp'),
   'window' : files('test_window.cpp'),
+  'theme' : files('test_theme.cpp'),
 }
 
 foreach name, src : headless_tests
