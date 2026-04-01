@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/draw_list.hpp>
+#include <prism/core/context.hpp>
 
 #include <string_view>
 
@@ -47,23 +48,23 @@ struct WindowChrome {
         return HitZone::Client;
     }
 
-    static void render(DrawList& dl, int w, std::string_view title) {
+    static void render(DrawList& dl, int w, std::string_view title, const Theme& t) {
         auto fw = static_cast<float>(w);
 
         // Title bar background
         dl.filled_rect(
             Rect{Point{X{0}, Y{0}}, Size{Width{fw}, Height{title_bar_h}}},
-            Color::rgba(45, 45, 48));
+            t.chrome_bg);
 
         // Bottom border
         dl.filled_rect(
             Rect{Point{X{0}, Y{title_bar_h - 1.f}}, Size{Width{fw}, Height{1}}},
-            Color::rgba(60, 60, 65));
+            t.chrome_border);
 
         // Title text (left-aligned with padding)
         if (!title.empty()) {
             dl.text(std::string(title), Point{X{12.f}, Y{7.f}}, 15.f,
-                    Color::rgba(200, 200, 200));
+                    t.chrome_text);
         }
 
         // Buttons (right-aligned): Minimize | Maximize | Close
@@ -75,22 +76,22 @@ struct WindowChrome {
         };
 
         // Minimize: "—"
-        button_bg(bx, Color::rgba(45, 45, 48, 0));
+        button_bg(bx, Color::rgba(t.chrome_bg.r, t.chrome_bg.g, t.chrome_bg.b, 0));
         dl.text("\xe2\x80\x94", Point{X{bx + 17.f}, Y{7.f}}, 13.f,
-                Color::rgba(180, 180, 180));
+                t.chrome_icon);
 
         // Maximize: "□"
         bx += button_w;
-        button_bg(bx, Color::rgba(45, 45, 48, 0));
+        button_bg(bx, Color::rgba(t.chrome_bg.r, t.chrome_bg.g, t.chrome_bg.b, 0));
         dl.rect_outline(
             Rect{Point{X{bx + 16.f}, Y{9.f}}, Size{Width{13.f}, Height{13.f}}},
-            Color::rgba(180, 180, 180));
+            t.chrome_icon);
 
         // Close: "×"
         bx += button_w;
-        button_bg(bx, Color::rgba(196, 43, 28));
+        button_bg(bx, t.chrome_close);
         dl.text("\xc3\x97", Point{X{bx + 17.f}, Y{5.f}}, 17.f,
-                Color::rgba(255, 255, 255));
+                t.text_on_primary);
     }
 };
 

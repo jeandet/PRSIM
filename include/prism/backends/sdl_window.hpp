@@ -4,6 +4,7 @@
 #include <prism/core/window_chrome.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/scene_snapshot.hpp>
+#include <prism/core/context.hpp>
 
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
@@ -50,7 +51,7 @@ public:
     SDL_Renderer* renderer() { return renderer_; }
     void ensure_created();
 
-    void render_snapshot(const SceneSnapshot& snap, TTF_Font* font);
+    void render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const Theme& theme = Theme{});
 
     // Manual resize tracking for custom chrome
     bool begin_resize(int mouse_x, int mouse_y);

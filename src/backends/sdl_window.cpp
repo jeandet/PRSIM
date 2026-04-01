@@ -160,9 +160,10 @@ void SdlWindow::close() {
     destroy_sdl_window();
 }
 
-void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font) {
+void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const Theme& theme) {
     if (!renderer_) return;
-    SDL_SetRenderDrawColor(renderer_, 30, 30, 30, 255);
+    SDL_SetRenderDrawColor(renderer_, theme.canvas_bg.r, theme.canvas_bg.g,
+                           theme.canvas_bg.b, theme.canvas_bg.a);
     SDL_RenderClear(renderer_);
 
     if (decoration_ == DecorationMode::Custom) {
@@ -189,7 +190,7 @@ void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font) {
         int w, h;
         SDL_GetWindowSize(sdl_window_, &w, &h);
         DrawList chrome_dl;
-        WindowChrome::render(chrome_dl, w, title_);
+        WindowChrome::render(chrome_dl, w, title_, theme);
         render_draw_list(chrome_dl, font);
     }
 
