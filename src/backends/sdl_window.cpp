@@ -259,6 +259,11 @@ void SdlWindow::render_cmd(const ClipPop&) {
     }
 }
 
+void SdlWindow::render_cmd(const RoundedRect&) {} // TODO: implement
+void SdlWindow::render_cmd(const Line&) {}        // TODO: implement
+void SdlWindow::render_cmd(const Polyline&) {}     // TODO: implement
+void SdlWindow::render_cmd(const Circle&) {}       // TODO: implement
+
 bool SdlWindow::begin_resize(int mouse_x, int mouse_y) {
     if (decoration_ != DecorationMode::Custom || !sdl_window_) return false;
     int w, h;

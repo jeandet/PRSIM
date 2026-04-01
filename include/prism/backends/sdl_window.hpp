@@ -82,6 +82,10 @@ private:
     void render_cmd(const TextCmd& cmd, TTF_Font* font);
     void render_cmd(const ClipPush& cmd);
     void render_cmd(const ClipPop& cmd);
+    void render_cmd(const RoundedRect& cmd);
+    void render_cmd(const Line& cmd);
+    void render_cmd(const Polyline& cmd);
+    void render_cmd(const Circle& cmd);
 };
 
 } // namespace prism
