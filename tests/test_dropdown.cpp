@@ -479,6 +479,47 @@ TEST_CASE("hit_test on overlay popup returns dropdown widget, not widget below")
     CHECK(*hit == dropdown_id);
 }
 
+TEST_CASE("Dropdown popup flips upward when near bottom of viewport") {
+    // Place dropdown near the bottom: viewport_height=100, widget at y=80
+    // Popup for 3 items = 3*28 = 84px, would extend to 80+30+84 = 194 > 100
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+    node.viewport_height = prism::Height{100};
+    node.absolute_y = prism::Y{80};
+
+    // Open dropdown
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+
+    // Record to position popup
+    prism::DrawList dl;
+    prism::Delegate<Color>::record(dl, field, node);
+
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
+    CHECK(es.open);
+    // Popup should flip above: y = -popup_h = -84
+    CHECK(es.popup_rect.origin.y.raw() < 0);
+
+    // Click on second option (Green) in flipped popup
+    float click_y = es.popup_rect.origin.y.raw() + 1 * 28.f + 14.f;
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
+    CHECK(field.get() == Color::Green);
+}
+
+TEST_CASE("Dropdown popup opens below when enough room") {
+    prism::Field<Color> field{Color::Red};
+    auto node = make_node({.focused = true});
+    node.viewport_height = prism::Height{600};
+    node.absolute_y = prism::Y{10};
+
+    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+
+    prism::DrawList dl;
+    prism::Delegate<Color>::record(dl, field, node);
+
+    auto& es = std::get<prism::DropdownEditState>(node.edit_state);
+    CHECK(es.popup_rect.origin.y.raw() > 0);  // below the widget
+}
+
 TEST_CASE("close_overlays resets open dropdown") {
     DropdownModel model;
     prism::WidgetTree tree(model);

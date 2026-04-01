@@ -35,7 +35,7 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
                             const std::string& current_label,
                             const DropdownLabelResolver& resolver) {
     auto& vs = node_vs(node);
-    auto& es = get_dropdown_state(node);
+    auto& es = ensure_dropdown_state(node);
 
     auto bg = es.open    ? Color::rgba(65, 65, 78)
             : vs.hovered ? Color::rgba(55, 55, 68)
@@ -53,15 +53,22 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
     node.overlay_draws.clear();
     if (es.open) {
         float popup_h = static_cast<float>(resolver.count) * dd_option_h;
+
+        // Flip upward if popup would extend past viewport bottom
+        float popup_y = dd_widget_h;
+        float abs_bottom = node.absolute_y.raw() + dd_widget_h + popup_h;
+        if (node.viewport_height.raw() > 0 && abs_bottom > node.viewport_height.raw())
+            popup_y = -popup_h;
+
         node.overlay_draws.filled_rect(
-            make_rect(0, dd_widget_h, dd_widget_w, popup_h),
+            make_rect(0, popup_y, dd_widget_w, popup_h),
             Color::rgba(50, 50, 62));
         node.overlay_draws.rect_outline(
-            make_rect(0, dd_widget_h, dd_widget_w, popup_h),
+            make_rect(0, popup_y, dd_widget_w, popup_h),
             Color::rgba(80, 80, 95), 1.0f);
 
         for (size_t i = 0; i < resolver.count; ++i) {
-            float y = dd_widget_h + static_cast<float>(i) * dd_option_h;
+            float y = popup_y + static_cast<float>(i) * dd_option_h;
             if (i == es.highlighted) {
                 node.overlay_draws.filled_rect(
                     make_rect(0, y, dd_widget_w, dd_option_h),
@@ -73,6 +80,8 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
                 i == es.highlighted ? Color::rgba(255, 255, 255)
                                     : Color::rgba(200, 200, 210));
         }
+
+        es.popup_rect = make_rect(0, popup_y, dd_widget_w, popup_h);
     }
 }
 
@@ -84,7 +93,8 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
 
     if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
         if (es.open) {
-            float rel_y = mb->position.y.raw() - dd_widget_h;
+            float popup_y = es.popup_rect.origin.y.raw();
+            float rel_y = mb->position.y.raw() - popup_y;
             if (rel_y >= 0 && rel_y < static_cast<float>(count) * dd_option_h
                 && mb->position.x.raw() >= 0 && mb->position.x.raw() < dd_widget_w) {
                 size_t idx = static_cast<size_t>(rel_y / dd_option_h);
@@ -96,6 +106,9 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
         } else {
             es.open = true;
             es.highlighted = current_index;
+            float popup_h = static_cast<float>(count) * dd_option_h;
+            // Default: open below; record() may flip upward
+            es.popup_rect = make_rect(0, dd_widget_h, dd_widget_w, popup_h);
             node.dirty = true;
         }
     } else if (auto* kp = std::get_if<KeyPress>(&ev)) {

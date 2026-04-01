@@ -657,7 +657,7 @@ public:
             layout = do_layout();
         }
 
-        update_canvas_bounds(layout);
+        update_canvas_bounds(layout, Height{h});
 
         auto snap = std::make_unique<SceneSnapshot>();
         snap->version = version;
@@ -1044,10 +1044,29 @@ private:
             update_scroll_state(child);
     }
 
-    void update_canvas_bounds(LayoutNode& layout_node) {
-        if (layout_node.kind == LayoutNode::Kind::Canvas ||
+    void update_canvas_bounds(LayoutNode& layout_node, Height viewport_h = Height{0}) {
+        // Propagate absolute Y and viewport height to all indexed widget nodes
+        if (layout_node.id != 0) {
+            auto it = index_.find(layout_node.id);
+            if (it != index_.end()) {
+                it->second->absolute_y = layout_node.allocated.origin.y;
+                it->second->viewport_height = viewport_h;
+            }
+        }
+
+        bool needs_rerecord =
+            layout_node.kind == LayoutNode::Kind::Canvas ||
             (layout_node.kind == LayoutNode::Kind::Leaf &&
-             (layout_node.hint.expand || layout_node.hint.expand_axis != ExpandAxis::None))) {
+             (layout_node.hint.expand || layout_node.hint.expand_axis != ExpandAxis::None));
+
+        // Also re-record leaves with overlay draws (e.g. dropdown popups)
+        // now that absolute_y is set for correct popup positioning
+        if (!needs_rerecord && layout_node.kind == LayoutNode::Kind::Leaf &&
+            !layout_node.overlay_draws.empty()) {
+            needs_rerecord = true;
+        }
+
+        if (needs_rerecord) {
             auto it = index_.find(layout_node.id);
             auto* wn = (it != index_.end()) ? it->second : nullptr;
             if (wn && wn->record) {
@@ -1057,11 +1076,12 @@ private:
                 };
                 wn->record(*wn);
                 layout_node.draws = wn->draws;
+                layout_node.overlay_draws = wn->overlay_draws;
             }
             return;
         }
         for (auto& child : layout_node.children)
-            update_canvas_bounds(child);
+            update_canvas_bounds(child, viewport_h);
     }
 
     void unindex_subtree(WidgetNode& node) {

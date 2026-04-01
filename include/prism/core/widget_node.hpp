@@ -38,6 +38,8 @@ struct WidgetNode {
     ExpandAxis expand_axis = ExpandAxis::None;
     bool table_input_wired = false;
     std::shared_ptr<std::vector<std::string>> tab_names;
+    Height viewport_height{0};
+    Y absolute_y{0};
 };
 
 struct VirtualListState {
