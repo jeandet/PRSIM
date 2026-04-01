@@ -10,9 +10,11 @@ enum class Color { Red, Green, Blue };
 enum class Size { Small, Medium, Large, XLarge };
 
 namespace {
+prism::Theme test_theme;
 prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
     prism::WidgetNode node;
     node.visual_state = vs;
+    node.theme = &test_theme;
     return node;
 }
 prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }

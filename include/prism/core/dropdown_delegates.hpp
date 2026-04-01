@@ -37,18 +37,19 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
     auto& vs = node_vs(node);
     auto& es = ensure_dropdown_state(node);
 
-    auto bg = es.open    ? Color::rgba(65, 65, 78)
-            : vs.hovered ? Color::rgba(55, 55, 68)
-            : Color::rgba(45, 45, 55);
+    auto& t = *node.theme;
+    auto bg = es.open    ? t.surface_active
+            : vs.hovered ? t.surface_hover
+            : t.surface;
     dl.filled_rect(make_rect(0, 0, dd_widget_w, dd_widget_h), bg);
 
-    dl.text(current_label, make_point(dd_padding, 7), dd_font_size, Color::rgba(220, 220, 220));
+    dl.text(current_label, make_point(dd_padding, 7), dd_font_size, t.text);
 
-    dl.text("\xe2\x96\xbe", make_point(dd_widget_w - 20, 7), dd_font_size, Color::rgba(160, 160, 170));
+    dl.text("\xe2\x96\xbe", make_point(dd_widget_w - 20, 7), dd_font_size, t.text_muted);
 
     if (vs.focused)
         dl.rect_outline(make_rect(-1, -1, dd_widget_w + 2, dd_widget_h + 2),
-                        Color::rgba(80, 160, 240), 2.0f);
+                        t.focus_ring, 2.0f);
 
     node.overlay_draws.clear();
     if (es.open) {
@@ -62,23 +63,23 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
 
         node.overlay_draws.filled_rect(
             make_rect(0, popup_y, dd_widget_w, popup_h),
-            Color::rgba(50, 50, 62));
+            t.popup_bg);
         node.overlay_draws.rect_outline(
             make_rect(0, popup_y, dd_widget_w, popup_h),
-            Color::rgba(80, 80, 95), 1.0f);
+            t.popup_border, 1.0f);
 
         for (size_t i = 0; i < resolver.count; ++i) {
             float y = popup_y + static_cast<float>(i) * dd_option_h;
             if (i == es.highlighted) {
                 node.overlay_draws.filled_rect(
                     make_rect(0, y, dd_widget_w, dd_option_h),
-                    Color::rgba(60, 100, 180));
+                    t.popup_highlight);
             }
             node.overlay_draws.text(
                 resolver.label_at(i),
                 make_point(dd_padding, y + 6), dd_font_size,
-                i == es.highlighted ? Color::rgba(255, 255, 255)
-                                    : Color::rgba(200, 200, 210));
+                i == es.highlighted ? t.text_on_primary
+                                    : t.text);
         }
 
         es.popup_rect = make_rect(0, popup_y, dd_widget_w, popup_h);
