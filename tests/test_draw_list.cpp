@@ -172,3 +172,33 @@ TEST_CASE("bounding_box handles rect_outline") {
     CHECK(bb.extent.w.raw() == 90);
     CHECK(bb.extent.h.raw() == 40);
 }
+
+TEST_CASE("DrawList rounded_rect command") {
+    prism::DrawList dl;
+    dl.rounded_rect(R(10, 20, 100, 50), prism::Color::rgba(255, 0, 0), 8.f);
+    REQUIRE(dl.size() == 1);
+    auto& rr = std::get<prism::RoundedRect>(dl.commands[0]);
+    CHECK(rr.rect.origin.x.raw() == 10.f);
+    CHECK(rr.rect.origin.y.raw() == 20.f);
+    CHECK(rr.rect.extent.w.raw() == 100.f);
+    CHECK(rr.rect.extent.h.raw() == 50.f);
+    CHECK(rr.radius == 8.f);
+    CHECK(rr.thickness == 0.f);
+}
+
+TEST_CASE("DrawList rounded_rect stroke") {
+    prism::DrawList dl;
+    dl.rounded_rect(R(0, 0, 50, 50), prism::Color::rgba(0, 0, 0), 5.f, 2.f);
+    auto& rr = std::get<prism::RoundedRect>(dl.commands[0]);
+    CHECK(rr.thickness == 2.f);
+}
+
+TEST_CASE("clip_push offsets rounded_rect") {
+    prism::DrawList dl;
+    dl.clip_push(P(10.f, 20.f), S(200.f, 200.f));
+    dl.rounded_rect(R(0, 0, 50, 30), prism::Color::rgba(0, 0, 0), 4.f);
+    dl.clip_pop();
+    auto& rr = std::get<prism::RoundedRect>(dl.commands[1]);
+    CHECK(rr.rect.origin.x.raw() == 10.f);
+    CHECK(rr.rect.origin.y.raw() == 20.f);
+}

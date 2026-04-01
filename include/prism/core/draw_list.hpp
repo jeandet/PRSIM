@@ -51,7 +51,15 @@ struct ClipPush {
 
 struct ClipPop {};
 
-using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop>;
+struct RoundedRect {
+    Rect rect;
+    Color color;
+    float radius;
+    float thickness;  // 0 = filled, >0 = stroke only
+};
+
+using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop,
+                             RoundedRect>;
 
 struct DrawList {
     std::vector<DrawCmd> commands;
@@ -68,6 +76,13 @@ struct DrawList {
         auto o = current_offset();
         commands.emplace_back(RectOutline{
             {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, thickness});
+    }
+
+    void rounded_rect(Rect r, Color c, float radius, float thickness = 0.f)
+    {
+        auto o = current_offset();
+        commands.emplace_back(RoundedRect{
+            {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, radius, thickness});
     }
 
     void text(std::string s, Point origin, float size, Color c)
