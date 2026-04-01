@@ -33,6 +33,7 @@ headless_tests = {
   'window' : files('test_window.cpp'),
   'theme' : files('test_theme.cpp'),
   'svg_export' : files('test_svg_export.cpp'),
+  'plot' : files('test_plot.cpp'),
 }
 
 foreach name, src : headless_tests
