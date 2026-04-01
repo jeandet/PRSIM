@@ -58,8 +58,15 @@ struct RoundedRect {
     float thickness;  // 0 = filled, >0 = stroke only
 };
 
+struct Line {
+    Point from;
+    Point to;
+    Color color;
+    float thickness;
+};
+
 using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop,
-                             RoundedRect>;
+                             RoundedRect, Line>;
 
 struct DrawList {
     std::vector<DrawCmd> commands;
@@ -76,6 +83,15 @@ struct DrawList {
         auto o = current_offset();
         commands.emplace_back(RectOutline{
             {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, thickness});
+    }
+
+    void line(Point from, Point to, Color c, float thickness = 1.f)
+    {
+        auto o = current_offset();
+        commands.emplace_back(Line{
+            Point{from.x + o.dx, from.y + o.dy},
+            Point{to.x + o.dx, to.y + o.dy},
+            c, thickness});
     }
 
     void rounded_rect(Rect r, Color c, float radius, float thickness = 0.f)
@@ -133,6 +149,10 @@ struct DrawList {
             std::visit([&](const auto& c) {
                 if constexpr (requires { c.rect; })
                     expand(c.rect);
+                else if constexpr (requires { c.from; c.to; }) {
+                    expand({c.from, Size{Width{0}, Height{0}}});
+                    expand({c.to, Size{Width{0}, Height{0}}});
+                }
                 else if constexpr (requires { c.origin; })
                     expand({c.origin, Size{Width{0}, Height{c.size}}});
             }, cmd);

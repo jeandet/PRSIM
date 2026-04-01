@@ -202,3 +202,37 @@ TEST_CASE("clip_push offsets rounded_rect") {
     CHECK(rr.rect.origin.x.raw() == 10.f);
     CHECK(rr.rect.origin.y.raw() == 20.f);
 }
+
+TEST_CASE("DrawList line command") {
+    prism::DrawList dl;
+    dl.line(P(0, 0), P(100, 50), prism::Color::rgba(255, 0, 0), 2.f);
+    REQUIRE(dl.size() == 1);
+    auto& ln = std::get<prism::Line>(dl.commands[0]);
+    CHECK(ln.from.x.raw() == 0.f);
+    CHECK(ln.from.y.raw() == 0.f);
+    CHECK(ln.to.x.raw() == 100.f);
+    CHECK(ln.to.y.raw() == 50.f);
+    CHECK(ln.thickness == 2.f);
+}
+
+TEST_CASE("clip_push offsets line endpoints") {
+    prism::DrawList dl;
+    dl.clip_push(P(10.f, 20.f), S(200.f, 200.f));
+    dl.line(P(0, 0), P(50, 50), prism::Color::rgba(0, 0, 0), 1.f);
+    dl.clip_pop();
+    auto& ln = std::get<prism::Line>(dl.commands[1]);
+    CHECK(ln.from.x.raw() == 10.f);
+    CHECK(ln.from.y.raw() == 20.f);
+    CHECK(ln.to.x.raw() == 60.f);
+    CHECK(ln.to.y.raw() == 70.f);
+}
+
+TEST_CASE("bounding_box includes line endpoints") {
+    prism::DrawList dl;
+    dl.line(P(10, 20), P(90, 80), prism::Color::rgba(0, 0, 0), 1.f);
+    auto bb = dl.bounding_box();
+    CHECK(bb.origin.x.raw() == 10.f);
+    CHECK(bb.origin.y.raw() == 20.f);
+    CHECK(bb.extent.w.raw() == 80.f);
+    CHECK(bb.extent.h.raw() == 60.f);
+}
