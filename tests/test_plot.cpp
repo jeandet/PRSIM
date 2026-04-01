@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 #include <prism/widgets/plot_render.hpp>
+#include <prism/widgets/plot.hpp>
 
 TEST_CASE("nice_ticks produces human-friendly values")
 {
@@ -91,4 +92,42 @@ TEST_CASE("PlotMapping apply_view scales and offsets range")
     auto panned = prism::plot::PlotMapping::apply_view(base, 3.0, 2.0);
     CHECK(panned.min == doctest::Approx(5.5));
     CHECK(panned.max == doctest::Approx(10.5));
+}
+
+TEST_CASE("auto_fit_range computes bounds with padding")
+{
+    using namespace prism::plot;
+    Series s1(XYData{{0.0, 5.0, 10.0}, {-1.0, 3.0, 7.0}}, SeriesStyle{});
+    std::array<Series, 1> arr = {std::move(s1)};
+
+    auto xr = auto_fit_range(arr, Axis::X);
+    CHECK(xr.min < 0.0);   // 5% padding
+    CHECK(xr.max > 10.0);
+
+    auto yr = auto_fit_range(arr, Axis::Y);
+    CHECK(yr.min < -1.0);
+    CHECK(yr.max > 7.0);
+}
+
+TEST_CASE("auto_fit_range returns default for empty series")
+{
+    auto r = prism::plot::auto_fit_range(std::span<const prism::plot::Series>{}, prism::plot::Axis::X);
+    CHECK(r.min == doctest::Approx(0.0));
+    CHECK(r.max == doctest::Approx(1.0));
+}
+
+TEST_CASE("compute_mapping subtracts margins from bounds")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    Field<AxisRange> xr{{0.0, 10.0, false}};
+    Field<AxisRange> yr{{0.0, 10.0, false}};
+    Field<ViewTransform> vt{{}};
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+
+    auto map = compute_mapping(bounds, xr, yr, vt, {});
+    CHECK(map.plot_area.origin.x.raw() > 0.f);
+    CHECK(map.plot_area.extent.w.raw() < 400.f);
+    CHECK(map.plot_area.extent.h.raw() < 300.f);
 }

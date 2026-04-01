@@ -3,6 +3,7 @@
 #include <prism/core/context.hpp>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace prism::plot {
@@ -79,5 +80,34 @@ inline std::vector<double> nice_ticks(double min, double max, int target_count)
 
     return ticks;
 }
+
+enum class Axis { X, Y };
+
+template <typename Range>
+AxisRange auto_fit_range(const Range& series, Axis axis)
+{
+    double lo = std::numeric_limits<double>::max();
+    double hi = std::numeric_limits<double>::lowest();
+    bool any = false;
+
+    for (auto& s : series) {
+        for (size_t i = 0; i < s.size(); ++i) {
+            double v = (axis == Axis::X) ? s.x(i) : s.y(i);
+            lo = std::min(lo, v);
+            hi = std::max(hi, v);
+            any = true;
+        }
+    }
+
+    if (!any) return {0.0, 1.0, true};
+    if (lo == hi) { lo -= 0.5; hi += 0.5; }
+    double pad = (hi - lo) * 0.05;
+    return {lo - pad, hi + pad, true};
+}
+
+constexpr float margin_left = 60.f;
+constexpr float margin_bottom = 30.f;
+constexpr float margin_top = 10.f;
+constexpr float margin_right = 10.f;
 
 } // namespace prism::plot
