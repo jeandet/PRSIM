@@ -30,6 +30,7 @@ headless_tests = {
   'animation' : files('test_animation.cpp'),
   'table' : files('test_table.cpp'),
   'tabs' : files('test_tabs.cpp'),
+  'window' : files('test_window.cpp'),
 }
 
 foreach name, src : headless_tests
