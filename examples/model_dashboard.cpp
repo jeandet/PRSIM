@@ -1,8 +1,10 @@
 #include <prism/prism.hpp>
+#include <prism/core/svg_export.hpp>
 
 #include <fmt/format.h>
 #include <array>
 #include <cmath>
+#include <fstream>
 #include <string>
 
 // --- Domain types ---
@@ -34,6 +36,57 @@ static float rms_value(WaveShape shape) {
     return 0.f;
 }
 
+// --- Waveform drawing (shared by canvas + SVG export) ---
+
+struct WaveParams {
+    WaveShape shape;
+    float freq;
+    float amp;
+    bool harmonics;
+};
+
+static void draw_waveform(prism::DrawList& dl, prism::Rect bounds, WaveParams p,
+                           prism::Color bg, prism::Color track,
+                           prism::Color curve, prism::Color marker) {
+    auto w = bounds.extent.w.raw();
+    auto h = bounds.extent.h.raw();
+    float cy = h * 0.5f;
+
+    dl.rounded_rect(bounds, bg, 6.f);
+
+    dl.line(prism::Point{prism::X{0}, prism::Y{cy}},
+            prism::Point{prism::X{w}, prism::Y{cy}},
+            track, 1.f);
+
+    int steps = std::max(2, static_cast<int>(w));
+    auto sample = [&](float x_pos) -> float {
+        float norm = x_pos / w;
+        float phase = std::fmod(p.freq * norm, 1.f);
+        float y_val = p.amp * wave_value(p.shape, phase);
+        if (p.harmonics) {
+            y_val += p.amp * 0.33f * wave_value(p.shape, std::fmod(3.f * p.freq * norm, 1.f));
+            y_val += p.amp * 0.2f  * wave_value(p.shape, std::fmod(5.f * p.freq * norm, 1.f));
+            y_val = std::clamp(y_val, -1.f, 1.f);
+        }
+        return cy - y_val * h * 0.45f;
+    };
+
+    std::vector<prism::Point> pts(static_cast<size_t>(steps));
+    for (int i = 0; i < steps; ++i) {
+        float x = static_cast<float>(i);
+        pts[static_cast<size_t>(i)] = {prism::X{x}, prism::Y{sample(x)}};
+    }
+    dl.polyline(pts, curve, 2.f);
+
+    constexpr int marker_every = 50;
+    for (int i = 0; i < steps; i += marker_every) {
+        float x = static_cast<float>(i);
+        float y = sample(x);
+        if (std::abs(y - cy) > h * 0.3f)
+            dl.circle(prism::Point{prism::X{x}, prism::Y{y}}, 3.f, marker);
+    }
+}
+
 // --- Waveform editor (Tab 1) ---
 
 struct Waveform {
@@ -43,57 +96,18 @@ struct Waveform {
         {.value = 0.8, .min = 0.0, .max = 1.0}};
     prism::Field<prism::Checkbox> harmonics{{.checked = false, .label = "Show harmonics"}};
     prism::Field<prism::Label<>> stats{{""}};
+    prism::Field<prism::Button> export_svg{{"Export SVG"}};
+
+    WaveParams current_params() const {
+        return {shape.get(),
+                static_cast<float>(frequency.get().value),
+                static_cast<float>(amplitude.get().value),
+                harmonics.get().checked};
+    }
 
     void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
         auto& t = *node.theme;
-        auto w = bounds.extent.w.raw();
-        auto h = bounds.extent.h.raw();
-        float cy = h * 0.5f;
-        auto sh = shape.get();
-        float freq = static_cast<float>(frequency.get().value);
-        float amp = static_cast<float>(amplitude.get().value);
-        bool show_harm = harmonics.get().checked;
-
-        dl.filled_rect(bounds, t.canvas_bg);
-
-        // Center line
-        dl.filled_rect(
-            prism::Rect{prism::Point{prism::X{0}, prism::Y{cy}},
-                        prism::Size{prism::Width{w}, prism::Height{1}}},
-            t.track);
-
-        int steps = std::max(2, static_cast<int>(w));
-        auto sample = [&](int i) -> float {
-            float t = static_cast<float>(i) / static_cast<float>(steps);
-            float phase = std::fmod(freq * t, 1.f);
-            float y_val = amp * wave_value(sh, phase);
-            if (show_harm) {
-                y_val += amp * 0.33f * wave_value(sh, std::fmod(3.f * freq * t, 1.f));
-                y_val += amp * 0.2f  * wave_value(sh, std::fmod(5.f * freq * t, 1.f));
-                y_val = std::clamp(y_val, -1.f, 1.f);
-            }
-            return cy - y_val * h * 0.45f;
-        };
-
-        auto color = t.accent;
-        constexpr float thickness = 2.f;
-        float prev_y = sample(0);
-        for (int i = 1; i < steps; ++i) {
-            float x0 = static_cast<float>(i - 1);
-            float x1 = static_cast<float>(i);
-            float y0 = prev_y;
-            float y1 = sample(i);
-            prev_y = y1;
-
-            float min_y = std::min(y0, y1);
-            float max_y = std::max(y0, y1);
-            float seg_h = std::max(max_y - min_y, thickness);
-            dl.filled_rect(
-                prism::Rect{
-                    prism::Point{prism::X{x0}, prism::Y{min_y - thickness * 0.5f}},
-                    prism::Size{prism::Width{x1 - x0 + 1.f}, prism::Height{seg_h + thickness}}},
-                color);
-        }
+        draw_waveform(dl, bounds, current_params(), t.surface, t.track, t.accent, t.accent_hover);
     }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
@@ -107,6 +121,7 @@ struct Waveform {
         vb.hstack([&] {
             vb.widget(shape);
             vb.widget(harmonics);
+            vb.widget(export_svg);
         });
         vb.widget(stats);
     }
@@ -150,13 +165,14 @@ struct ProgressBar {
 
     void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
         auto& t = *node.theme;
-        dl.filled_rect(bounds, t.surface);
+        dl.rounded_rect(bounds, t.surface, 4.f);
+        dl.rounded_rect(bounds, t.border, 4.f, 1.f);
         float fill_w = bounds.extent.w.raw() * std::clamp(progress.get(), 0.f, 1.f);
         if (fill_w > 0.f) {
-            dl.filled_rect(
+            dl.rounded_rect(
                 prism::Rect{bounds.origin,
                             prism::Size{prism::Width{fill_w}, bounds.extent.h}},
-                t.accent_hover);
+                t.accent_hover, 4.f);
         }
     }
 
@@ -255,6 +271,26 @@ int main() {
         );
 
         update_stats();
+
+        // SVG export button: render waveform to SVG file
+        connections.push_back(
+            app.waveform.export_svg.on_change()
+            | prism::on(sched)
+            | prism::then([&app](const prism::Button&) {
+                  prism::DrawList dl;
+                  prism::Rect bounds{prism::Point{prism::X{0}, prism::Y{0}},
+                                     prism::Size{prism::Width{800}, prism::Height{300}}};
+                  draw_waveform(dl, bounds, app.waveform.current_params(),
+                                prism::Color::rgba(30, 30, 46),
+                                prism::Color::rgba(88, 91, 112),
+                                prism::Color::rgba(137, 180, 250),
+                                prism::Color::rgba(166, 209, 255));
+                  auto svg = prism::to_svg(dl);
+                  auto fname = app.filename.get().value + ".svg";
+                  std::ofstream(fname) << svg;
+                  app.export_log.push_back("SVG exported -> " + fname);
+              })
+        );
 
         // Export button: log entry + animated progress bar.
         // Capture window/clock by pointer — they live inside model_app's stack frame.
