@@ -65,8 +65,14 @@ struct Line {
     float thickness;
 };
 
+struct Polyline {
+    std::vector<Point> points;
+    Color color;
+    float thickness;
+};
+
 using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop,
-                             RoundedRect, Line>;
+                             RoundedRect, Line, Polyline>;
 
 struct DrawList {
     std::vector<DrawCmd> commands;
@@ -83,6 +89,14 @@ struct DrawList {
         auto o = current_offset();
         commands.emplace_back(RectOutline{
             {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, thickness});
+    }
+
+    void polyline(std::vector<Point> pts, Color c, float thickness = 1.f)
+    {
+        auto o = current_offset();
+        for (auto& p : pts)
+            p = Point{p.x + o.dx, p.y + o.dy};
+        commands.emplace_back(Polyline{std::move(pts), c, thickness});
     }
 
     void line(Point from, Point to, Color c, float thickness = 1.f)
@@ -149,6 +163,10 @@ struct DrawList {
             std::visit([&](const auto& c) {
                 if constexpr (requires { c.rect; })
                     expand(c.rect);
+                else if constexpr (requires { c.points; }) {
+                    for (const auto& p : c.points)
+                        expand({p, Size{Width{0}, Height{0}}});
+                }
                 else if constexpr (requires { c.from; c.to; }) {
                     expand({c.from, Size{Width{0}, Height{0}}});
                     expand({c.to, Size{Width{0}, Height{0}}});

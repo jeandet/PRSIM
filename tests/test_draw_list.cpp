@@ -236,3 +236,39 @@ TEST_CASE("bounding_box includes line endpoints") {
     CHECK(bb.extent.w.raw() == 80.f);
     CHECK(bb.extent.h.raw() == 60.f);
 }
+
+TEST_CASE("DrawList polyline command") {
+    prism::DrawList dl;
+    std::vector<prism::Point> pts = {P(0, 0), P(50, 25), P(100, 0)};
+    dl.polyline(pts, prism::Color::rgba(0, 255, 0), 1.5f);
+    REQUIRE(dl.size() == 1);
+    auto& pl = std::get<prism::Polyline>(dl.commands[0]);
+    CHECK(pl.points.size() == 3);
+    CHECK(pl.points[1].x.raw() == 50.f);
+    CHECK(pl.points[1].y.raw() == 25.f);
+    CHECK(pl.thickness == 1.5f);
+}
+
+TEST_CASE("clip_push offsets polyline points") {
+    prism::DrawList dl;
+    dl.clip_push(P(5.f, 10.f), S(200.f, 200.f));
+    std::vector<prism::Point> pts = {P(0, 0), P(20, 30)};
+    dl.polyline(pts, prism::Color::rgba(0, 0, 0), 1.f);
+    dl.clip_pop();
+    auto& pl = std::get<prism::Polyline>(dl.commands[1]);
+    CHECK(pl.points[0].x.raw() == 5.f);
+    CHECK(pl.points[0].y.raw() == 10.f);
+    CHECK(pl.points[1].x.raw() == 25.f);
+    CHECK(pl.points[1].y.raw() == 40.f);
+}
+
+TEST_CASE("bounding_box includes all polyline points") {
+    prism::DrawList dl;
+    std::vector<prism::Point> pts = {P(10, 50), P(90, 10), P(50, 80)};
+    dl.polyline(pts, prism::Color::rgba(0, 0, 0), 1.f);
+    auto bb = dl.bounding_box();
+    CHECK(bb.origin.x.raw() == 10.f);
+    CHECK(bb.origin.y.raw() == 10.f);
+    CHECK(bb.extent.w.raw() == 80.f);
+    CHECK(bb.extent.h.raw() == 70.f);
+}
