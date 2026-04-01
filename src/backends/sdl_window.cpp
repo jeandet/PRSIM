@@ -259,10 +259,61 @@ void SdlWindow::render_cmd(const ClipPop&) {
     }
 }
 
-void SdlWindow::render_cmd(const RoundedRect&) {} // TODO: implement
-void SdlWindow::render_cmd(const Line&) {}        // TODO: implement
-void SdlWindow::render_cmd(const Polyline&) {}     // TODO: implement
-void SdlWindow::render_cmd(const Circle&) {}       // TODO: implement
+void SdlWindow::render_cmd(const RoundedRect& cmd) {
+    SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
+    SDL_FRect r = to_sdl(cmd.rect);
+    // SDL3 has no built-in rounded rect — fall back to regular rect
+    if (cmd.thickness > 0.f)
+        SDL_RenderRect(renderer_, &r);
+    else
+        SDL_RenderFillRect(renderer_, &r);
+}
+
+void SdlWindow::render_cmd(const Line& cmd) {
+    SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
+    SDL_RenderLine(renderer_, cmd.from.x.raw(), cmd.from.y.raw(),
+                   cmd.to.x.raw(), cmd.to.y.raw());
+}
+
+void SdlWindow::render_cmd(const Polyline& cmd) {
+    if (cmd.points.size() < 2) return;
+    SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
+    std::vector<SDL_FPoint> sdl_pts(cmd.points.size());
+    for (size_t i = 0; i < cmd.points.size(); ++i)
+        sdl_pts[i] = {cmd.points[i].x.raw(), cmd.points[i].y.raw()};
+    SDL_RenderLines(renderer_, sdl_pts.data(), static_cast<int>(sdl_pts.size()));
+}
+
+void SdlWindow::render_cmd(const Circle& cmd) {
+    SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
+    float cx = cmd.center.x.raw(), cy = cmd.center.y.raw();
+    int r = static_cast<int>(cmd.radius);
+    int x = r, y = 0, d = 1 - r;
+    while (x >= y) {
+        if (cmd.thickness > 0.f) {
+            SDL_RenderPoint(renderer_, cx + x, cy + y);
+            SDL_RenderPoint(renderer_, cx - x, cy + y);
+            SDL_RenderPoint(renderer_, cx + x, cy - y);
+            SDL_RenderPoint(renderer_, cx - x, cy - y);
+            SDL_RenderPoint(renderer_, cx + y, cy + x);
+            SDL_RenderPoint(renderer_, cx - y, cy + x);
+            SDL_RenderPoint(renderer_, cx + y, cy - x);
+            SDL_RenderPoint(renderer_, cx - y, cy - x);
+        } else {
+            SDL_RenderLine(renderer_, cx - x, cy + y, cx + x, cy + y);
+            SDL_RenderLine(renderer_, cx - x, cy - y, cx + x, cy - y);
+            SDL_RenderLine(renderer_, cx - y, cy + x, cx + y, cy + x);
+            SDL_RenderLine(renderer_, cx - y, cy - x, cx + y, cy - x);
+        }
+        ++y;
+        if (d < 0) {
+            d += 2 * y + 1;
+        } else {
+            --x;
+            d += 2 * (y - x) + 1;
+        }
+    }
+}
 
 bool SdlWindow::begin_resize(int mouse_x, int mouse_y) {
     if (decoration_ != DecorationMode::Custom || !sdl_window_) return false;
