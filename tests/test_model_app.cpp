@@ -180,6 +180,7 @@ TEST_CASE("model_app setup callback receives scheduler and window") {
 
 #include <prism/core/delegate.hpp>
 #include <prism/core/on.hpp>
+#include <fmt/format.h>
 
 // Reproducer: on_change callback that sets another field must not crash.
 // A common mistake is capturing a local lambda by reference in a then()
@@ -246,9 +247,7 @@ TEST_CASE("on_change callback can set another field without crashing") {
                 model.input.on_change()
                 | prism::on(sched)
                 | prism::then([&model](const prism::Slider<>& s) {
-                      char buf[32];
-                      std::snprintf(buf, sizeof(buf), "value=%.1f", s.value);
-                      model.output.set({buf});
+                      model.output.set({fmt::format("value={:.1f}", s.value)});
                   })
             );
         }

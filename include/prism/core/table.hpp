@@ -6,6 +6,7 @@
 #include <prism/core/types.hpp>
 #include <prism/core/widget_node.hpp>
 
+#include <fmt/format.h>
 #include <functional>
 #include <optional>
 #include <string>
@@ -62,7 +63,7 @@ std::string field_to_string(const Field<T>& f) {
     if constexpr (std::is_same_v<T, std::string>)
         return f.get();
     else if constexpr (std::is_arithmetic_v<T>)
-        return std::to_string(f.get());
+        return fmt::to_string(f.get());
     else
         return "?";
 }

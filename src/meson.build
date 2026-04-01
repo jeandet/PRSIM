@@ -1,5 +1,6 @@
 # Core: header-only + stdexec (header-only P2300 implementation)
 stdexec_dep = dependency('stdexec', fallback : ['stdexec', 'stdexec_dep'])
+fmt_dep = dependency('fmt', fallback : ['fmt', 'fmt_dep'])
 
 cpp = meson.get_compiler('cpp')
 has_reflection = cpp.compiles('''
@@ -19,7 +20,7 @@ endif
 
 prism_core_dep = declare_dependency(
   include_directories : prism_inc,
-  dependencies : [stdexec_dep, magic_enum_dep],
+  dependencies : [stdexec_dep, magic_enum_dep, fmt_dep],
 )
 
 # Software backend: links SDL3 + SDL3_ttf

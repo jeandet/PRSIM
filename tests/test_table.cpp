@@ -6,6 +6,7 @@
 #include <prism/core/hit_test.hpp>
 #include <prism/core/widget_tree.hpp>
 
+#include <fmt/format.h>
 #include <array>
 
 TEST_CASE("LayoutKind::Table exists") {
@@ -31,7 +32,7 @@ struct TestColumns {
         return names[col];
     }
     std::string cell_text(size_t row, size_t col) const {
-        if (col == 0) return std::to_string(time[row]);
+        if (col == 0) return fmt::to_string(time[row]);
         return label[row];
     }
 };
@@ -59,7 +60,7 @@ struct ColumnModel {
         return h[c];
     }
     std::string cell_text(size_t r, size_t c) const {
-        if (c == 0) return std::to_string(x[r]);
+        if (c == 0) return fmt::to_string(x[r]);
         return name[r];
     }
 
@@ -449,7 +450,7 @@ struct LargeColumnModel {
     size_t column_count() const { return 1; }
     size_t row_count() const { return values.size(); }
     std::string_view header(size_t) const { return "Value"; }
-    std::string cell_text(size_t r, size_t) const { return std::to_string(values[r]); }
+    std::string cell_text(size_t r, size_t) const { return fmt::to_string(values[r]); }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.table(*this);
@@ -522,7 +523,7 @@ struct DynamicColumnModel {
     size_t column_count() const { return 1; }
     size_t row_count() const { return values.size(); }
     std::string_view header(size_t) const { return "Val"; }
-    std::string cell_text(size_t r, size_t) const { return std::to_string(values[r]); }
+    std::string cell_text(size_t r, size_t) const { return fmt::to_string(values[r]); }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.table(*this).depends_on(data_updated);
@@ -546,7 +547,7 @@ struct HeaderOverrideModel {
     size_t column_count() const { return 1; }
     size_t row_count() const { return x.size(); }
     std::string_view header(size_t) const { return "X"; }
-    std::string cell_text(size_t r, size_t) const { return std::to_string(x[r]); }
+    std::string cell_text(size_t r, size_t) const { return fmt::to_string(x[r]); }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.table(*this).headers({"Custom"});
@@ -658,7 +659,7 @@ TEST_CASE("wrap_row_storage produces valid TableSource") {
     CHECK(src.header(0) == "label");
     CHECK(src.header(1) == "value");
     CHECK(src.cell_text(0, 0) == "Alpha");
-    CHECK(src.cell_text(1, 1) == std::to_string(2.7));
+    CHECK(src.cell_text(1, 1) == fmt::to_string(2.7));
 }
 
 struct RowModel {

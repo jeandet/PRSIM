@@ -1,9 +1,8 @@
 #include <prism/prism.hpp>
 
+#include <fmt/format.h>
 #include <array>
 #include <cmath>
-#include <cstdio>
-#include <sstream>
 #include <string>
 
 // --- Domain types ---
@@ -132,14 +131,12 @@ struct SignalTable {
         float t = static_cast<float>(r) / static_cast<float>(N);
         float phase = std::fmod(freq * t, 1.f);
         float val = amp * wave_value(sh, phase);
-        char buf[16];
         switch (c) {
-            case 0: return std::to_string(r);
-            case 1: std::snprintf(buf, sizeof(buf), "%.3f", t); return buf;
-            case 2: std::snprintf(buf, sizeof(buf), "%+.4f", val); return buf;
-            case 3: std::snprintf(buf, sizeof(buf), "%.4f", std::abs(val)); return buf;
-            case 4: std::snprintf(buf, sizeof(buf), "%.1f",
-                       std::fmod(360.0f * freq * t, 360.0f)); return buf;
+            case 0: return fmt::to_string(r);
+            case 1: return fmt::format("{:.3f}", t);
+            case 2: return fmt::format("{:+.4f}", val);
+            case 3: return fmt::format("{:.4f}", std::abs(val));
+            case 4: return fmt::format("{:.1f}", std::fmod(360.0f * freq * t, 360.0f));
             default: return "";
         }
     }
@@ -233,10 +230,8 @@ int main() {
             float amp = static_cast<float>(app.waveform.amplitude.get().value);
             float freq = static_cast<float>(app.waveform.frequency.get().value);
             float rms = amp * rms_value(sh);
-            char buf[64];
-            std::snprintf(buf, sizeof(buf), "Pk-Pk: %.2f  RMS: %.3f  f=%.1f Hz",
-                          2.f * amp, rms, freq);
-            app.waveform.stats.set({buf});
+            app.waveform.stats.set({fmt::format("Pk-Pk: {:.2f}  RMS: {:.3f}  f={:.1f} Hz",
+                          2.f * amp, rms, freq)});
         };
 
         connections.push_back(
@@ -273,11 +268,9 @@ int main() {
                   float amp = static_cast<float>(app.waveform.amplitude.get().value);
                   auto fname = app.filename.get().value;
 
-                  std::ostringstream oss;
-                  oss << "#" << export_count << " " << shape_name(sh)
-                      << " " << freq << "Hz amp=" << amp
-                      << " -> " << fname << ".wav";
-                  app.export_log.push_back(oss.str());
+                  app.export_log.push_back(fmt::format(
+                      "#{} {} {}Hz amp={} -> {}.wav",
+                      export_count, shape_name(sh), freq, amp, fname));
 
                   win.set_title("Signal Generator — exported " + fname);
 

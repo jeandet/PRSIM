@@ -3,6 +3,7 @@
 
 #include <prism/core/atomic_cell.hpp>
 
+#include <fmt/format.h>
 #include <string>
 #include <thread>
 
@@ -26,7 +27,7 @@ TEST_CASE("atomic_cell concurrent access never tears")
 
     std::jthread writer([&] {
         for (int i = 0; i < iterations; ++i)
-            cell.store("value_" + std::to_string(i));
+            cell.store(fmt::format("value_{}", i));
     });
 
     for (int i = 0; i < iterations; ++i) {

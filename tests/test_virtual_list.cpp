@@ -2,6 +2,7 @@
 #include <doctest.h>
 
 #include <prism/core/types.hpp>
+#include <fmt/format.h>
 
 using namespace prism;
 
@@ -102,7 +103,7 @@ TEST_CASE("ViewBuilder::list creates VirtualList node") {
 TEST_CASE("VirtualList materializes visible items") {
     StringListModel model;
     for (int i = 0; i < 20; ++i)
-        model.items.push_back("item " + std::to_string(i));
+        model.items.push_back(fmt::format("item {}", i));
     prism::WidgetTree tree(model);
     auto snap = tree.build_snapshot(400, 100, 1);
     CHECK(snap != nullptr);
@@ -113,7 +114,7 @@ TEST_CASE("VirtualList materializes visible items") {
 TEST_CASE("VirtualList stabilizes after two frames") {
     StringListModel model;
     for (int i = 0; i < 50; ++i)
-        model.items.push_back("item " + std::to_string(i));
+        model.items.push_back(fmt::format("item {}", i));
     prism::WidgetTree tree(model);
     // First frame: viewport_h unknown, second frame: viewport_h set by layout
     auto snap1 = tree.build_snapshot(400, 100, 1);
@@ -127,7 +128,7 @@ TEST_CASE("VirtualList stabilizes after two frames") {
 TEST_CASE("scroll_at works on VirtualList") {
     StringListModel model;
     for (int i = 0; i < 50; ++i)
-        model.items.push_back("item " + std::to_string(i));
+        model.items.push_back(fmt::format("item {}", i));
 
     prism::WidgetTree tree(model);
     auto snap = tree.build_snapshot(400, 100, 1);
@@ -206,7 +207,7 @@ TEST_CASE("VirtualList reacts to List set (update)") {
 TEST_CASE("VirtualList full scroll workflow") {
     StringListModel model;
     for (int i = 0; i < 100; ++i)
-        model.items.push_back("item " + std::to_string(i));
+        model.items.push_back(fmt::format("item {}", i));
 
     prism::WidgetTree tree(model);
     auto snap1 = tree.build_snapshot(400, 100, 1);
@@ -236,7 +237,7 @@ TEST_CASE("VirtualList full scroll workflow") {
 TEST_CASE("VirtualList items at correct Y position after scroll") {
     StringListModel model;
     for (int i = 0; i < 50; ++i)
-        model.items.push_back("item " + std::to_string(i));
+        model.items.push_back(fmt::format("item {}", i));
 
     WidgetTree tree(model);
     auto snap1 = tree.build_snapshot(400, 200, 1);
