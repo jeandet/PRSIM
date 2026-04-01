@@ -80,6 +80,9 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             } else if (ev.type == SDL_EVENT_TEXT_INPUT) {
                 wid = sdl_id_to_prism_id(ev.text.windowID);
             }
+            // During a press-drag, route events to the window that received the press
+            if (wid == 0 && pressed_window_ != 0)
+                wid = pressed_window_;
             // For single-window case, fall back to first window
             if (wid == 0 && windows_.size() == 1)
                 wid = windows_.begin()->first;
@@ -113,6 +116,8 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                SDL_CaptureMouse(true);
+                pressed_window_ = wid;
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom) {
@@ -152,6 +157,8 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_UP: {
+                SDL_CaptureMouse(false);
+                pressed_window_ = 0;
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() && it_w->second->in_resize()) {
                     it_w->second->end_resize();

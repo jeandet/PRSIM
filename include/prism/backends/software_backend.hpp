@@ -34,6 +34,7 @@ private:
     TTF_Font* font_ = nullptr;
     std::atomic<bool> running_{true};
     std::atomic<bool> ready_{false};
+    WindowId pressed_window_ = 0;
 
     // Per-window snapshot storage
     struct WindowSnapshot {
