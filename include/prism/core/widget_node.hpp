@@ -88,6 +88,7 @@ inline std::pair<ItemIndex, ItemIndex> compute_visible_range(
 
 inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }
 inline Size node_allocated(const WidgetNode& n) { return n.canvas_bounds.extent; }
+inline const Theme& node_theme(const WidgetNode& n) { return *n.theme; }
 
 // --- Node factory functions (need complete WidgetNode) ---
 

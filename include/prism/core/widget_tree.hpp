@@ -725,10 +725,11 @@ private:
 
     // --- Node → WidgetNode conversion ---
 
-    static WidgetNode build_widget_node(Node& node) {
+    WidgetNode build_widget_node(Node& node) {
         WidgetNode wn;
         wn.id = node.id;
         wn.layout_kind = node.layout_kind;
+        wn.theme = &theme_;
         if (node.is_leaf) {
             wn.is_container = false;
             if (node.build_widget)
@@ -1148,6 +1149,7 @@ private:
         if (vls->item_height.raw() <= 0.f && vls->item_count.raw() > 0) {
             WidgetNode probe;
             probe.id = next_id_++;
+            probe.theme = &theme_;
             vls->bind_row(probe, 0);
             auto bb = probe.draws.bounding_box();
             vls->item_height = bb.extent.h;

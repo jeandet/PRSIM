@@ -1,5 +1,6 @@
 #pragma once
 
+#include <prism/core/context.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/field.hpp>
 #include <prism/core/input_event.hpp>
@@ -258,6 +259,7 @@ struct WidgetNode;
 // Declared here, defined in widget_node.hpp (after WidgetNode is complete).
 const WidgetVisualState& node_vs(const WidgetNode& n);
 Size node_allocated(const WidgetNode& n);
+const Theme& node_theme(const WidgetNode& n);
 
 namespace detail {
 inline Rect make_rect(float x, float y, float w, float h) {
@@ -276,7 +278,8 @@ struct Delegate {
 
     static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
         auto& vs = node_vs(node);
-        auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
+        auto& t = node_theme(node);
+        auto bg = vs.hovered ? t.surface_hover : t.surface;
         dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
     }
 
@@ -290,10 +293,11 @@ struct Delegate<T> {
 
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
-        auto bg = vs.hovered ? Color::rgba(60, 60, 72) : Color::rgba(50, 50, 60);
+        auto& t = node_theme(node);
+        auto bg = vs.hovered ? t.surface_hover : t.surface;
         dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
         dl.text(std::string(field.get().data(), field.get().size()),
-                detail::make_point(4, 4), 14, Color::rgba(220, 220, 220));
+                detail::make_point(4, 4), 14, t.text);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -308,24 +312,24 @@ struct Checkbox {
 
 // Shared checkbox box rendering for Delegate<bool> and Delegate<Checkbox>
 inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
-                           const WidgetVisualState& vs) {
+                           const WidgetVisualState& vs, const Theme& t) {
     constexpr float box_size = 16.f;
     constexpr float border = 1.5f;
 
     if (checked) {
-        auto fill = vs.pressed  ? Color::rgba(0, 100, 170)
-                  : vs.hovered  ? Color::rgba(0, 140, 220)
-                  :               Color::rgba(0, 120, 200);
+        auto fill = vs.pressed  ? t.accent_active
+                  : vs.hovered  ? t.accent_hover
+                  :               t.accent;
         dl.filled_rect(detail::make_rect(x, y, box_size, box_size), fill);
-        dl.text("\xe2\x9c\x93", detail::make_point(x + 2, y + 1), 13, Color::rgba(255, 255, 255)); // checkmark
+        dl.text("\xe2\x9c\x93", detail::make_point(x + 2, y + 1), 13, t.text_on_primary);
     } else {
-        auto fill = vs.pressed  ? Color::rgba(35, 35, 42)
-                  : vs.hovered  ? Color::rgba(55, 55, 65)
-                  :               Color::rgba(45, 45, 55);
+        auto fill = vs.pressed  ? t.surface_active
+                  : vs.hovered  ? t.surface_hover
+                  :               t.surface;
         dl.filled_rect(detail::make_rect(x, y, box_size, box_size), fill);
     }
     dl.rect_outline(detail::make_rect(x, y, box_size, box_size),
-                    vs.hovered ? Color::rgba(120, 120, 135) : Color::rgba(90, 90, 105),
+                    vs.hovered ? t.border_hover : t.border,
                     border);
 }
 
@@ -337,20 +341,21 @@ struct Delegate<Checkbox> {
 
     static void record(DrawList& dl, const Field<Checkbox>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
+        auto& t = node_theme(node);
         auto& cb = field.get();
 
-        auto bg = vs.hovered ? Color::rgba(55, 55, 65) : Color::rgba(45, 45, 55);
+        auto bg = vs.hovered ? t.surface_hover : t.surface;
         dl.filled_rect(detail::make_rect(0, 0, widget_w, widget_h), bg);
 
         float box_y = (widget_h - box_size) / 2.f;
-        draw_check_box(dl, 8, box_y, cb.checked, vs);
+        draw_check_box(dl, 8, box_y, cb.checked, vs, t);
 
         if (!cb.label.empty())
-            dl.text(cb.label, detail::make_point(32, 7), 14, Color::rgba(220, 220, 220));
+            dl.text(cb.label, detail::make_point(32, 7), 14, t.text);
 
         if (vs.focused)
             dl.rect_outline(detail::make_rect(-1, -1, widget_w + 2, widget_h + 2),
-                            Color::rgba(80, 160, 240), 2.0f);
+                            t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<Checkbox>& field, const InputEvent& ev, WidgetNode&) {
@@ -375,18 +380,19 @@ struct Delegate<bool> {
 
     static void record(DrawList& dl, const Field<bool>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
+        auto& t = node_theme(node);
         constexpr float widget_w = 200.f, widget_h = 30.f;
         constexpr float box_size = 16.f;
 
-        auto bg = vs.hovered ? Color::rgba(55, 55, 65) : Color::rgba(45, 45, 55);
+        auto bg = vs.hovered ? t.surface_hover : t.surface;
         dl.filled_rect(detail::make_rect(0, 0, widget_w, widget_h), bg);
 
         float box_y = (widget_h - box_size) / 2.f;
-        draw_check_box(dl, 8, box_y, field.get(), vs);
+        draw_check_box(dl, 8, box_y, field.get(), vs, t);
 
         if (vs.focused)
             dl.rect_outline(detail::make_rect(-1, -1, widget_w + 2, widget_h + 2),
-                            Color::rgba(80, 160, 240), 2.0f);
+                            t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetNode&) {
@@ -403,10 +409,11 @@ template <StringLike T>
 struct Delegate<Label<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
-    static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode&) {
-        dl.filled_rect(detail::make_rect(0, 0, 200, 24), Color::rgba(40, 40, 48));
+    static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode& node) {
+        auto& t = node_theme(node);
+        dl.filled_rect(detail::make_rect(0, 0, 200, 24), t.surface);
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
-                detail::make_point(4, 4), 14, Color::rgba(180, 180, 190));
+                detail::make_point(4, 4), 14, t.text_muted);
     }
 
     static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetNode&) {}
@@ -448,14 +455,15 @@ struct Delegate<Slider<T, O>> {
 
     static void record(DrawList& dl, const Field<Slider<T, O>>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
+        auto& t = node_theme(node);
         auto& s = field.get();
         float r = ratio(s);
         float tl = track_len(node);
 
-        auto track_bg = vs.hovered ? Color::rgba(70, 70, 82) : Color::rgba(60, 60, 70);
-        auto thumb_color = vs.pressed ? Color::rgba(0, 120, 180)
-                         : vs.hovered ? Color::rgba(0, 160, 220)
-                         : Color::rgba(0, 140, 200);
+        auto track_bg = vs.hovered ? t.track_hover : t.track;
+        auto thumb_color = vs.pressed ? t.accent_active
+                         : vs.hovered ? t.accent_hover
+                         : t.accent;
 
         if constexpr (vertical) {
             float track_x = (widget_extent - track_thick) / 2.f;
@@ -464,7 +472,7 @@ struct Delegate<Slider<T, O>> {
             dl.filled_rect(detail::make_rect(0, thumb_y, widget_extent, thumb_len), thumb_color);
             if (vs.focused)
                 dl.rect_outline(detail::make_rect(-1, -1, widget_extent + 2, tl + 2),
-                                Color::rgba(80, 160, 240), 2.0f);
+                                t.focus_ring, 2.0f);
         } else {
             float track_y = (widget_extent - track_thick) / 2.f;
             dl.filled_rect(detail::make_rect(0, track_y, tl, track_thick), track_bg);
@@ -472,7 +480,7 @@ struct Delegate<Slider<T, O>> {
             dl.filled_rect(detail::make_rect(thumb_x, 0, thumb_len, widget_extent), thumb_color);
             if (vs.focused)
                 dl.rect_outline(detail::make_rect(-1, -1, tl + 2, widget_extent + 2),
-                                Color::rgba(80, 160, 240), 2.0f);
+                                t.focus_ring, 2.0f);
         }
     }
 
@@ -514,14 +522,15 @@ struct Delegate<Button> {
 
     static void record(DrawList& dl, const Field<Button>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
-        Color bg = vs.pressed ? Color::rgba(30, 90, 160)
-                 : vs.hovered ? Color::rgba(50, 120, 200)
-                 : Color::rgba(40, 105, 180);
+        auto& t = node_theme(node);
+        Color bg = vs.pressed ? t.primary_active
+                 : vs.hovered ? t.primary_hover
+                 : t.primary;
         dl.filled_rect(detail::make_rect(0, 0, 200, 32), bg);
-        dl.rect_outline(detail::make_rect(0, 0, 200, 32), Color::rgba(60, 140, 220), 1.0f);
-        dl.text(field.get().text, detail::make_point(8, 7), 14, Color::rgba(240, 240, 240));
+        dl.rect_outline(detail::make_rect(0, 0, 200, 32), t.primary_outline, 1.0f);
+        dl.text(field.get().text, detail::make_point(8, 7), 14, t.text_on_primary);
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-2, -2, 204, 36), Color::rgba(80, 160, 240), 2.0f);
+            dl.rect_outline(detail::make_rect(-2, -2, 204, 36), t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {
