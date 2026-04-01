@@ -7,6 +7,50 @@
 
 namespace prism::plot {
 
+struct AxisRange {
+    double min = 0.0;
+    double max = 1.0;
+    bool auto_fit = true;
+    bool operator==(const AxisRange&) const = default;
+};
+
+struct PlotMapping {
+    AxisRange x_range;
+    AxisRange y_range;
+    Rect plot_area;
+
+    Point to_pixel(double data_x, double data_y) const
+    {
+        float px = plot_area.origin.x.raw()
+                   + static_cast<float>((data_x - x_range.min) / (x_range.max - x_range.min))
+                     * plot_area.extent.w.raw();
+        float py = plot_area.origin.y.raw()
+                   + static_cast<float>(1.0 - (data_y - y_range.min) / (y_range.max - y_range.min))
+                     * plot_area.extent.h.raw();
+        return Point{X{px}, Y{py}};
+    }
+
+    std::pair<double, double> to_data(Point pixel) const
+    {
+        double dx = x_range.min
+                    + (pixel.x.raw() - plot_area.origin.x.raw())
+                      / plot_area.extent.w.raw()
+                      * (x_range.max - x_range.min);
+        double dy = y_range.min
+                    + (1.0 - (pixel.y.raw() - plot_area.origin.y.raw())
+                             / plot_area.extent.h.raw())
+                      * (y_range.max - y_range.min);
+        return {dx, dy};
+    }
+
+    static AxisRange apply_view(AxisRange base, double offset, double scale)
+    {
+        double center = (base.min + base.max) / 2.0 + offset;
+        double half_range = (base.max - base.min) / (2.0 * scale);
+        return {center - half_range, center + half_range, false};
+    }
+};
+
 inline std::vector<double> nice_ticks(double min, double max, int target_count)
 {
     if (target_count < 1) target_count = 1;
