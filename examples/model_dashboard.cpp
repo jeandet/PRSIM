@@ -3,74 +3,149 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
-#include <iostream>
 #include <sstream>
 #include <string>
 
-enum class Theme { Light, Dark, System };
+// --- Domain types ---
 
-struct Settings {
-    prism::Field<std::string> username{"jeandet"};
-    prism::Field<bool> dark_mode{true};
-    prism::Field<prism::Checkbox> notifications{{.checked = true, .label = "Enable notifications"}};
-    prism::Field<prism::Slider<>> volume{{.value = 0.7}};
-    prism::Field<prism::TextField<>> search{{.value = "", .placeholder = "Search..."}};
-    prism::Field<Theme> theme{Theme::Dark};
-    prism::Field<prism::Password<>> api_key{{.placeholder = "API key"}};
+enum class WaveShape { Sine, Square, Triangle, Sawtooth };
 
-    void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.vstack(username, dark_mode, notifications, volume, search, theme, api_key);
+static float wave_value(WaveShape shape, float phase) {
+    constexpr float pi = 3.14159265f;
+    switch (shape) {
+        case WaveShape::Sine:
+            return std::sin(2.f * pi * phase);
+        case WaveShape::Square:
+            return phase < 0.5f ? 1.f : -1.f;
+        case WaveShape::Triangle:
+            return 4.f * std::abs(phase - 0.5f) - 1.f;
+        case WaveShape::Sawtooth:
+            return 2.f * phase - 1.f;
     }
-};
+    return 0.f;
+}
+
+static float rms_value(WaveShape shape) {
+    switch (shape) {
+        case WaveShape::Sine:     return 1.f / std::sqrt(2.f);
+        case WaveShape::Square:   return 1.f;
+        case WaveShape::Triangle: return 1.f / std::sqrt(3.f);
+        case WaveShape::Sawtooth: return 1.f / std::sqrt(3.f);
+    }
+    return 0.f;
+}
+
+// --- Waveform editor (Tab 1) ---
 
 struct Waveform {
-    prism::Field<prism::Slider<>> frequency{{.value = 2.0, .min = 0.5, .max = 10.0}};
-    prism::Field<prism::Slider<double, prism::Orientation::Vertical>> amplitude{{.value = 0.8, .min = 0.0, .max = 1.0}};
+    prism::Field<WaveShape> shape{WaveShape::Sine};
+    prism::Field<prism::Slider<>> frequency{{.value = 2.0, .min = 0.1, .max = 10.0}};
+    prism::Field<prism::Slider<double, prism::Orientation::Vertical>> amplitude{
+        {.value = 0.8, .min = 0.0, .max = 1.0}};
+    prism::Field<prism::Checkbox> harmonics{{.checked = false, .label = "Show harmonics"}};
+    prism::Field<prism::Label<>> stats{{""}};
 
     void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
         auto w = bounds.extent.w.raw();
         auto h = bounds.extent.h.raw();
+        float cy = h * 0.5f;
+        auto sh = shape.get();
+        float freq = static_cast<float>(frequency.get().value);
+        float amp = static_cast<float>(amplitude.get().value);
+        bool show_harm = harmonics.get().checked;
 
-        // Background
         dl.filled_rect(bounds, prism::Color::rgba(20, 22, 30));
 
         // Center line
-        float cy = h * 0.5f;
         dl.filled_rect(
             prism::Rect{prism::Point{prism::X{0}, prism::Y{cy}},
                         prism::Size{prism::Width{w}, prism::Height{1}}},
             prism::Color::rgba(60, 60, 80));
 
-        // Sine wave as vertical bars
-        float freq = static_cast<float>(frequency.get().value);
-        float amp = static_cast<float>(amplitude.get().value);
-        int steps = std::max(1, static_cast<int>(w / 3));
-        float bar_w = w / static_cast<float>(steps);
-
-        for (int i = 0; i < steps; ++i) {
+        int steps = std::max(2, static_cast<int>(w));
+        auto sample = [&](int i) -> float {
             float t = static_cast<float>(i) / static_cast<float>(steps);
-            float y_val = amp * std::sin(2.0f * 3.14159265f * freq * t);
-            float bar_h = std::abs(y_val) * h * 0.45f;
-            float bar_y = y_val > 0 ? cy - bar_h : cy;
+            float phase = std::fmod(freq * t, 1.f);
+            float y_val = amp * wave_value(sh, phase);
+            if (show_harm) {
+                y_val += amp * 0.33f * wave_value(sh, std::fmod(3.f * freq * t, 1.f));
+                y_val += amp * 0.2f  * wave_value(sh, std::fmod(5.f * freq * t, 1.f));
+                y_val = std::clamp(y_val, -1.f, 1.f);
+            }
+            return cy - y_val * h * 0.45f;
+        };
 
-            auto green = static_cast<uint8_t>(80 + 175 * std::abs(y_val));
+        auto color = prism::Color::rgba(0, 220, 100);
+        constexpr float thickness = 2.f;
+        float prev_y = sample(0);
+        for (int i = 1; i < steps; ++i) {
+            float x0 = static_cast<float>(i - 1);
+            float x1 = static_cast<float>(i);
+            float y0 = prev_y;
+            float y1 = sample(i);
+            prev_y = y1;
+
+            float min_y = std::min(y0, y1);
+            float max_y = std::max(y0, y1);
+            float seg_h = std::max(max_y - min_y, thickness);
             dl.filled_rect(
                 prism::Rect{
-                    prism::Point{prism::X{static_cast<float>(i) * bar_w}, prism::Y{bar_y}},
-                    prism::Size{prism::Width{std::max(bar_w - 1, 1.0f)},
-                                prism::Height{bar_h}}},
-                prism::Color::rgba(0, green, 80));
+                    prism::Point{prism::X{x0}, prism::Y{min_y - thickness * 0.5f}},
+                    prism::Size{prism::Width{x1 - x0 + 1.f}, prism::Height{seg_h + thickness}}},
+                color);
         }
     }
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.hstack([&] {
             vb.widget(amplitude);
-            vb.canvas(*this).depends_on(frequency).depends_on(amplitude);
+            vb.canvas(*this)
+                .depends_on(frequency).depends_on(amplitude)
+                .depends_on(shape).depends_on(harmonics);
         });
         vb.widget(frequency);
+        vb.hstack([&] {
+            vb.widget(shape);
+            vb.widget(harmonics);
+        });
+        vb.widget(stats);
     }
 };
+
+// --- Signal data table (Tab 2) ---
+
+struct SignalTable {
+    static constexpr size_t N = 50;
+    const Waveform& wf;
+
+    size_t column_count() const { return 5; }
+    size_t row_count() const { return N; }
+    std::string_view header(size_t c) const {
+        static constexpr std::array<const char*, 5> h = {
+            "Sample", "Time", "Value", "Abs", "Phase"};
+        return h[c];
+    }
+    std::string cell_text(size_t r, size_t c) const {
+        auto sh = wf.shape.get();
+        float freq = static_cast<float>(wf.frequency.get().value);
+        float amp = static_cast<float>(wf.amplitude.get().value);
+        float t = static_cast<float>(r) / static_cast<float>(N);
+        float phase = std::fmod(freq * t, 1.f);
+        float val = amp * wave_value(sh, phase);
+        char buf[16];
+        switch (c) {
+            case 0: return std::to_string(r);
+            case 1: std::snprintf(buf, sizeof(buf), "%.3f", t); return buf;
+            case 2: std::snprintf(buf, sizeof(buf), "%+.4f", val); return buf;
+            case 3: std::snprintf(buf, sizeof(buf), "%.4f", std::abs(val)); return buf;
+            case 4: std::snprintf(buf, sizeof(buf), "%.1f",
+                       std::fmod(360.0f * freq * t, 360.0f)); return buf;
+            default: return "";
+        }
+    }
+};
+
+// --- Export progress bar ---
 
 struct ProgressBar {
     prism::Field<float> progress{0.f};
@@ -91,118 +166,126 @@ struct ProgressBar {
     }
 };
 
-struct SignalTable {
-    static constexpr size_t N = 50;
-    const Waveform& wf;
+// --- Root model ---
 
-    size_t column_count() const { return 5; }
-    size_t row_count() const { return N; }
-    std::string_view header(size_t c) const {
-        static constexpr std::array<const char*, 5> h = {
-            "Sample", "Time", "Value", "Abs", "Phase"};
-        return h[c];
-    }
-    std::string cell_text(size_t r, size_t c) const {
-        float freq = static_cast<float>(wf.frequency.get().value);
-        float amp = static_cast<float>(wf.amplitude.get().value);
-        float t = static_cast<float>(r) / static_cast<float>(N);
-        float val = amp * std::sin(2.0f * 3.14159265f * freq * t);
-        switch (c) {
-            case 0: return std::to_string(r);
-            case 1: { char buf[16]; std::snprintf(buf, sizeof(buf), "%.3f", t); return buf; }
-            case 2: { char buf[16]; std::snprintf(buf, sizeof(buf), "%+.4f", val); return buf; }
-            case 3: { char buf[16]; std::snprintf(buf, sizeof(buf), "%.4f", std::abs(val)); return buf; }
-            case 4: { char buf[16]; std::snprintf(buf, sizeof(buf), "%.1f°",
-                       std::fmod(360.0f * freq * t, 360.0f)); return buf; }
-            default: return "";
-        }
-    }
-};
-
-struct Dashboard {
-    Settings settings;
+struct SignalGenerator {
     Waveform waveform;
-    ProgressBar progress_bar;
-    prism::Field<prism::Label<>> status{{"All systems go"}};
-    prism::Field<prism::TextArea<>> notes{{.placeholder = "Notes...", .rows = 4}};
-    prism::Field<prism::Button> increment{{"Increment"}};
-    prism::Field<int> counter{0};
-    prism::List<std::string> log_messages;
-    prism::State<int> request_count{0};
     SignalTable signal_table{.wf = waveform};
+    ProgressBar export_progress;
+
+    prism::Field<prism::TextField<>> filename{{.value = "signal_001", .placeholder = "Filename..."}};
+    prism::Field<prism::Button> generate{{"Export"}};
+    prism::Field<prism::TextArea<>> notes{{.placeholder = "Annotations...", .rows = 4}};
+    prism::List<std::string> export_log;
     prism::Field<prism::TabBar<>> tabs;
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.tabs(tabs, [&] {
-            vb.tab("Settings", [&](prism::WidgetTree::ViewBuilder& tvb) {
-                tvb.scroll([&] {
-                    tvb.component(settings);
-                });
-            });
             vb.tab("Waveform", [&](prism::WidgetTree::ViewBuilder& tvb) {
                 tvb.component(waveform);
-                tvb.component(progress_bar);
-                tvb.widget(status);
-                tvb.table(signal_table)
-                    .depends_on(waveform.frequency)
-                    .depends_on(waveform.amplitude);
             });
-            vb.tab("Controls", [&](prism::WidgetTree::ViewBuilder& tvb) {
-                tvb.vstack(notes, increment, counter);
-                tvb.list(log_messages);
+            vb.tab("Data", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.scroll([&] {
+                    tvb.table(signal_table)
+                        .depends_on(waveform.frequency)
+                        .depends_on(waveform.amplitude)
+                        .depends_on(waveform.shape);
+                });
+            });
+            vb.tab("Export", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.vstack(filename, generate);
+                tvb.component(export_progress);
+                tvb.widget(notes);
+                tvb.list(export_log);
             });
         });
     }
 };
 
-int main() {
-    Dashboard dashboard;
-    std::vector<prism::Connection> connections;
-    prism::Animation<float> progress_anim;
+// --- Wiring ---
 
-    prism::model_app({.title = "PRISM Model Dashboard", .width = 1024, .height = 768,
+static std::string shape_name(WaveShape s) {
+    switch (s) {
+        case WaveShape::Sine:     return "sine";
+        case WaveShape::Square:   return "square";
+        case WaveShape::Triangle: return "triangle";
+        case WaveShape::Sawtooth: return "sawtooth";
+    }
+    return "?";
+}
+
+int main() {
+    SignalGenerator app;
+    std::vector<prism::Connection> connections;
+    prism::Animation<float> export_anim;
+    int export_count = 0;
+
+    prism::model_app({.title = "PRISM Signal Generator", .width = 1024, .height = 768,
                        .decoration = prism::DecorationMode::Custom},
-                     dashboard, [&](prism::AppContext& ctx) {
-        using namespace std::chrono_literals;
+                     app, [&](prism::AppContext& ctx) {
         auto sched = ctx.scheduler();
 
-        // Cross-component wiring: volume change updates status label (on app thread)
+        // Update stats label when waveform params change.
+        // Note: update_stats is local to this setup closure, so then() callbacks
+        // must capture it BY VALUE — capturing by [&] would dangle after setup returns.
+        auto update_stats = [&app] {
+            auto sh = app.waveform.shape.get();
+            float amp = static_cast<float>(app.waveform.amplitude.get().value);
+            float freq = static_cast<float>(app.waveform.frequency.get().value);
+            float rms = amp * rms_value(sh);
+            char buf[64];
+            std::snprintf(buf, sizeof(buf), "Pk-Pk: %.2f  RMS: %.3f  f=%.1f Hz",
+                          2.f * amp, rms, freq);
+            app.waveform.stats.set({buf});
+        };
+
         connections.push_back(
-            dashboard.settings.volume.on_change()
+            app.waveform.frequency.on_change()
             | prism::on(sched)
-            | prism::then([&](const prism::Slider<>& s) {
-                  std::cout << "Volume: " << s.value << "\n";
-                  if (s.value > 0.9)
-                      dashboard.status.set({"Volume is very high!"});
+            | prism::then([update_stats](const prism::Slider<>&) { update_stats(); })
+        );
+        connections.push_back(
+            app.waveform.amplitude.on_change()
+            | prism::on(sched)
+            | prism::then([update_stats](const prism::Slider<double, prism::Orientation::Vertical>&) {
+                  update_stats();
               })
         );
-
-        // Button click increments counter, logs, and animates progress bar
         connections.push_back(
-            dashboard.increment.on_change()
+            app.waveform.shape.on_change()
             | prism::on(sched)
-            | prism::then([&](const prism::Button&) {
-                  auto n = dashboard.counter.get() + 1;
-                  dashboard.counter.set(n);
-                  ctx.window().set_title("PRISM Dashboard — " + std::to_string(n) + " events");
-                  std::ostringstream oss;
-                  oss << "Event #" << n << " — counter incremented";
-                  dashboard.log_messages.push_back(oss.str());
+            | prism::then([update_stats](const WaveShape&) { update_stats(); })
+        );
 
-                  // Animate progress bar from 0 to 100% with spring physics
-                  dashboard.progress_bar.progress.set(0.f);
-                  progress_anim = prism::animate(ctx.clock(),
-                      dashboard.progress_bar.progress, 1.f,
+        update_stats();
+
+        // Export button: log entry + animated progress bar.
+        // Capture window/clock by pointer — they live inside model_app's stack frame.
+        auto& win = ctx.window();
+        auto& clock = ctx.clock();
+        connections.push_back(
+            app.generate.on_change()
+            | prism::on(sched)
+            | prism::then([&app, &export_count, &export_anim, &win, &clock](const prism::Button&) {
+                  ++export_count;
+                  auto sh = app.waveform.shape.get();
+                  float freq = static_cast<float>(app.waveform.frequency.get().value);
+                  float amp = static_cast<float>(app.waveform.amplitude.get().value);
+                  auto fname = app.filename.get().value;
+
+                  std::ostringstream oss;
+                  oss << "#" << export_count << " " << shape_name(sh)
+                      << " " << freq << "Hz amp=" << amp
+                      << " -> " << fname << ".wav";
+                  app.export_log.push_back(oss.str());
+
+                  win.set_title("Signal Generator — exported " + fname);
+
+                  app.export_progress.progress.set(0.f);
+                  export_anim = prism::animate(clock,
+                      app.export_progress.progress, 1.f,
                       prism::SpringConfig{.spring = {.stiffness = 80.f, .damping = 10.f}});
               })
         );
-
-        dashboard.settings.dark_mode.observe([](const bool& v) {
-            std::cout << "Dark mode: " << (v ? "ON" : "OFF") << "\n";
-        });
-
-        dashboard.settings.notifications.observe([](const prism::Checkbox& cb) {
-            std::cout << "Notifications: " << (cb.checked ? "ON" : "OFF") << "\n";
-        });
     });
 }

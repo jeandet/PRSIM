@@ -34,6 +34,8 @@ struct WidgetNode {
     std::function<void(WidgetNode&)> record;
     LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
+    bool expand = false;
+    ExpandAxis expand_axis = ExpandAxis::None;
     bool table_input_wired = false;
     std::shared_ptr<std::vector<std::string>> tab_names;
 };
@@ -81,6 +83,7 @@ inline std::pair<ItemIndex, ItemIndex> compute_visible_range(
 }
 
 inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_state; }
+inline Size node_allocated(const WidgetNode& n) { return n.canvas_bounds.extent; }
 
 // --- Node factory functions (need complete WidgetNode) ---
 
@@ -92,6 +95,10 @@ Node node_leaf(Field<T>& field, WidgetId& next_id) {
 
     n.build_widget = [&field](WidgetNode& wn) {
         wn.focus_policy = Delegate<T>::focus_policy;
+        if constexpr (requires { Delegate<T>::expand; })
+            wn.expand = Delegate<T>::expand;
+        if constexpr (requires { Delegate<T>::expand_axis; })
+            wn.expand_axis = Delegate<T>::expand_axis;
         wn.record = [&field](WidgetNode& node) {
             node.draws.clear();
             node.overlay_draws.clear();

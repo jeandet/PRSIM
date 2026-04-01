@@ -29,6 +29,7 @@ struct SizeHint {
     float max = std::numeric_limits<float>::max();
     float cross = 0;
     bool expand = false;
+    ExpandAxis expand_axis = ExpandAxis::None;
 };
 
 struct LayoutNode {
@@ -91,6 +92,14 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
         bool horiz = (parent_axis == LayoutAxis::Horizontal);
         node.hint.preferred = horiz ? bb.extent.w.raw() : bb.extent.h.raw();
         node.hint.cross     = horiz ? bb.extent.h.raw() : bb.extent.w.raw();
+        // Directional expand: only expand along the widget's declared axis
+        if (node.hint.expand_axis != ExpandAxis::None) {
+            bool expands_h = (node.hint.expand_axis == ExpandAxis::Both ||
+                              node.hint.expand_axis == ExpandAxis::Horizontal);
+            bool expands_v = (node.hint.expand_axis == ExpandAxis::Both ||
+                              node.hint.expand_axis == ExpandAxis::Vertical);
+            node.hint.expand = horiz ? expands_h : expands_v;
+        }
         return;
     }
     case LayoutNode::Kind::Row:

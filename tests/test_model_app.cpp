@@ -179,6 +179,84 @@ TEST_CASE("model_app setup callback receives scheduler and window") {
 }
 
 #include <prism/core/delegate.hpp>
+#include <prism/core/on.hpp>
+
+// Reproducer: on_change callback that sets another field must not crash.
+// A common mistake is capturing a local lambda by reference in a then()
+// callback — after setup returns, the reference dangles. This test verifies
+// the pattern works when lifetimes are correct.
+struct CrossFieldModel {
+    prism::Field<prism::Slider<>> input{{.value = 0.0}};
+    prism::Field<prism::Label<>> output{{"initial"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack(input, output);
+    }
+};
+
+TEST_CASE("on_change callback can set another field without crashing") {
+    std::shared_ptr<const prism::SceneSnapshot> latest_snap;
+    std::atomic<size_t> snap_count{0};
+
+    struct CrossBackend final : public prism::BackendBase {
+        std::shared_ptr<const prism::SceneSnapshot>& latest;
+        std::atomic<size_t>& count;
+        prism::HeadlessWindow window_{0, {}};
+        CrossBackend(std::shared_ptr<const prism::SceneSnapshot>& l, std::atomic<size_t>& c)
+            : latest(l), count(c) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            count.wait(0, std::memory_order_acquire);
+            auto geo = latest;
+            REQUIRE_FALSE(geo->geometry.empty());
+            // Click near the right end of the slider to set a high value
+            auto [id, rect] = geo->geometry[0];
+            cb(prism::WindowEvent{window_.id(), prism::MouseButton{
+                prism::Point{prism::X{rect.origin.x.raw() + rect.extent.w.raw() * 0.95f},
+                             prism::Y{rect.origin.y.raw() + 15}}, 1, true}});
+
+            auto before = count.load(std::memory_order_acquire);
+            count.wait(before, std::memory_order_acquire);
+
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
+            latest = std::move(s);
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    CrossFieldModel model;
+    std::vector<prism::Connection> connections;
+
+    auto backend = prism::Backend{std::make_unique<CrossBackend>(latest_snap, snap_count)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model,
+        [&](prism::AppContext& ctx) {
+            auto sched = ctx.scheduler();
+            // Key pattern: on_change on one field sets another field.
+            // The lambda must capture model by reference (not a local lambda by ref).
+            connections.push_back(
+                model.input.on_change()
+                | prism::on(sched)
+                | prism::then([&model](const prism::Slider<>& s) {
+                      char buf[32];
+                      std::snprintf(buf, sizeof(buf), "value=%.1f", s.value);
+                      model.output.set({buf});
+                  })
+            );
+        }
+    );
+
+    CHECK(model.input.get().value > 0.8);
+    CHECK(model.output.get().value != "initial");
+}
 
 struct SliderClickModel {
     prism::Field<prism::Slider<>> volume{{.value = 0.0}};
@@ -208,7 +286,7 @@ TEST_CASE("model_app routes click to Slider and updates value") {
             REQUIRE_FALSE(geo->geometry.empty());
             auto [id, rect] = geo->geometry[0];
             cb(prism::WindowEvent{window_.id(), prism::MouseButton{
-                prism::Point{prism::X{rect.origin.x.raw() + 190}, prism::Y{rect.origin.y.raw() + 15}}, 1, true}});
+                prism::Point{prism::X{rect.origin.x.raw() + rect.extent.w.raw() * 0.95f}, prism::Y{rect.origin.y.raw() + 15}}, 1, true}});
 
             auto before = count.load(std::memory_order_acquire);
             count.wait(before, std::memory_order_acquire);

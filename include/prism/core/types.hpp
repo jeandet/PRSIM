@@ -241,6 +241,8 @@ constexpr Size operator*(Size s, float f) { return {s.w * f, s.h * f}; }
 constexpr Size operator*(float f, Size s) { return {f * s.w, f * s.h}; }
 constexpr Size operator/(Size s, float f) { return {s.w / f, s.h / f}; }
 
+enum class ExpandAxis { None, Both, Horizontal, Vertical };
+
 // User-defined literals
 namespace literals {
 constexpr X operator""_x(long double v) { return X{static_cast<float>(v)}; }

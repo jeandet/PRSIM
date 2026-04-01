@@ -187,8 +187,9 @@ void model_app(Backend& backend, Window& window, Model& model,
     backend.wait_ready();
     publish();
 
+    // AppContext must outlive setup — callbacks captured during setup use it.
+    auto ctx = AppContext(sched, anim_clock, window);
     if (setup) {
-        auto ctx = AppContext(sched, anim_clock, window);
         setup(ctx);
         schedule_tick();
     }

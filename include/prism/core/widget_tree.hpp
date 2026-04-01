@@ -1045,7 +1045,9 @@ private:
     }
 
     void update_canvas_bounds(LayoutNode& layout_node) {
-        if (layout_node.kind == LayoutNode::Kind::Canvas) {
+        if (layout_node.kind == LayoutNode::Kind::Canvas ||
+            (layout_node.kind == LayoutNode::Kind::Leaf &&
+             (layout_node.hint.expand || layout_node.hint.expand_axis != ExpandAxis::None))) {
             auto it = index_.find(layout_node.id);
             auto* wn = (it != index_.end()) ? it->second : nullptr;
             if (wn && wn->record) {
@@ -1367,6 +1369,8 @@ private:
                 leaf.id = node.id;
                 leaf.draws = node.draws;
                 leaf.overlay_draws = node.overlay_draws;
+                leaf.hint.expand = node.expand;
+                leaf.hint.expand_axis = node.expand_axis;
                 parent.children.push_back(std::move(leaf));
             }
         } else if (node.layout_kind == LK::Scroll) {

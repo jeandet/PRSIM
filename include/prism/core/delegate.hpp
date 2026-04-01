@@ -255,8 +255,9 @@ using EditState = std::variant<
 // needing the complete type in this header.
 struct WidgetNode;
 
-// Declared here, defined in widget_tree.hpp (after WidgetNode is complete).
+// Declared here, defined in widget_node.hpp (after WidgetNode is complete).
 const WidgetVisualState& node_vs(const WidgetNode& n);
+Size node_allocated(const WidgetNode& n);
 
 namespace detail {
 inline Rect make_rect(float x, float y, float w, float h) {
@@ -427,10 +428,18 @@ template <Numeric T, Orientation O>
 struct Delegate<Slider<T, O>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr bool vertical = (O == Orientation::Vertical);
-    static constexpr float track_len = 200.f;
+    static constexpr bool expand = true;
+    static constexpr ExpandAxis expand_axis = vertical ? ExpandAxis::Vertical : ExpandAxis::Horizontal;
+    static constexpr float min_track_len = 200.f;
     static constexpr float track_thick = 6.f;
     static constexpr float thumb_len = 12.f;
     static constexpr float widget_extent = 30.f;
+
+    static float track_len(const WidgetNode& node) {
+        auto sz = node_allocated(node);
+        float allocated = vertical ? sz.h.raw() : sz.w.raw();
+        return allocated > 0 ? allocated : min_track_len;
+    }
 
     static float ratio(const Slider<T, O>& s) {
         if (s.max == s.min) return 0.f;
@@ -441,6 +450,7 @@ struct Delegate<Slider<T, O>> {
         auto& vs = node_vs(node);
         auto& s = field.get();
         float r = ratio(s);
+        float tl = track_len(node);
 
         auto track_bg = vs.hovered ? Color::rgba(70, 70, 82) : Color::rgba(60, 60, 70);
         auto thumb_color = vs.pressed ? Color::rgba(0, 120, 180)
@@ -448,29 +458,28 @@ struct Delegate<Slider<T, O>> {
                          : Color::rgba(0, 140, 200);
 
         if constexpr (vertical) {
-            // Vertical: track runs top-to-bottom, bottom = min, top = max
             float track_x = (widget_extent - track_thick) / 2.f;
-            dl.filled_rect(detail::make_rect(track_x, 0, track_thick, track_len), track_bg);
-            float thumb_y = (1.f - r) * (track_len - thumb_len);
+            dl.filled_rect(detail::make_rect(track_x, 0, track_thick, tl), track_bg);
+            float thumb_y = (1.f - r) * (tl - thumb_len);
             dl.filled_rect(detail::make_rect(0, thumb_y, widget_extent, thumb_len), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(-1, -1, widget_extent + 2, track_len + 2),
+                dl.rect_outline(detail::make_rect(-1, -1, widget_extent + 2, tl + 2),
                                 Color::rgba(80, 160, 240), 2.0f);
         } else {
             float track_y = (widget_extent - track_thick) / 2.f;
-            dl.filled_rect(detail::make_rect(0, track_y, track_len, track_thick), track_bg);
-            float thumb_x = r * (track_len - thumb_len);
+            dl.filled_rect(detail::make_rect(0, track_y, tl, track_thick), track_bg);
+            float thumb_x = r * (tl - thumb_len);
             dl.filled_rect(detail::make_rect(thumb_x, 0, thumb_len, widget_extent), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(-1, -1, track_len + 2, widget_extent + 2),
+                dl.rect_outline(detail::make_rect(-1, -1, tl + 2, widget_extent + 2),
                                 Color::rgba(80, 160, 240), 2.0f);
         }
     }
 
-    static void apply_position(Field<Slider<T, O>>& field, float pos) {
-        // For vertical, invert: top of track = max, bottom = min
-        float t = vertical ? std::clamp(1.f - pos / track_len, 0.f, 1.f)
-                           : std::clamp(pos / track_len, 0.f, 1.f);
+    static void apply_position(Field<Slider<T, O>>& field, float pos, const WidgetNode& node) {
+        float tl = track_len(node);
+        float t = vertical ? std::clamp(1.f - pos / tl, 0.f, 1.f)
+                           : std::clamp(pos / tl, 0.f, 1.f);
         auto& s = field.get();
         T raw = static_cast<T>(s.min + t * (s.max - s.min));
         Slider<T, O> updated = s;
@@ -486,9 +495,9 @@ struct Delegate<Slider<T, O>> {
     static void handle_input(Field<Slider<T, O>>& field, const InputEvent& ev, WidgetNode& node) {
         auto extract = [](auto& e) { return vertical ? e.position.y.raw() : e.position.x.raw(); };
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
-            apply_position(field, extract(*mb));
+            apply_position(field, extract(*mb), node);
         if (auto* mm = std::get_if<MouseMove>(&ev); mm && node_vs(node).pressed)
-            apply_position(field, extract(*mm));
+            apply_position(field, extract(*mm), node);
     }
 };
 
