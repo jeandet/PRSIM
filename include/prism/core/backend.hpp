@@ -9,10 +9,6 @@
 
 namespace prism {
 
-// Kept as a type alias during migration — existing code using BackendConfig
-// can switch to WindowConfig at its own pace.
-using BackendConfig = WindowConfig;
-
 class BackendBase {
 public:
     virtual ~BackendBase();
