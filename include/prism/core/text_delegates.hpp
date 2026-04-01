@@ -45,32 +45,33 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     auto& es = get_text_edit_state(node);
     float cw = char_width(tf_font_size);
 
-    auto bg = vs.focused ? Color::rgba(65, 65, 78)
-            : vs.hovered ? Color::rgba(55, 55, 68)
-            : Color::rgba(45, 45, 55);
+    auto& t = *node.theme;
+    auto bg = vs.focused ? t.surface_active
+            : vs.hovered ? t.surface_hover
+            : t.surface;
     dl.filled_rect(make_rect(0, 0, tf_widget_w, tf_widget_h), bg);
 
     if (vs.focused)
         dl.rect_outline(make_rect(-1, -1, tf_widget_w + 2, tf_widget_h + 2),
-                        Color::rgba(80, 160, 240), 2.0f);
+                        t.focus_ring, 2.0f);
 
     float text_area_w = tf_widget_w - 2 * tf_padding;
     dl.clip_push(make_point(tf_padding, 0), Size{Width{text_area_w}, Height{tf_widget_h}});
 
     if (sf.value.empty() && !vs.focused) {
         dl.text(sf.placeholder, make_point(0, tf_padding + 2), tf_font_size,
-                Color::rgba(120, 120, 130));
+                t.text_placeholder);
     } else {
         float text_x = -es.scroll_offset;
         std::string display_text = display_fn(std::string(sf.value.data(), sf.value.size()));
         dl.text(display_text, make_point(text_x, tf_padding + 2), tf_font_size,
-                Color::rgba(220, 220, 220));
+                t.text);
     }
 
     if (vs.focused) {
         float cursor_x = static_cast<float>(es.cursor) * cw - es.scroll_offset;
         dl.filled_rect(make_rect(cursor_x, tf_padding, tf_cursor_w, tf_widget_h - 2 * tf_padding),
-                       Color::rgba(220, 220, 240));
+                       t.cursor);
     }
 
     dl.clip_pop();
@@ -231,14 +232,15 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
     float widget_h = ta_padding * 2 + text_area_h;
 
-    auto bg = vs.focused ? Color::rgba(65, 65, 78)
-            : vs.hovered ? Color::rgba(55, 55, 68)
-            : Color::rgba(45, 45, 55);
+    auto& t = *node.theme;
+    auto bg = vs.focused ? t.surface_active
+            : vs.hovered ? t.surface_hover
+            : t.surface;
     dl.filled_rect(make_rect(0, 0, ta_widget_w, widget_h), bg);
 
     if (vs.focused)
         dl.rect_outline(make_rect(-1, -1, ta_widget_w + 2, widget_h + 2),
-                        Color::rgba(80, 160, 240), 2.0f);
+                        t.focus_ring, 2.0f);
 
     dl.clip_push(make_point(ta_padding, ta_padding), Size{Width{text_area_w}, Height{text_area_h}});
 
@@ -246,7 +248,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
                               text_area_w, cw);
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, make_point(0, 2), ta_font_size, Color::rgba(120, 120, 130));
+        dl.text(sf.placeholder, make_point(0, 2), ta_font_size, t.text_placeholder);
     } else {
         for (size_t i = 0; i < wrapped.size(); ++i) {
             float y = static_cast<float>(i) * ta_line_height - es.scroll_y;
@@ -254,7 +256,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
             if (y > text_area_h) break;
             if (wrapped[i].length > 0) {
                 std::string line_text(sf.value.data() + wrapped[i].start, wrapped[i].length);
-                dl.text(line_text, make_point(0, y + 2), ta_font_size, Color::rgba(220, 220, 220));
+                dl.text(line_text, make_point(0, y + 2), ta_font_size, t.text);
             }
         }
     }
@@ -263,7 +265,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
         auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
         float cx = static_cast<float>(col) * cw;
         float cy = static_cast<float>(line) * ta_line_height - es.scroll_y;
-        dl.filled_rect(make_rect(cx, cy, ta_cursor_w, ta_line_height), Color::rgba(220, 220, 240));
+        dl.filled_rect(make_rect(cx, cy, ta_cursor_w, ta_line_height), t.cursor);
     }
 
     dl.clip_pop();
