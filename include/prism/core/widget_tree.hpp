@@ -641,6 +641,7 @@ public:
             layout.kind = (root_.layout_kind == LayoutKind::Row)
                 ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
             layout.id = root_.id;
+            layout.theme = &theme_;
             for (auto& c : root_.children)
                 build_layout(c, layout);
 
@@ -1244,10 +1245,10 @@ private:
                             ts->selected_row.get().value() == row_idx;
 
             auto bg = (row_idx % 2 == 0)
-                ? Color::rgba(30, 30, 50)
-                : Color::rgba(26, 26, 46);
+                ? wn.theme->table_row_even
+                : wn.theme->table_row_odd;
             if (selected)
-                bg = Color::rgba(50, 50, 120);
+                bg = wn.theme->table_selected;
 
             float total_w = col_w * static_cast<float>(ts->column_count);
             wn.draws.filled_rect(
@@ -1263,14 +1264,14 @@ private:
                     Size{Width{col_w}, ts->row_height});
                 wn.draws.text(std::move(txt),
                     Point{X{4.f}, Y{4.f}},
-                    14.f, Color::rgba(200, 200, 220));
+                    14.f, wn.theme->text);
                 wn.draws.clip_pop();
 
                 if (c > 0) {
                     wn.draws.filled_rect(
                         Rect{Point{X{cx}, Y{0}},
                              Size{Width{1.f}, ts->row_height}},
-                        Color::rgba(50, 50, 70));
+                        wn.theme->table_divider);
                 }
             }
 
@@ -1291,7 +1292,7 @@ private:
             auto hdr = ts->column_header(c);
             node.overlay_draws.text(std::string(hdr),
                 Point{X{cx + 4.f}, Y{4.f}},
-                14.f, Color::rgba(136, 136, 204));
+                14.f, node.theme->table_header_text);
         }
 
         // Wire input handler for selection (only once)
@@ -1390,11 +1391,13 @@ private:
                 LayoutNode spacer;
                 spacer.kind = LayoutNode::Kind::Spacer;
                 spacer.id = node.id;
+                spacer.theme = node.theme;
                 parent.children.push_back(std::move(spacer));
             } else if (node.layout_kind == LK::Canvas) {
                 LayoutNode canvas;
                 canvas.kind = LayoutNode::Kind::Canvas;
                 canvas.id = node.id;
+                canvas.theme = node.theme;
                 canvas.draws = node.draws;
                 canvas.overlay_draws = node.overlay_draws;
                 parent.children.push_back(std::move(canvas));
@@ -1402,6 +1405,7 @@ private:
                 LayoutNode leaf;
                 leaf.kind = LayoutNode::Kind::Leaf;
                 leaf.id = node.id;
+                leaf.theme = node.theme;
                 leaf.draws = node.draws;
                 leaf.overlay_draws = node.overlay_draws;
                 leaf.hint.expand = node.expand;
@@ -1412,6 +1416,7 @@ private:
             LayoutNode container;
             container.kind = LayoutNode::Kind::Scroll;
             container.id = node.id;
+            container.theme = node.theme;
             if (auto* ss = std::get_if<ScrollState>(&node.edit_state))
                 container.scroll_offset = ss->offset_y;
             for (auto& c : node.children)
@@ -1421,6 +1426,7 @@ private:
             LayoutNode container;
             container.kind = LayoutNode::Kind::VirtualList;
             container.id = node.id;
+            container.theme = node.theme;
             if (auto* vls = get_vlist_state(node)) {
                 container.scroll_offset = vls->scroll_offset;
                 container.scroll_content_h = Height{
@@ -1435,6 +1441,7 @@ private:
             LayoutNode container;
             container.kind = LayoutNode::Kind::Table;
             container.id = node.id;
+            container.theme = node.theme;
             if (auto* ts = get_table_state(node)) {
                 container.scroll_offset = ts->scroll_y;
                 container.scroll_content_h = Height{
@@ -1453,6 +1460,7 @@ private:
             LayoutNode container;
             container.kind = LayoutNode::Kind::Tabs;
             container.id = node.id;
+            container.theme = node.theme;
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));
@@ -1461,6 +1469,7 @@ private:
             container.kind = (node.layout_kind == LK::Row)
                 ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
             container.id = node.id;
+            container.theme = node.theme;
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));

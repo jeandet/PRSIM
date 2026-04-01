@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/draw_list.hpp>
+#include <prism/core/context.hpp>
 #include <prism/core/scene_snapshot.hpp>
 
 #include <algorithm>
@@ -32,6 +33,10 @@ struct SizeHint {
     ExpandAxis expand_axis = ExpandAxis::None;
 };
 
+namespace detail {
+    inline const Theme layout_default_theme = default_theme();
+}
+
 struct LayoutNode {
     WidgetId id = 0;
     SizeHint hint;
@@ -47,6 +52,7 @@ struct LayoutNode {
     DX table_scroll_x{0};
     size_t table_column_count = 0;
     float table_header_h = 0;
+    const Theme* theme = &detail::layout_default_theme;
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
@@ -271,11 +277,11 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         header_dl.clip_push(vp.origin, Size{vp.extent.w, Height{header_h}});
         header_dl.filled_rect(
             Rect{vp.origin, Size{vp.extent.w, Height{header_h}}},
-            Color::rgba(42, 42, 74));
+            node.theme->table_header);
         header_dl.filled_rect(
             Rect{Point{vp.origin.x, vp.origin.y + DY{header_h - 2.f}},
                  Size{vp.extent.w, Height{2.f}}},
-            Color::rgba(74, 74, 106));
+            node.theme->table_header_divider);
         // Header cell text
         DX hdr_dx{vp.origin.x.raw()};
         DY hdr_dy{vp.origin.y.raw()};
@@ -337,7 +343,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
             snap.overlay.filled_rect(
                 Rect{Point{track_rect.origin.x, body_rect.origin.y + DY{thumb_y}},
                      Size{Width{scrollbar::track_width}, thumb_h}},
-                Color::rgba(120, 120, 130, 160));
+                node.theme->scrollbar_thumb);
             snap.overlay_geometry.push_back({node.id, track_rect});
         }
 
@@ -392,7 +398,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
                 Point{vp.origin.x + DX{vp.extent.w.raw() - scrollbar::track_inset.raw()},
                       vp.origin.y + DY{thumb_y}},
                 Size{Width{scrollbar::track_width}, thumb_h}};
-            snap.overlay.filled_rect(thumb_rect, Color::rgba(120, 120, 130, 160));
+            snap.overlay.filled_rect(thumb_rect, node.theme->scrollbar_thumb);
             snap.overlay_geometry.push_back({node.id, thumb_rect});
         }
 
