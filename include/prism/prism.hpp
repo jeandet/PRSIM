@@ -3,6 +3,8 @@
 #include <prism/core/app.hpp>
 #include <prism/core/atomic_cell.hpp>
 #include <prism/core/backend.hpp>
+#include <prism/core/window.hpp>
+#include <prism/core/headless_window.hpp>
 #include <prism/core/context.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/hit_test.hpp>

@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <thread>
 
 namespace prism {
@@ -60,11 +61,15 @@ struct AppAccess {
 
 class App {
 public:
-    explicit App(BackendConfig config)
-        : backend_(Backend::software(config)), config_(config) {}
+    explicit App(WindowConfig config)
+        : owned_backend_(Backend::software(RenderConfig{}))
+    {
+        backend_ = &*owned_backend_;
+        window_ = &backend_->create_window(config);
+    }
 
-    explicit App(Backend backend, BackendConfig config = {})
-        : backend_(std::move(backend)), config_(config) {}
+    explicit App(Backend& backend, Window& window)
+        : backend_(&backend), window_(&window) {}
 
     ~App() = default;
 
@@ -83,18 +88,18 @@ public:
 
         Frame frame;
         uint64_t version = 0;
-        int w = config_.width;
-        int h = config_.height;
+        auto [w, h] = window_->size();
 
         auto publish = [&] {
             frame.reset(w, h);
             on_frame(frame);
-            backend_.submit(frame.take_snapshot(++version));
-            backend_.wake();
+            backend_->submit(window_->id(), frame.take_snapshot(++version));
+            backend_->wake();
         };
 
         std::thread backend_thread([&] {
-            backend_.run([&](const InputEvent& ev) {
+            backend_->run([&](const WindowEvent& we) {
+                const auto& ev = we.event;
                 exec::start_detached(
                     stdexec::schedule(sched)
                     | stdexec::then([&, ev] {
@@ -112,17 +117,18 @@ public:
             });
         });
 
-        backend_.wait_ready();
+        backend_->wait_ready();
         publish();
         loop.run();
         loop_ = nullptr;
-        backend_.quit();
+        backend_->quit();
         backend_thread.join();
     }
 
 private:
-    Backend backend_;
-    BackendConfig config_;
+    std::optional<Backend> owned_backend_;
+    Backend* backend_ = nullptr;
+    Window* window_ = nullptr;
     stdexec::run_loop* loop_ = nullptr;
     bool quit_requested_ = false;
 };

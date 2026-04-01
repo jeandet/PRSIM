@@ -17,10 +17,11 @@ TEST_CASE("TestBackend fires events then WindowClose") {
         prism::KeyPress{42, 0},
     };
     prism::TestBackend tb{events};
+    tb.create_window({});
     std::vector<prism::InputEvent> received;
 
-    tb.run([&](const prism::InputEvent& ev) {
-        received.push_back(ev);
+    tb.run([&](const prism::WindowEvent& we) {
+        received.push_back(we.event);
     });
 
     REQUIRE(received.size() == 3);
@@ -31,10 +32,11 @@ TEST_CASE("TestBackend fires events then WindowClose") {
 
 TEST_CASE("TestBackend with no events fires only WindowClose") {
     prism::TestBackend tb{{}};
+    tb.create_window({});
     std::vector<prism::InputEvent> received;
 
-    tb.run([&](const prism::InputEvent& ev) {
-        received.push_back(ev);
+    tb.run([&](const prism::WindowEvent& we) {
+        received.push_back(we.event);
     });
 
     REQUIRE(received.size() == 1);
@@ -46,10 +48,11 @@ TEST_CASE("TestBackend works through Backend wrapper") {
         prism::MouseMove{P(10, 20)},
     };
     auto backend = prism::Backend{std::make_unique<prism::TestBackend>(events)};
+    backend.create_window({});
     std::vector<prism::InputEvent> received;
 
-    backend.run([&](const prism::InputEvent& ev) {
-        received.push_back(ev);
+    backend.run([&](const prism::WindowEvent& we) {
+        received.push_back(we.event);
     });
 
     REQUIRE(received.size() == 2);

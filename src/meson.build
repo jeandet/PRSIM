@@ -31,6 +31,7 @@ font_path = meson.project_source_root() / 'assets' / 'fonts' / 'JetBrainsMonoNer
 prism_software_backend_lib = library('prism-software-backend',
   'backend.cpp',
   'backends/software_backend.cpp',
+  'backends/sdl_window.cpp',
   dependencies : [prism_core_dep, sdl3_dep, sdl3_ttf_dep],
   cpp_args : ['-DPRISM_FONT_PATH="' + font_path + '"'],
   install : true,

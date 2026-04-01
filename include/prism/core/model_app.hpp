@@ -17,13 +17,16 @@ class AppContext {
 public:
     using scheduler_type = decltype(std::declval<stdexec::run_loop>().get_scheduler());
 
-    explicit AppContext(scheduler_type s, AnimationClock& c) : sched_(s), clock_(&c) {}
+    explicit AppContext(scheduler_type s, AnimationClock& c, Window& w)
+        : sched_(s), clock_(&c), window_(&w) {}
     scheduler_type scheduler() const { return sched_; }
     AnimationClock& clock() { return *clock_; }
+    Window& window() { return *window_; }
 
 private:
     scheduler_type sched_;
     AnimationClock* clock_;
+    Window* window_;
 };
 
 namespace detail {
@@ -102,7 +105,7 @@ inline void route_text_input(WidgetTree& tree, const InputEvent& ev) {
 } // namespace detail
 
 template <typename Model>
-void model_app(Backend backend, BackendConfig cfg, Model& model,
+void model_app(Backend& backend, Window& window, Model& model,
                std::function<void(AppContext&)> setup = nullptr) {
     stdexec::run_loop loop;
     auto sched = loop.get_scheduler();
@@ -110,7 +113,7 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
     WidgetTree tree(model);
     AnimationClock anim_clock;
     bool tick_scheduled = false;
-    int w = cfg.width, h = cfg.height;
+    auto [w, h] = window.size();
     uint64_t version = 0;
 
     std::shared_ptr<const SceneSnapshot> current_snap;
@@ -118,7 +121,7 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
     auto publish = [&] {
         current_snap = std::shared_ptr<const SceneSnapshot>(
             tree.build_snapshot(w, h, ++version));
-        backend.submit(current_snap);
+        backend.submit(window.id(), current_snap);
         backend.wake();
         tree.clear_dirty();
     };
@@ -141,7 +144,8 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
     };
 
     std::thread backend_thread([&] {
-        backend.run([&](const InputEvent& ev) {
+        backend.run([&](const WindowEvent& we) {
+            const auto& ev = we.event;
             exec::start_detached(
                 stdexec::schedule(sched)
                 | stdexec::then([&, ev] {
@@ -181,7 +185,7 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
     publish();
 
     if (setup) {
-        auto ctx = AppContext(sched, anim_clock);
+        auto ctx = AppContext(sched, anim_clock, window);
         setup(ctx);
         schedule_tick();
     }
@@ -195,8 +199,9 @@ void model_app(Backend backend, BackendConfig cfg, Model& model,
 template <typename Model>
 void model_app(std::string_view title, Model& model,
                std::function<void(AppContext&)> setup = nullptr) {
-    BackendConfig cfg{.title = title.data(), .width = 800, .height = 600};
-    model_app(Backend::software(cfg), cfg, model, std::move(setup));
+    auto backend = Backend::software(RenderConfig{});
+    auto& window = backend.create_window(WindowConfig{.title = title.data()});
+    model_app(backend, window, model, std::move(setup));
 }
 
 } // namespace prism

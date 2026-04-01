@@ -120,10 +120,7 @@ private:
     }
 
     template <typename S>
-    friend void app(Backend, BackendConfig, S,
-                    std::function<void(Ui<S>&)>, UpdateFn<S>);
-    template <typename S>
-    friend void app(Backend, BackendConfig,
+    friend void app(Backend&, Window&, S,
                     std::function<void(Ui<S>&)>, UpdateFn<S>);
     template <typename S>
     friend void app(std::string_view, S,
@@ -134,26 +131,27 @@ private:
 };
 
 template <typename State>
-void app(Backend backend, BackendConfig cfg, State initial,
+void app(Backend& backend, Window& window, State initial,
          std::function<void(Ui<State>&)> view, UpdateFn<State> update = {}) {
     stdexec::run_loop loop;
     auto sched = loop.get_scheduler();
 
     State state = std::move(initial);
     Frame frame;
-    int w = cfg.width, h = cfg.height;
+    auto [w, h] = window.size();
     uint64_t version = 0;
 
     auto publish = [&] {
         AppAccess::reset(frame, w, h);
         Ui<State> ui(state, frame);
         view(ui);
-        backend.submit(ui.take_snapshot(w, h, ++version));
+        backend.submit(window.id(), ui.take_snapshot(w, h, ++version));
         backend.wake();
     };
 
     std::thread backend_thread([&] {
-        backend.run([&](const InputEvent& ev) {
+        backend.run([&](const WindowEvent& we) {
+            const auto& ev = we.event;
             exec::start_detached(
                 stdexec::schedule(sched)
                 | stdexec::then([&, ev] {
@@ -181,16 +179,11 @@ void app(Backend backend, BackendConfig cfg, State initial,
 }
 
 template <typename State>
-void app(Backend backend, BackendConfig cfg,
-         std::function<void(Ui<State>&)> view, UpdateFn<State> update = {}) {
-    app<State>(std::move(backend), cfg, State{}, std::move(view), std::move(update));
-}
-
-template <typename State>
 void app(std::string_view title, State initial,
          std::function<void(Ui<State>&)> view, UpdateFn<State> update = {}) {
-    BackendConfig cfg{.title = title.data(), .width = 800, .height = 600};
-    app<State>(Backend::software(cfg), cfg, std::move(initial), std::move(view), std::move(update));
+    auto backend = Backend::software(RenderConfig{});
+    auto& window = backend.create_window(WindowConfig{.title = title.data()});
+    app<State>(backend, window, std::move(initial), std::move(view), std::move(update));
 }
 
 template <typename State>

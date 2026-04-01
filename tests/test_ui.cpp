@@ -4,6 +4,7 @@
 #include <prism/core/ui.hpp>
 #include <prism/core/null_backend.hpp>
 #include <prism/core/test_backend.hpp>
+#include <prism/core/headless_window.hpp>
 
 #include <string>
 
@@ -22,9 +23,10 @@ struct TestState {
 TEST_CASE("app<State> runs view at least once") {
     int call_count = 0;
 
+    auto backend = prism::Backend{std::make_unique<prism::NullBackend>()};
+    auto& window = backend.create_window({});
     prism::app<TestState>(
-        prism::Backend{std::make_unique<prism::NullBackend>()},
-        {},
+        backend, window,
         TestState{},
         [&](prism::Ui<TestState>& /*ui*/) {
             ++call_count;
@@ -35,9 +37,10 @@ TEST_CASE("app<State> runs view at least once") {
 }
 
 TEST_CASE("ui-> gives read-only state access") {
+    auto backend = prism::Backend{std::make_unique<prism::NullBackend>()};
+    auto& window = backend.create_window({});
     prism::app<TestState>(
-        prism::Backend{std::make_unique<prism::NullBackend>()},
-        {},
+        backend, window,
         TestState{.count = 7, .name = "world"},
         [](prism::Ui<TestState>& ui) {
             CHECK(ui->count == 7);
@@ -50,9 +53,10 @@ TEST_CASE("ui-> gives read-only state access") {
 TEST_CASE("ui.frame() records draw commands") {
     bool drew = false;
 
+    auto backend = prism::Backend{std::make_unique<prism::NullBackend>()};
+    auto& window = backend.create_window({});
     prism::app<TestState>(
-        prism::Backend{std::make_unique<prism::NullBackend>()},
-        {},
+        backend, window,
         TestState{},
         [&](prism::Ui<TestState>& ui) {
             ui.frame().filled_rect(R(10, 10, 50, 50), prism::Color::rgba(255, 0, 0));
@@ -64,9 +68,11 @@ TEST_CASE("ui.frame() records draw commands") {
 }
 
 TEST_CASE("app<State> default-constructs state when not provided") {
+    auto backend = prism::Backend{std::make_unique<prism::NullBackend>()};
+    auto& window = backend.create_window({});
     prism::app<TestState>(
-        prism::Backend{std::make_unique<prism::NullBackend>()},
-        {},
+        backend, window,
+        TestState{},
         [](prism::Ui<TestState>& ui) {
             CHECK(ui->count == 42);
             CHECK(ui->name == "hello");
@@ -76,9 +82,10 @@ TEST_CASE("app<State> default-constructs state when not provided") {
 
 TEST_CASE("convenience overload with title creates software-like flow") {
     int called = 0;
+    auto backend = prism::Backend{std::make_unique<prism::NullBackend>()};
+    auto& window = backend.create_window({});
     prism::app<TestState>(
-        prism::Backend{std::make_unique<prism::NullBackend>()},
-        {},
+        backend, window,
         TestState{.count = 99},
         [&](prism::Ui<TestState>& ui) {
             CHECK(ui->count == 99);
@@ -96,9 +103,10 @@ TEST_CASE("update callback mutates state on mouse click") {
     };
 
     int last_seen_clicks = -1;
+    auto backend = prism::Backend{std::make_unique<prism::TestBackend>(events)};
+    auto& window = backend.create_window({});
     prism::app<ClickState>(
-        prism::Backend{std::make_unique<prism::TestBackend>(events)},
-        {},
+        backend, window,
         ClickState{},
         [&](prism::Ui<ClickState>& ui) {
             last_seen_clicks = ui->clicks;
@@ -121,9 +129,10 @@ TEST_CASE("update callback mutates state on key press") {
     };
 
     float last_x = -1;
+    auto backend = prism::Backend{std::make_unique<prism::TestBackend>(events)};
+    auto& window = backend.create_window({});
     prism::app<MoveState>(
-        prism::Backend{std::make_unique<prism::TestBackend>(events)},
-        {},
+        backend, window,
         MoveState{},
         [&](prism::Ui<MoveState>& ui) {
             last_x = ui->x;
@@ -147,9 +156,10 @@ TEST_CASE("multiple events accumulate state changes") {
     };
 
     int last_n = -1;
+    auto backend = prism::Backend{std::make_unique<prism::TestBackend>(events)};
+    auto& window = backend.create_window({});
     prism::app<CountState>(
-        prism::Backend{std::make_unique<prism::TestBackend>(events)},
-        {},
+        backend, window,
         CountState{},
         [&](prism::Ui<CountState>& ui) {
             last_n = ui->n;
@@ -164,9 +174,10 @@ TEST_CASE("multiple events accumulate state changes") {
 
 TEST_CASE("no update callback is safe (existing behavior)") {
     int called = 0;
+    auto backend = prism::Backend{std::make_unique<prism::NullBackend>()};
+    auto& window = backend.create_window({});
     prism::app<TestState>(
-        prism::Backend{std::make_unique<prism::NullBackend>()},
-        {},
+        backend, window,
         TestState{},
         [&](prism::Ui<TestState>& /*ui*/) {
             ++called;
@@ -183,9 +194,10 @@ TEST_CASE("WindowResize is forwarded to update callback") {
     };
 
     int last_w = -1;
+    auto backend = prism::Backend{std::make_unique<prism::TestBackend>(events)};
+    auto& window = backend.create_window({});
     prism::app<ResizeState>(
-        prism::Backend{std::make_unique<prism::TestBackend>(events)},
-        {},
+        backend, window,
         ResizeState{},
         [&](prism::Ui<ResizeState>& ui) {
             last_w = ui->last_w;
@@ -205,21 +217,27 @@ TEST_CASE("ui.row() produces per-widget geometry in snapshot") {
 
     struct CapturingBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        prism::HeadlessWindow window_{0, {}};
         explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
             : snap_ref(s) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
-            cb(prism::WindowClose{});
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             snap_ref = std::move(s);
         }
         void wake() override {}
         void quit() override {}
     };
 
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>(captured_snap)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
     prism::app<S>(
-        prism::Backend{std::make_unique<CapturingBackend>(captured_snap)},
-        prism::BackendConfig{.width = 800, .height = 600},
+        backend, window,
         S{},
         [](prism::Ui<S>& ui) {
             ui.row([&] {
@@ -249,21 +267,27 @@ TEST_CASE("ui.column() stacks children vertically") {
 
     struct CapturingBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        prism::HeadlessWindow window_{0, {}};
         explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
             : snap_ref(s) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
-            cb(prism::WindowClose{});
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             snap_ref = std::move(s);
         }
         void wake() override {}
         void quit() override {}
     };
 
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>(captured_snap)};
+    auto& window = backend.create_window({.width = 400, .height = 300});
     prism::app<S>(
-        prism::Backend{std::make_unique<CapturingBackend>(captured_snap)},
-        prism::BackendConfig{.width = 400, .height = 300},
+        backend, window,
         S{},
         [](prism::Ui<S>& ui) {
             ui.column([&] {
@@ -289,21 +313,27 @@ TEST_CASE("ui.frame() without layout works as before (backward compat)") {
 
     struct CapturingBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        prism::HeadlessWindow window_{0, {}};
         explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
             : snap_ref(s) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
-            cb(prism::WindowClose{});
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             snap_ref = std::move(s);
         }
         void wake() override {}
         void quit() override {}
     };
 
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>(captured_snap)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
     prism::app<S>(
-        prism::Backend{std::make_unique<CapturingBackend>(captured_snap)},
-        prism::BackendConfig{.width = 800, .height = 600},
+        backend, window,
         S{},
         [](prism::Ui<S>& ui) {
             ui.frame().filled_rect(R(10, 10, 50, 50),

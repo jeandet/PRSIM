@@ -3,6 +3,7 @@
 
 #include <prism/core/model_app.hpp>
 #include <prism/core/null_backend.hpp>
+#include <prism/core/headless_window.hpp>
 #include <prism/core/field.hpp>
 #include <prism/core/hit_test.hpp>
 #include <prism/core/scene_snapshot.hpp>
@@ -32,12 +33,17 @@ TEST_CASE("model_app runs and produces a snapshot") {
 
     struct CapturingBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        prism::HeadlessWindow window_{0, {}};
         explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
             : snap_ref(s) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
-            cb(prism::WindowClose{});
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             snap_ref = std::move(s);
         }
         void wake() override {}
@@ -45,11 +51,9 @@ TEST_CASE("model_app runs and produces a snapshot") {
     };
 
     TestModel model;
-    prism::model_app(
-        prism::Backend{std::make_unique<CapturingBackend>(captured)},
-        prism::BackendConfig{.width = 800, .height = 600},
-        model
-    );
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>(captured)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
 
     REQUIRE(captured != nullptr);
     CHECK(captured->geometry.size() == 2);
@@ -60,12 +64,17 @@ TEST_CASE("model_app with nested model") {
 
     struct CapturingBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& snap_ref;
+        prism::HeadlessWindow window_{0, {}};
         explicit CapturingBackend(std::shared_ptr<const prism::SceneSnapshot>& s)
             : snap_ref(s) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
-            cb(prism::WindowClose{});
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             snap_ref = std::move(s);
         }
         void wake() override {}
@@ -73,11 +82,9 @@ TEST_CASE("model_app with nested model") {
     };
 
     NestedTestModel model;
-    prism::model_app(
-        prism::Backend{std::make_unique<CapturingBackend>(captured)},
-        prism::BackendConfig{.width = 800, .height = 600},
-        model
-    );
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>(captured)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
 
     REQUIRE(captured != nullptr);
     CHECK(captured->geometry.size() == 3);
@@ -98,23 +105,28 @@ TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
     struct ClickBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& latest;
         std::atomic<size_t>& count;
+        prism::HeadlessWindow window_{0, {}};
         ClickBackend(std::shared_ptr<const prism::SceneSnapshot>& l, std::atomic<size_t>& c)
             : latest(l), count(c) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
             count.wait(0, std::memory_order_acquire);
             auto geo = latest;
             REQUIRE_FALSE(geo->geometry.empty());
             auto [id, rect] = geo->geometry[0];
             auto center = rect.center();
 
-            cb(prism::MouseButton{center, 1, true});
+            cb(prism::WindowEvent{window_.id(), prism::MouseButton{center, 1, true}});
 
             auto before = count.load(std::memory_order_acquire);
             count.wait(before, std::memory_order_acquire);
 
-            cb(prism::WindowClose{});
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             latest = std::move(s);
             count.fetch_add(1, std::memory_order_release);
             count.notify_all();
@@ -126,37 +138,40 @@ TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
     ClickTestModel model;
     CHECK(model.toggle.get() == false);
 
-    prism::model_app(
-        prism::Backend{std::make_unique<ClickBackend>(latest_snap, snap_count)},
-        prism::BackendConfig{.width = 800, .height = 600},
-        model
-    );
+    auto backend = prism::Backend{std::make_unique<ClickBackend>(latest_snap, snap_count)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
 
     CHECK(model.toggle.get() == true);
     CHECK(snap_count.load() >= 2);
 }
 
-TEST_CASE("model_app setup callback receives scheduler") {
+TEST_CASE("model_app setup callback receives scheduler and window") {
     bool setup_called = false;
 
     struct SetupBackend final : public prism::BackendBase {
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
-            cb(prism::WindowClose{});
+        prism::HeadlessWindow window_{0, {}};
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
         void wake() override {}
         void quit() override {}
     };
 
     TestModel model;
-    prism::model_app(
-        prism::Backend{std::make_unique<SetupBackend>()},
-        prism::BackendConfig{.width = 800, .height = 600},
-        model,
+    auto backend = prism::Backend{std::make_unique<SetupBackend>()};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model,
         [&](prism::AppContext& ctx) {
             setup_called = true;
             auto sched = ctx.scheduler();
             (void)sched;
+            CHECK(ctx.window().id() == 1);
         }
     );
 
@@ -180,22 +195,27 @@ TEST_CASE("model_app routes click to Slider and updates value") {
     struct SliderBackend final : public prism::BackendBase {
         std::shared_ptr<const prism::SceneSnapshot>& latest;
         std::atomic<size_t>& count;
+        prism::HeadlessWindow window_{0, {}};
         SliderBackend(std::shared_ptr<const prism::SceneSnapshot>& l, std::atomic<size_t>& c)
             : latest(l), count(c) {}
-        void run(std::function<void(const prism::InputEvent&)> cb) override {
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
             count.wait(0, std::memory_order_acquire);
             auto geo = latest;
             REQUIRE_FALSE(geo->geometry.empty());
             auto [id, rect] = geo->geometry[0];
-            // Click at the right edge of the track → value near 1.0
-            cb(prism::MouseButton{prism::Point{prism::X{rect.origin.x.raw() + 190}, prism::Y{rect.origin.y.raw() + 15}}, 1, true});
+            cb(prism::WindowEvent{window_.id(), prism::MouseButton{
+                prism::Point{prism::X{rect.origin.x.raw() + 190}, prism::Y{rect.origin.y.raw() + 15}}, 1, true}});
 
             auto before = count.load(std::memory_order_acquire);
             count.wait(before, std::memory_order_acquire);
 
-            cb(prism::WindowClose{});
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
         }
-        void submit(std::shared_ptr<const prism::SceneSnapshot> s) override {
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
             latest = std::move(s);
             count.fetch_add(1, std::memory_order_release);
             count.notify_all();
@@ -205,11 +225,9 @@ TEST_CASE("model_app routes click to Slider and updates value") {
     };
 
     SliderClickModel model;
-    prism::model_app(
-        prism::Backend{std::make_unique<SliderBackend>(latest_snap, snap_count)},
-        prism::BackendConfig{.width = 800, .height = 600},
-        model
-    );
+    auto backend = prism::Backend{std::make_unique<SliderBackend>(latest_snap, snap_count)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
 
     CHECK(model.volume.get().value > 0.8);
 }

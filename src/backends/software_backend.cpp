@@ -1,23 +1,10 @@
 #include <prism/backends/software_backend.hpp>
 
-#include <SDL3/SDL.h>
-#include <SDL3_ttf/SDL_ttf.h>
-
 #include <cmath>
 
 namespace prism {
 
-namespace {
-
-SDL_FRect to_sdl(Rect r) {
-    return {r.origin.x.raw(), r.origin.y.raw(), r.extent.w.raw(), r.extent.h.raw()};
-}
-
-SDL_Color to_sdl(Color c) {
-    return {c.r, c.g, c.b, c.a};
-}
-
-const char* resolve_font_path(const BackendConfig& cfg) {
+const char* SoftwareBackend::resolve_font_path(const RenderConfig& cfg) {
     if (cfg.font_path) return cfg.font_path;
 #ifdef PRISM_FONT_PATH
     return PRISM_FONT_PATH;
@@ -26,71 +13,107 @@ const char* resolve_font_path(const BackendConfig& cfg) {
 #endif
 }
 
-} // namespace
-
-SoftwareBackend::SoftwareBackend(BackendConfig cfg)
-    : config_(cfg)
+SoftwareBackend::SoftwareBackend(RenderConfig cfg)
+    : render_config_(cfg)
 {}
 
 SoftwareBackend::~SoftwareBackend() {
     if (font_) TTF_CloseFont(font_);
     TTF_Quit();
-    if (renderer_) SDL_DestroyRenderer(renderer_);
-    if (window_) SDL_DestroyWindow(window_);
+    windows_.clear();
     SDL_Quit();
 }
 
-void SoftwareBackend::run(std::function<void(const InputEvent&)> event_cb) {
+Window& SoftwareBackend::create_window(WindowConfig cfg) {
+    auto id = ++next_id_;
+    auto window = std::make_unique<SdlWindow>(id, cfg);
+    auto& ref = *window;
+    windows_.emplace(id, std::move(window));
+    snapshots_[id]; // default-construct snapshot slot
+    return ref;
+}
+
+WindowId SoftwareBackend::sdl_id_to_prism_id(uint32_t sdl_window_id) const {
+    for (auto& [id, win] : windows_) {
+        if (SDL_GetWindowID(win->sdl_window()) == sdl_window_id)
+            return id;
+    }
+    return 0;
+}
+
+void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
     SDL_Init(SDL_INIT_VIDEO);
-    window_ = SDL_CreateWindow(config_.title, config_.width, config_.height, 0);
-    renderer_ = SDL_CreateRenderer(window_, nullptr);
 
     TTF_Init();
-    const char* fpath = resolve_font_path(config_);
+    const char* fpath = resolve_font_path(render_config_);
     if (fpath) {
         font_ = TTF_OpenFont(fpath, 16.0f);
     }
 
+    // Create SDL windows (deferred from create_window()) and start text input
+    for (auto& [id, win] : windows_) {
+        win->ensure_created();
+        SDL_StartTextInput(win->sdl_window());
+    }
+
     ready_.store(true, std::memory_order_release);
     ready_.notify_one();
-    SDL_StartTextInput(window_);
 
     while (running_.load(std::memory_order_relaxed)) {
         SDL_Event ev;
         if (!SDL_WaitEvent(&ev)) continue;
 
         do {
+            // Resolve which prism window this event belongs to
+            WindowId wid = 0;
+            if (ev.type >= SDL_EVENT_WINDOW_FIRST && ev.type <= SDL_EVENT_WINDOW_LAST) {
+                wid = sdl_id_to_prism_id(ev.window.windowID);
+            } else if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+                wid = sdl_id_to_prism_id(ev.motion.windowID);
+            } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                wid = sdl_id_to_prism_id(ev.button.windowID);
+            } else if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+                wid = sdl_id_to_prism_id(ev.wheel.windowID);
+            } else if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
+                wid = sdl_id_to_prism_id(ev.key.windowID);
+            } else if (ev.type == SDL_EVENT_TEXT_INPUT) {
+                wid = sdl_id_to_prism_id(ev.text.windowID);
+            }
+            // For single-window case, fall back to first window
+            if (wid == 0 && windows_.size() == 1)
+                wid = windows_.begin()->first;
+
             switch (ev.type) {
             case SDL_EVENT_QUIT:
-                event_cb(WindowClose{});
+                event_cb(WindowEvent{wid, WindowClose{}});
                 running_.store(false, std::memory_order_relaxed);
                 break;
             case SDL_EVENT_WINDOW_RESIZED:
-                event_cb(WindowResize{ev.window.data1, ev.window.data2});
+                event_cb(WindowEvent{wid, WindowResize{ev.window.data1, ev.window.data2}});
                 break;
             case SDL_EVENT_MOUSE_MOTION:
-                event_cb(MouseMove{Point{X{ev.motion.x}, Y{ev.motion.y}}});
+                event_cb(WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{ev.motion.y}}}});
                 break;
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
-                event_cb(MouseButton{
-                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, true});
+                event_cb(WindowEvent{wid, MouseButton{
+                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, true}});
                 break;
             case SDL_EVENT_MOUSE_BUTTON_UP:
-                event_cb(MouseButton{
-                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, false});
+                event_cb(WindowEvent{wid, MouseButton{
+                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, false}});
                 break;
             case SDL_EVENT_MOUSE_WHEEL:
-                event_cb(MouseScroll{
-                    Point{X{ev.wheel.mouse_x}, Y{ev.wheel.mouse_y}}, DX{ev.wheel.x}, DY{ev.wheel.y}});
+                event_cb(WindowEvent{wid, MouseScroll{
+                    Point{X{ev.wheel.mouse_x}, Y{ev.wheel.mouse_y}}, DX{ev.wheel.x}, DY{ev.wheel.y}}});
                 break;
             case SDL_EVENT_KEY_DOWN:
-                event_cb(KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod});
+                event_cb(WindowEvent{wid, KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod}});
                 break;
             case SDL_EVENT_KEY_UP:
-                event_cb(KeyRelease{static_cast<int32_t>(ev.key.key), ev.key.mod});
+                event_cb(WindowEvent{wid, KeyRelease{static_cast<int32_t>(ev.key.key), ev.key.mod}});
                 break;
             case SDL_EVENT_TEXT_INPUT:
-                event_cb(TextInput{ev.text.text});
+                event_cb(WindowEvent{wid, TextInput{ev.text.text}});
                 break;
             case SDL_EVENT_USER:
                 break;
@@ -101,15 +124,20 @@ void SoftwareBackend::run(std::function<void(const InputEvent&)> event_cb) {
 
         if (!running_.load(std::memory_order_relaxed)) break;
 
-        auto snap = snapshot_.load(std::memory_order_acquire);
-        if (snap) {
-            render_snapshot(*snap);
+        // Render any pending snapshots
+        for (auto& [id, snap_slot] : snapshots_) {
+            auto snap = snap_slot.snapshot.load(std::memory_order_acquire);
+            if (snap) {
+                if (auto it = windows_.find(id); it != windows_.end())
+                    it->second->render_snapshot(*snap, font_);
+            }
         }
     }
 }
 
-void SoftwareBackend::submit(std::shared_ptr<const SceneSnapshot> snap) {
-    snapshot_.store(std::move(snap), std::memory_order_release);
+void SoftwareBackend::submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) {
+    if (auto it = snapshots_.find(window); it != snapshots_.end())
+        it->second.snapshot.store(std::move(snap), std::memory_order_release);
 }
 
 void SoftwareBackend::wake() {
@@ -127,77 +155,7 @@ void SoftwareBackend::quit() {
     wake();
 }
 
-void SoftwareBackend::render_snapshot(const SceneSnapshot& snap) {
-    SDL_SetRenderDrawColor(renderer_, 30, 30, 30, 255);
-    SDL_RenderClear(renderer_);
-    for (uint16_t idx : snap.z_order) {
-        render_draw_list(snap.draw_lists[idx]);
-    }
-    if (!snap.overlay.empty()) {
-        SDL_SetRenderClipRect(renderer_, nullptr);
-        render_draw_list(snap.overlay);
-    }
-    SDL_RenderPresent(renderer_);
-}
-
-void SoftwareBackend::render_draw_list(const DrawList& dl) {
-    for (const auto& cmd : dl.commands) {
-        std::visit([this](const auto& c) { render_cmd(c); }, cmd);
-    }
-}
-
-void SoftwareBackend::render_cmd(const FilledRect& cmd) {
-    SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
-    SDL_FRect r = to_sdl(cmd.rect);
-    SDL_RenderFillRect(renderer_, &r);
-}
-
-void SoftwareBackend::render_cmd(const RectOutline& cmd) {
-    SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
-    SDL_FRect r = to_sdl(cmd.rect);
-    SDL_RenderRect(renderer_, &r);
-}
-
-void SoftwareBackend::render_cmd(const TextCmd& cmd) {
-    if (!font_ || cmd.text.empty()) return;
-
-    float current_size = TTF_GetFontSize(font_);
-    if (std::abs(current_size - cmd.size) > 0.5f) {
-        TTF_SetFontSize(font_, cmd.size);
-    }
-
-    SDL_Color color = to_sdl(cmd.color);
-    SDL_Surface* surface = TTF_RenderText_Blended(font_, cmd.text.c_str(), 0, color);
-    if (!surface) return;
-
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
-    if (texture) {
-        SDL_FRect dst = {cmd.origin.x.raw(), cmd.origin.y.raw(),
-                         static_cast<float>(surface->w),
-                         static_cast<float>(surface->h)};
-        SDL_RenderTexture(renderer_, texture, nullptr, &dst);
-        SDL_DestroyTexture(texture);
-    }
-    SDL_DestroySurface(surface);
-}
-
-void SoftwareBackend::render_cmd(const ClipPush& cmd) {
-    SDL_Rect r = {static_cast<int>(cmd.rect.origin.x.raw()), static_cast<int>(cmd.rect.origin.y.raw()),
-                  static_cast<int>(cmd.rect.extent.w.raw()), static_cast<int>(cmd.rect.extent.h.raw())};
-    clip_stack_.push_back(r);
-    SDL_SetRenderClipRect(renderer_, &r);
-}
-
-void SoftwareBackend::render_cmd(const ClipPop&) {
-    if (!clip_stack_.empty()) clip_stack_.pop_back();
-    if (clip_stack_.empty()) {
-        SDL_SetRenderClipRect(renderer_, nullptr);
-    } else {
-        SDL_SetRenderClipRect(renderer_, &clip_stack_.back());
-    }
-}
-
-Backend Backend::software(BackendConfig cfg) {
+Backend Backend::software(RenderConfig cfg) {
     return Backend{std::make_unique<SoftwareBackend>(cfg)};
 }
 

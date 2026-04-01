@@ -1,7 +1,7 @@
 #pragma once
 
 #include <prism/core/backend.hpp>
-#include <prism/core/input_event.hpp>
+#include <prism/core/headless_window.hpp>
 
 #include <vector>
 
@@ -9,17 +9,24 @@ namespace prism {
 
 class TestBackend final : public BackendBase {
     std::vector<InputEvent> events_;
+    HeadlessWindow window_{0, {}};
+
 public:
     explicit TestBackend(std::vector<InputEvent> events)
         : events_(std::move(events)) {}
 
-    void run(std::function<void(const InputEvent&)> event_cb) override {
-        for (const auto& ev : events_)
-            event_cb(ev);
-        event_cb(WindowClose{});
+    Window& create_window(WindowConfig cfg) override {
+        window_ = HeadlessWindow{1, cfg};
+        return window_;
     }
 
-    void submit(std::shared_ptr<const SceneSnapshot>) override {}
+    void run(std::function<void(const WindowEvent&)> event_cb) override {
+        for (const auto& ev : events_)
+            event_cb(WindowEvent{window_.id(), ev});
+        event_cb(WindowEvent{window_.id(), WindowClose{}});
+    }
+
+    void submit(WindowId, std::shared_ptr<const SceneSnapshot>) override {}
     void wake() override {}
     void quit() override {}
 };
