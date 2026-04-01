@@ -411,8 +411,10 @@ struct Delegate<Label<T>> {
     static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetNode&) {}
 };
 
+enum class Orientation { Horizontal, Vertical };
+
 // Sentinel: numeric slider with min/max/step bounds
-template <Numeric T = double>
+template <Numeric T = double, Orientation O = Orientation::Horizontal>
 struct Slider {
     T value{};
     T min = T{0};
@@ -421,42 +423,57 @@ struct Slider {
     bool operator==(const Slider&) const = default;
 };
 
-template <Numeric T>
-struct Delegate<Slider<T>> {
+template <Numeric T, Orientation O>
+struct Delegate<Slider<T, O>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float track_w = 200.f;
-    static constexpr float track_h = 6.f;
-    static constexpr float thumb_w = 12.f;
-    static constexpr float widget_h = 30.f;
+    static constexpr bool vertical = (O == Orientation::Vertical);
+    static constexpr float track_len = 200.f;
+    static constexpr float track_thick = 6.f;
+    static constexpr float thumb_len = 12.f;
+    static constexpr float widget_extent = 30.f;
 
-    static float ratio(const Slider<T>& s) {
+    static float ratio(const Slider<T, O>& s) {
         if (s.max == s.min) return 0.f;
         return static_cast<float>(s.value - s.min) / static_cast<float>(s.max - s.min);
     }
 
-    static void record(DrawList& dl, const Field<Slider<T>>& field, WidgetNode& node) {
+    static void record(DrawList& dl, const Field<Slider<T, O>>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& s = field.get();
         float r = ratio(s);
-        float track_y = (widget_h - track_h) / 2.f;
 
         auto track_bg = vs.hovered ? Color::rgba(70, 70, 82) : Color::rgba(60, 60, 70);
-        dl.filled_rect(detail::make_rect(0, track_y, track_w, track_h), track_bg);
-
         auto thumb_color = vs.pressed ? Color::rgba(0, 120, 180)
                          : vs.hovered ? Color::rgba(0, 160, 220)
                          : Color::rgba(0, 140, 200);
-        float thumb_x = r * (track_w - thumb_w);
-        dl.filled_rect(detail::make_rect(thumb_x, 0, thumb_w, widget_h), thumb_color);
-        if (vs.focused)
-            dl.rect_outline(detail::make_rect(-1, -1, track_w + 2, widget_h + 2), Color::rgba(80, 160, 240), 2.0f);
+
+        if constexpr (vertical) {
+            // Vertical: track runs top-to-bottom, bottom = min, top = max
+            float track_x = (widget_extent - track_thick) / 2.f;
+            dl.filled_rect(detail::make_rect(track_x, 0, track_thick, track_len), track_bg);
+            float thumb_y = (1.f - r) * (track_len - thumb_len);
+            dl.filled_rect(detail::make_rect(0, thumb_y, widget_extent, thumb_len), thumb_color);
+            if (vs.focused)
+                dl.rect_outline(detail::make_rect(-1, -1, widget_extent + 2, track_len + 2),
+                                Color::rgba(80, 160, 240), 2.0f);
+        } else {
+            float track_y = (widget_extent - track_thick) / 2.f;
+            dl.filled_rect(detail::make_rect(0, track_y, track_len, track_thick), track_bg);
+            float thumb_x = r * (track_len - thumb_len);
+            dl.filled_rect(detail::make_rect(thumb_x, 0, thumb_len, widget_extent), thumb_color);
+            if (vs.focused)
+                dl.rect_outline(detail::make_rect(-1, -1, track_len + 2, widget_extent + 2),
+                                Color::rgba(80, 160, 240), 2.0f);
+        }
     }
 
-    static void apply_position(Field<Slider<T>>& field, float x) {
-        float t = std::clamp(x / track_w, 0.f, 1.f);
+    static void apply_position(Field<Slider<T, O>>& field, float pos) {
+        // For vertical, invert: top of track = max, bottom = min
+        float t = vertical ? std::clamp(1.f - pos / track_len, 0.f, 1.f)
+                           : std::clamp(pos / track_len, 0.f, 1.f);
         auto& s = field.get();
         T raw = static_cast<T>(s.min + t * (s.max - s.min));
-        Slider<T> updated = s;
+        Slider<T, O> updated = s;
         if (s.step != T{0}) {
             T steps = static_cast<T>((raw - s.min + s.step / T{2}) / s.step);
             updated.value = std::clamp(static_cast<T>(s.min + steps * s.step), s.min, s.max);
@@ -466,11 +483,12 @@ struct Delegate<Slider<T>> {
         field.set(updated);
     }
 
-    static void handle_input(Field<Slider<T>>& field, const InputEvent& ev, WidgetNode& node) {
+    static void handle_input(Field<Slider<T, O>>& field, const InputEvent& ev, WidgetNode& node) {
+        auto extract = [](auto& e) { return vertical ? e.position.y.raw() : e.position.x.raw(); };
         if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed)
-            apply_position(field, mb->position.x.raw());
+            apply_position(field, extract(*mb));
         if (auto* mm = std::get_if<MouseMove>(&ev); mm && node_vs(node).pressed)
-            apply_position(field, mm->position.x.raw());
+            apply_position(field, extract(*mm));
     }
 };
 

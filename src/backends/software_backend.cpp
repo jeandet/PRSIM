@@ -1,4 +1,5 @@
 #include <prism/backends/software_backend.hpp>
+#include <prism/core/window_chrome.hpp>
 
 #include <cmath>
 
@@ -88,24 +89,95 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 event_cb(WindowEvent{wid, WindowClose{}});
                 running_.store(false, std::memory_order_relaxed);
                 break;
-            case SDL_EVENT_WINDOW_RESIZED:
-                event_cb(WindowEvent{wid, WindowResize{ev.window.data1, ev.window.data2}});
+            case SDL_EVENT_WINDOW_RESIZED: {
+                int rh = ev.window.data2;
+                auto it_w = windows_.find(wid);
+                if (it_w != windows_.end() &&
+                    it_w->second->decoration_mode() == DecorationMode::Custom)
+                    rh -= static_cast<int>(WindowChrome::title_bar_h);
+                event_cb(WindowEvent{wid, WindowResize{ev.window.data1, rh}});
                 break;
-            case SDL_EVENT_MOUSE_MOTION:
-                event_cb(WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{ev.motion.y}}}});
+            }
+            case SDL_EVENT_MOUSE_MOTION: {
+                auto it_w = windows_.find(wid);
+                if (it_w != windows_.end() && it_w->second->in_resize()) {
+                    it_w->second->update_resize(
+                        static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
+                    break;
+                }
+                float my = ev.motion.y;
+                if (it_w != windows_.end() &&
+                    it_w->second->decoration_mode() == DecorationMode::Custom)
+                    my -= WindowChrome::title_bar_h;
+                event_cb(WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}});
                 break;
-            case SDL_EVENT_MOUSE_BUTTON_DOWN:
-                event_cb(WindowEvent{wid, MouseButton{
-                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, true}});
+            }
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                auto it_w = windows_.find(wid);
+                if (it_w != windows_.end() &&
+                    it_w->second->decoration_mode() == DecorationMode::Custom) {
+                    int ww, wh;
+                    SDL_GetWindowSize(it_w->second->sdl_window(), &ww, &wh);
+                    auto zone = WindowChrome::hit_test(
+                        static_cast<int>(ev.button.x), static_cast<int>(ev.button.y), ww, wh);
+                    if (zone == WindowChrome::HitZone::Close) {
+                        event_cb(WindowEvent{wid, WindowClose{}});
+                        running_.store(false, std::memory_order_relaxed);
+                        break;
+                    }
+                    if (zone == WindowChrome::HitZone::Minimize) {
+                        it_w->second->minimize();
+                        break;
+                    }
+                    if (zone == WindowChrome::HitZone::Maximize) {
+                        if (it_w->second->is_fullscreen())
+                            it_w->second->restore();
+                        else
+                            it_w->second->maximize();
+                        break;
+                    }
+                    if (zone != WindowChrome::HitZone::Client) {
+                        it_w->second->begin_resize(
+                            static_cast<int>(ev.button.x), static_cast<int>(ev.button.y));
+                        break;
+                    }
+                    // Client zone: offset Y by title bar height
+                    float offset_y = ev.button.y - WindowChrome::title_bar_h;
+                    event_cb(WindowEvent{wid, MouseButton{
+                        Point{X{ev.button.x}, Y{offset_y}}, ev.button.button, true}});
+                } else {
+                    event_cb(WindowEvent{wid, MouseButton{
+                        Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, true}});
+                }
                 break;
-            case SDL_EVENT_MOUSE_BUTTON_UP:
-                event_cb(WindowEvent{wid, MouseButton{
-                    Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, false}});
+            }
+            case SDL_EVENT_MOUSE_BUTTON_UP: {
+                auto it_w = windows_.find(wid);
+                if (it_w != windows_.end() && it_w->second->in_resize()) {
+                    it_w->second->end_resize();
+                    break;
+                }
+                if (it_w != windows_.end() &&
+                    it_w->second->decoration_mode() == DecorationMode::Custom) {
+                    float offset_y = ev.button.y - WindowChrome::title_bar_h;
+                    event_cb(WindowEvent{wid, MouseButton{
+                        Point{X{ev.button.x}, Y{offset_y}}, ev.button.button, false}});
+                } else {
+                    event_cb(WindowEvent{wid, MouseButton{
+                        Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, false}});
+                }
                 break;
-            case SDL_EVENT_MOUSE_WHEEL:
+            }
+            case SDL_EVENT_MOUSE_WHEEL: {
+                float wy = ev.wheel.mouse_y;
+                auto it_w = windows_.find(wid);
+                if (it_w != windows_.end() &&
+                    it_w->second->decoration_mode() == DecorationMode::Custom)
+                    wy -= WindowChrome::title_bar_h;
                 event_cb(WindowEvent{wid, MouseScroll{
-                    Point{X{ev.wheel.mouse_x}, Y{ev.wheel.mouse_y}}, DX{ev.wheel.x}, DY{ev.wheel.y}}});
+                    Point{X{ev.wheel.mouse_x}, Y{wy}}, DX{ev.wheel.x}, DY{ev.wheel.y}}});
                 break;
+            }
             case SDL_EVENT_KEY_DOWN:
                 event_cb(WindowEvent{wid, KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod}});
                 break;

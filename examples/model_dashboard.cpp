@@ -25,7 +25,7 @@ struct Settings {
 
 struct Waveform {
     prism::Field<prism::Slider<>> frequency{{.value = 2.0, .min = 0.5, .max = 10.0}};
-    prism::Field<prism::Slider<>> amplitude{{.value = 0.8, .min = 0.0, .max = 1.0}};
+    prism::Field<prism::Slider<double, prism::Orientation::Vertical>> amplitude{{.value = 0.8, .min = 0.0, .max = 1.0}};
 
     void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
         auto w = bounds.extent.w.raw();
@@ -65,10 +65,10 @@ struct Waveform {
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.hstack([&] {
-            vb.widget(frequency);
             vb.widget(amplitude);
+            vb.canvas(*this).depends_on(frequency).depends_on(amplitude);
         });
-        vb.canvas(*this).depends_on(frequency).depends_on(amplitude);
+        vb.widget(frequency);
     }
 };
 
@@ -130,15 +130,28 @@ struct Dashboard {
     prism::List<std::string> log_messages;
     prism::State<int> request_count{0};
     SignalTable signal_table{.wf = waveform};
+    prism::Field<prism::TabBar<>> tabs;
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
-        vb.scroll([&] {
-            vb.vstack(settings, waveform, progress_bar, status, notes, increment, counter);
+        vb.tabs(tabs, [&] {
+            vb.tab("Settings", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.scroll([&] {
+                    tvb.component(settings);
+                });
+            });
+            vb.tab("Waveform", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.component(waveform);
+                tvb.component(progress_bar);
+                tvb.widget(status);
+                tvb.table(signal_table)
+                    .depends_on(waveform.frequency)
+                    .depends_on(waveform.amplitude);
+            });
+            vb.tab("Controls", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.vstack(notes, increment, counter);
+                tvb.list(log_messages);
+            });
         });
-        vb.table(signal_table)
-            .depends_on(waveform.frequency)
-            .depends_on(waveform.amplitude);
-        vb.list(log_messages);
     }
 };
 
@@ -147,7 +160,9 @@ int main() {
     std::vector<prism::Connection> connections;
     prism::Animation<float> progress_anim;
 
-    prism::model_app("PRISM Model Dashboard", dashboard, [&](prism::AppContext& ctx) {
+    prism::model_app({.title = "PRISM Model Dashboard", .width = 1024, .height = 768,
+                       .decoration = prism::DecorationMode::Custom},
+                     dashboard, [&](prism::AppContext& ctx) {
         using namespace std::chrono_literals;
         auto sched = ctx.scheduler();
 
@@ -169,6 +184,7 @@ int main() {
             | prism::then([&](const prism::Button&) {
                   auto n = dashboard.counter.get() + 1;
                   dashboard.counter.set(n);
+                  ctx.window().set_title("PRISM Dashboard — " + std::to_string(n) + " events");
                   std::ostringstream oss;
                   oss << "Event #" << n << " — counter incremented";
                   dashboard.log_messages.push_back(oss.str());

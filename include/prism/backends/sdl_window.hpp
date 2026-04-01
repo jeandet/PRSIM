@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/window.hpp>
+#include <prism/core/window_chrome.hpp>
 #include <prism/core/draw_list.hpp>
 #include <prism/core/scene_snapshot.hpp>
 
@@ -51,6 +52,12 @@ public:
 
     void render_snapshot(const SceneSnapshot& snap, TTF_Font* font);
 
+    // Manual resize tracking for custom chrome
+    bool begin_resize(int mouse_x, int mouse_y);
+    bool update_resize(int mouse_x, int mouse_y);
+    void end_resize();
+    bool in_resize() const { return resize_zone_ != WindowChrome::HitZone::Client; }
+
 private:
     WindowId id_;
     SDL_Window* sdl_window_ = nullptr;
@@ -59,6 +66,11 @@ private:
     std::string title_;
     WindowConfig config_;
     std::vector<SDL_Rect> clip_stack_;
+
+    // Manual resize tracking
+    WindowChrome::HitZone resize_zone_ = WindowChrome::HitZone::Client;
+    float resize_start_x_ = 0, resize_start_y_ = 0;
+    int resize_start_w_ = 0, resize_start_h_ = 0;
 
     void create_sdl_window();
     void destroy_sdl_window();

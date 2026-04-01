@@ -6,6 +6,7 @@
 #include <prism/core/hit_test.hpp>
 #include <prism/core/input_event.hpp>
 #include <prism/core/widget_tree.hpp>
+#include <prism/core/window_chrome.hpp>
 
 #include <cstdint>
 #include <thread>
@@ -114,6 +115,8 @@ void model_app(Backend& backend, Window& window, Model& model,
     AnimationClock anim_clock;
     bool tick_scheduled = false;
     auto [w, h] = window.size();
+    if (window.decoration_mode() == DecorationMode::Custom)
+        h -= static_cast<int>(WindowChrome::title_bar_h);
     uint64_t version = 0;
 
     std::shared_ptr<const SceneSnapshot> current_snap;
@@ -197,11 +200,17 @@ void model_app(Backend& backend, Window& window, Model& model,
 }
 
 template <typename Model>
-void model_app(std::string_view title, Model& model,
+void model_app(WindowConfig cfg, Model& model,
                std::function<void(AppContext&)> setup = nullptr) {
     auto backend = Backend::software(RenderConfig{});
-    auto& window = backend.create_window(WindowConfig{.title = title.data()});
+    auto& window = backend.create_window(cfg);
     model_app(backend, window, model, std::move(setup));
+}
+
+template <typename Model>
+void model_app(std::string_view title, Model& model,
+               std::function<void(AppContext&)> setup = nullptr) {
+    model_app(WindowConfig{.title = title.data()}, model, std::move(setup));
 }
 
 } // namespace prism

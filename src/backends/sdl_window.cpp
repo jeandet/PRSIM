@@ -14,6 +14,17 @@ SDL_Color to_sdl(Color c) {
     return {c.r, c.g, c.b, c.a};
 }
 
+SDL_HitTestResult sdl_hit_test_callback(SDL_Window* win, const SDL_Point* area, void*) {
+    int w, h;
+    SDL_GetWindowSize(win, &w, &h);
+    auto zone = WindowChrome::hit_test(area->x, area->y, w, h);
+    // Only use SDL hit test for title bar drag — resize is handled manually
+    // in the event loop for reliable live feedback across all compositors.
+    if (zone == WindowChrome::HitZone::TitleBar)
+        return SDL_HITTEST_DRAGGABLE;
+    return SDL_HITTEST_NORMAL;
+}
+
 } // namespace
 
 SdlWindow::SdlWindow(WindowId id, WindowConfig cfg)
@@ -64,6 +75,9 @@ void SdlWindow::create_sdl_window() {
 
     sdl_window_ = SDL_CreateWindow(title_.c_str(), config_.width, config_.height, flags);
     renderer_ = SDL_CreateRenderer(sdl_window_, nullptr);
+
+    if (decoration_ == DecorationMode::Custom)
+        SDL_SetWindowHitTest(sdl_window_, sdl_hit_test_callback, nullptr);
 }
 
 void SdlWindow::destroy_sdl_window() {
@@ -150,6 +164,16 @@ void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font) {
     if (!renderer_) return;
     SDL_SetRenderDrawColor(renderer_, 30, 30, 30, 255);
     SDL_RenderClear(renderer_);
+
+    if (decoration_ == DecorationMode::Custom) {
+        // Offset content below the title bar via viewport
+        int w, h;
+        SDL_GetWindowSize(sdl_window_, &w, &h);
+        int offset = static_cast<int>(WindowChrome::title_bar_h);
+        SDL_Rect viewport = {0, offset, w, h - offset};
+        SDL_SetRenderViewport(renderer_, &viewport);
+    }
+
     for (uint16_t idx : snap.z_order) {
         render_draw_list(snap.draw_lists[idx], font);
     }
@@ -157,6 +181,18 @@ void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font) {
         SDL_SetRenderClipRect(renderer_, nullptr);
         render_draw_list(snap.overlay, font);
     }
+
+    if (decoration_ == DecorationMode::Custom) {
+        // Reset viewport and draw chrome on top
+        SDL_SetRenderViewport(renderer_, nullptr);
+        SDL_SetRenderClipRect(renderer_, nullptr);
+        int w, h;
+        SDL_GetWindowSize(sdl_window_, &w, &h);
+        DrawList chrome_dl;
+        WindowChrome::render(chrome_dl, w, title_);
+        render_draw_list(chrome_dl, font);
+    }
+
     SDL_RenderPresent(renderer_);
 }
 
@@ -220,6 +256,53 @@ void SdlWindow::render_cmd(const ClipPop&) {
     } else {
         SDL_SetRenderClipRect(renderer_, &clip_stack_.back());
     }
+}
+
+bool SdlWindow::begin_resize(int mouse_x, int mouse_y) {
+    if (decoration_ != DecorationMode::Custom || !sdl_window_) return false;
+    int w, h;
+    SDL_GetWindowSize(sdl_window_, &w, &h);
+    auto zone = WindowChrome::hit_test(mouse_x, mouse_y, w, h);
+    bool is_edge = zone >= WindowChrome::HitZone::ResizeN
+                && zone <= WindowChrome::HitZone::ResizeSW;
+    if (!is_edge) return false;
+    resize_zone_ = zone;
+    // Use global mouse position so deltas work even when cursor leaves the window
+    SDL_GetGlobalMouseState(&resize_start_x_, &resize_start_y_);
+    resize_start_w_ = w;
+    resize_start_h_ = h;
+    return true;
+}
+
+bool SdlWindow::update_resize(int /*mouse_x*/, int /*mouse_y*/) {
+    if (resize_zone_ == WindowChrome::HitZone::Client || !sdl_window_) return false;
+    float gx, gy;
+    SDL_GetGlobalMouseState(&gx, &gy);
+    int dx = static_cast<int>(gx - resize_start_x_);
+    int dy = static_cast<int>(gy - resize_start_y_);
+    int new_w = resize_start_w_;
+    int new_h = resize_start_h_;
+    using HZ = WindowChrome::HitZone;
+    switch (resize_zone_) {
+        case HZ::ResizeE:  new_w += dx; break;
+        case HZ::ResizeS:  new_h += dy; break;
+        case HZ::ResizeSE: new_w += dx; new_h += dy; break;
+        case HZ::ResizeW:  new_w -= dx; break;
+        case HZ::ResizeN:  new_h -= dy; break;
+        case HZ::ResizeNW: new_w -= dx; new_h -= dy; break;
+        case HZ::ResizeNE: new_w += dx; new_h -= dy; break;
+        case HZ::ResizeSW: new_w -= dx; new_h += dy; break;
+        default: break;
+    }
+    constexpr int min_w = 200, min_h = 100;
+    new_w = std::max(new_w, min_w);
+    new_h = std::max(new_h, min_h);
+    SDL_SetWindowSize(sdl_window_, new_w, new_h);
+    return true;
+}
+
+void SdlWindow::end_resize() {
+    resize_zone_ = WindowChrome::HitZone::Client;
 }
 
 } // namespace prism
