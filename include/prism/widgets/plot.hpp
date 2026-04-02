@@ -116,6 +116,11 @@ struct PlotModel {
         series_.emplace_back(std::move(source), style);
     }
 
+    void add_series(std::vector<double> xs, std::vector<double> ys, SeriesStyle style)
+    {
+        add_series(XYData{std::move(xs), std::move(ys)}, style);
+    }
+
     void remove_series(size_t index)
     {
         if (index < series_.size())
@@ -138,9 +143,11 @@ struct PlotModel {
                                    std::span<const Series>(series_));
 
         draw_background(dl, map.plot_area, t);
+        dl.clip_push(map.plot_area.origin, map.plot_area.extent);
         draw_grid(dl, map, t);
         draw_series(dl, map, std::span<const Series>(series_));
         draw_cursor(dl, map, cursor.get(), t);
+        dl.clip_pop();
         draw_axes_labels(dl, map, x_label.get(), y_label.get(), t);
     }
 

@@ -184,12 +184,10 @@ TEST_CASE("draw_series emits polylines for each series")
     std::array<Series, 1> arr = {std::move(s)};
 
     draw_series(dl, map, arr);
-    CHECK(dl.size() == 3);
-    CHECK(std::holds_alternative<ClipPush>(dl.commands[0]));
-    CHECK(std::holds_alternative<Polyline>(dl.commands[1]));
-    CHECK(std::holds_alternative<ClipPop>(dl.commands[2]));
+    CHECK(dl.size() == 1);
+    CHECK(std::holds_alternative<Polyline>(dl.commands[0]));
 
-    auto& poly = std::get<Polyline>(dl.commands[1]);
+    auto& poly = std::get<Polyline>(dl.commands[0]);
     CHECK(poly.points.size() == 3);
 }
 

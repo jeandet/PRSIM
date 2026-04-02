@@ -159,7 +159,6 @@ inline void draw_grid(DrawList& dl, const PlotMapping& map, const Theme& t)
 template <typename SeriesRange>
 void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series)
 {
-    dl.clip_push(map.plot_area.origin, map.plot_area.extent);
     for (auto& s : series) {
         if (s.size() < 2) continue;
         std::vector<Point> pts;
@@ -168,7 +167,6 @@ void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series
             pts.push_back(map.to_pixel(s.x(i), s.y(i)));
         dl.polyline(std::move(pts), s.style().color, s.style().thickness);
     }
-    dl.clip_pop();
 }
 
 inline void draw_cursor(DrawList& dl, const PlotMapping& map,
@@ -207,8 +205,11 @@ inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,
     if (!x_label.empty())
         dl.text(x_label, Point{X{cx - 30.f}, Y{bottom + 18.f}}, 12.f, t.text);
 
-    if (!y_label.empty())
-        dl.text(y_label, Point{X{2.f}, Y{map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw() / 2.f}}, 12.f, t.text);
+    if (!y_label.empty()) {
+        float lx = map.plot_area.origin.x.raw() - margin_left + 2.f;
+        float ly = map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw() / 2.f;
+        dl.text(y_label, Point{X{lx}, Y{ly}}, 12.f, t.text);
+    }
 }
 
 inline std::array<Color, 8> default_series_colors(const Theme& t)
