@@ -366,7 +366,7 @@ TEST_CASE("PlotModel drag pans view")
     Point center = map.plot_area.center();
 
     // Mouse down
-    InputEvent down = MouseButton{center, 0, true};
+    InputEvent down = MouseButton{center, 1, true};
     plot.handle_canvas_input(down, node, bounds);
     CHECK(plot.drag_mode == DragMode::Pan);
 
@@ -379,9 +379,56 @@ TEST_CASE("PlotModel drag pans view")
     CHECK(v.offset_x != 0.0);
 
     // Mouse up
-    InputEvent up = MouseButton{moved, 0, false};
+    InputEvent up = MouseButton{moved, 1, false};
     plot.handle_canvas_input(up, node, bounds);
     CHECK(plot.drag_mode == DragMode::None);
+}
+
+TEST_CASE("PlotModel reset_view restores auto_fit")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.y_range.set({0.0, 10.0, false});
+    plot.view.set(ViewTransform{1.0, 2.0, 3.0, 3.0});
+
+    plot.reset_view();
+
+    CHECK(plot.x_range.get().auto_fit);
+    CHECK(plot.y_range.get().auto_fit);
+    CHECK(plot.view.get().offset_x == 0.0);
+    CHECK(plot.view.get().offset_y == 0.0);
+    CHECK(plot.view.get().scale_x == 1.0);
+    CHECK(plot.view.get().scale_y == 1.0);
+}
+
+TEST_CASE("PlotModel right-click resets view")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.y_range.set({0.0, 10.0, false});
+    plot.view.set(ViewTransform{1.0, 2.0, 2.0, 2.0});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, plot.x_range, plot.y_range, plot.view,
+                               std::span<const Series>{});
+    Point center = map.plot_area.center();
+
+    InputEvent ev = MouseButton{center, 3, true};
+    plot.handle_canvas_input(ev, node, bounds);
+
+    CHECK(plot.x_range.get().auto_fit);
+    CHECK(plot.view.get().scale_x == 1.0);
 }
 
 TEST_CASE("default_series_colors returns 8 distinct colors")

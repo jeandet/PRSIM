@@ -130,6 +130,13 @@ struct PlotModel {
     void clear_series() { series_.clear(); }
     size_t series_count() const { return series_.size(); }
 
+    void reset_view()
+    {
+        view.set(ViewTransform{});
+        x_range.set(AxisRange{});
+        y_range.set(AxisRange{});
+    }
+
     void notify()
     {
         revision.set(revision.get() + 1);
@@ -165,8 +172,23 @@ struct PlotModel {
 
 inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds)
 {
-    auto map = compute_mapping(bounds, x_range, y_range, view,
-                               std::span<const Series>(series_));
+    auto series_span = std::span<const Series>(series_);
+    auto map = compute_mapping(bounds, x_range, y_range, view, series_span);
+
+    auto freeze_auto_fit = [&] {
+        auto xr = x_range.get();
+        auto yr = y_range.get();
+        if (xr.auto_fit) {
+            xr = auto_fit_range(series_span, Axis::X);
+            xr.auto_fit = false;
+            x_range.set(xr);
+        }
+        if (yr.auto_fit) {
+            yr = auto_fit_range(series_span, Axis::Y);
+            yr.auto_fit = false;
+            y_range.set(yr);
+        }
+    };
 
     if (auto* mm = std::get_if<MouseMove>(&ev)) {
         if (drag_mode == DragMode::Pan) {
@@ -193,47 +215,62 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*n
         }
 
     } else if (auto* mb = std::get_if<MouseButton>(&ev)) {
-        if (mb->button == 0) {
+        if (mb->button == 1) {
             if (mb->pressed) {
                 drag_mode = DragMode::Pan;
                 drag_start_pixel = mb->position;
                 drag_start_view = view.get();
 
-                auto xr = x_range.get();
-                auto yr = y_range.get();
-                if (xr.auto_fit) { xr.auto_fit = false; x_range.set(xr); }
-                if (yr.auto_fit) { yr.auto_fit = false; y_range.set(yr); }
+                freeze_auto_fit();
             } else {
                 drag_mode = DragMode::None;
             }
+        } else if (mb->button == 3 && mb->pressed) {
+            if (map.plot_area.contains(mb->position))
+                reset_view();
         }
 
     } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
-        if (!map.plot_area.contains(ms->position)) return;
+        float px = ms->position.x.raw();
+        float py = ms->position.y.raw();
+        float left = map.plot_area.origin.x.raw();
+        float right = left + map.plot_area.extent.w.raw();
+        float top = map.plot_area.origin.y.raw();
+        float bottom = top + map.plot_area.extent.h.raw();
+
+        bool in_plot = map.plot_area.contains(ms->position);
+        bool in_x_axis = (px >= left && px <= right && py > bottom && py <= bottom + margin_bottom);
+        bool in_y_axis = (py >= top && py <= bottom && px >= left - margin_left && px < left);
+
+        if (!in_plot && !in_x_axis && !in_y_axis) return;
+
+        freeze_auto_fit();
 
         double factor = std::pow(1.1, ms->dy.raw());
-        auto [data_x, data_y] = map.to_data(ms->position);
+        Point clamp_pt{X{std::clamp(px, left, right)}, Y{std::clamp(py, top, bottom)}};
+        auto [data_x, data_y] = map.to_data(clamp_pt);
 
         auto v = view.get();
-        double old_scale_x = v.scale_x;
-        double old_scale_y = v.scale_y;
-        v.scale_x *= factor;
-        v.scale_y *= factor;
-
         auto base_x = x_range.get();
         auto base_y = y_range.get();
-        double cx = (base_x.min + base_x.max) / 2.0;
-        double cy = (base_y.min + base_y.max) / 2.0;
 
-        v.offset_x = data_x - cx + (cx + v.offset_x - data_x) * old_scale_x / v.scale_x;
-        v.offset_y = data_y - cy + (cy + v.offset_y - data_y) * old_scale_y / v.scale_y;
+        bool zoom_x = in_plot || in_x_axis;
+        bool zoom_y = in_plot || in_y_axis;
+
+        if (zoom_x) {
+            double old = v.scale_x;
+            v.scale_x *= factor;
+            double cx = (base_x.min + base_x.max) / 2.0;
+            v.offset_x = data_x - cx + (cx + v.offset_x - data_x) * old / v.scale_x;
+        }
+        if (zoom_y) {
+            double old = v.scale_y;
+            v.scale_y *= factor;
+            double cy = (base_y.min + base_y.max) / 2.0;
+            v.offset_y = data_y - cy + (cy + v.offset_y - data_y) * old / v.scale_y;
+        }
 
         view.set(v);
-
-        auto xr = x_range.get();
-        auto yr = y_range.get();
-        if (xr.auto_fit) { xr.auto_fit = false; x_range.set(xr); }
-        if (yr.auto_fit) { yr.auto_fit = false; y_range.set(yr); }
     }
 }
 

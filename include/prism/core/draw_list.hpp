@@ -38,11 +38,15 @@ struct RectOutline {
     float thickness;
 };
 
+enum class TextAnchor { TopLeft, Center };
+
 struct TextCmd {
     std::string text;
     Point origin;
     float size;
     Color color;
+    float angle = 0.f;       // degrees, counter-clockwise
+    TextAnchor anchor = TextAnchor::TopLeft;
 };
 
 struct ClipPush {
@@ -134,6 +138,15 @@ struct DrawList {
         auto o = current_offset();
         commands.emplace_back(
             TextCmd{std::move(s), Point{origin.x + o.dx, origin.y + o.dy}, size, c});
+    }
+
+    void text_rotated(std::string s, Point origin, float size, Color c, float angle,
+                      TextAnchor anchor = TextAnchor::Center)
+    {
+        auto o = current_offset();
+        commands.emplace_back(
+            TextCmd{std::move(s), Point{origin.x + o.dx, origin.y + o.dy}, size, c,
+                    angle, anchor});
     }
 
     void clip_push(Point origin, Size extent)

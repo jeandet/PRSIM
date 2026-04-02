@@ -79,8 +79,14 @@ struct SvgEmitter {
             << "\" y=\"" << fmt_float(c.origin.y.raw())
             << "\" font-family=\"monospace\""
             << " font-size=\"" << fmt_float(c.size)
-            << "\" fill=\"" << fmt_color(c.color)
-            << "\">" << xml_escape(c.text) << "</text>\n";
+            << "\" fill=\"" << fmt_color(c.color) << "\"";
+        if (c.anchor == TextAnchor::Center)
+            out << " text-anchor=\"middle\" dominant-baseline=\"central\"";
+        if (c.angle != 0.f)
+            out << " transform=\"rotate(" << fmt_float(-c.angle)
+                << " " << fmt_float(c.origin.x.raw())
+                << " " << fmt_float(c.origin.y.raw()) << ")\"";
+        out << ">" << xml_escape(c.text) << "</text>\n";
     }
 
     void emit(const Line& c) {

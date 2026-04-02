@@ -234,10 +234,28 @@ void SdlWindow::render_cmd(const TextCmd& cmd, TTF_Font* font) {
 
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
     if (texture) {
-        SDL_FRect dst = {cmd.origin.x.raw(), cmd.origin.y.raw(),
-                         static_cast<float>(surface->w),
-                         static_cast<float>(surface->h)};
-        SDL_RenderTexture(renderer_, texture, nullptr, &dst);
+        float tw = static_cast<float>(surface->w);
+        float th = static_cast<float>(surface->h);
+        float ox = cmd.origin.x.raw();
+        float oy = cmd.origin.y.raw();
+
+        if (cmd.anchor == TextAnchor::Center) {
+            ox -= tw / 2.f;
+            oy -= th / 2.f;
+        }
+
+        SDL_FRect dst = {ox, oy, tw, th};
+
+        if (cmd.angle != 0.f) {
+            SDL_FPoint pivot = {tw / 2.f, th / 2.f};
+            if (cmd.anchor == TextAnchor::TopLeft)
+                pivot = {0.f, 0.f};
+            SDL_RenderTextureRotated(renderer_, texture, nullptr, &dst,
+                                     static_cast<double>(-cmd.angle),
+                                     &pivot, SDL_FLIP_NONE);
+        } else {
+            SDL_RenderTexture(renderer_, texture, nullptr, &dst);
+        }
         SDL_DestroyTexture(texture);
     }
     SDL_DestroySurface(surface);

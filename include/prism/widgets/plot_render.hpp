@@ -156,6 +156,7 @@ inline void draw_grid_lines(DrawList& dl, const PlotMapping& map, const Theme& t
 
 inline void draw_tick_labels(DrawList& dl, const PlotMapping& map, const Theme& t)
 {
+    constexpr float tick_len = 5.f;
     auto x_ticks = nice_ticks(map.x_range.min, map.x_range.max, 6);
     auto y_ticks = nice_ticks(map.y_range.min, map.y_range.max, 5);
 
@@ -168,14 +169,20 @@ inline void draw_tick_labels(DrawList& dl, const PlotMapping& map, const Theme& 
         auto px = map.to_pixel(tx, 0.0);
         float x = px.x.raw();
         if (x < left || x > right) continue;
-        dl.text(fmt::format("{:.6g}", tx), Point{X{x - 15.f}, Y{bottom + 4.f}}, 11.f, t.text_muted);
+        dl.line(Point{X{x}, Y{bottom}}, Point{X{x}, Y{bottom + tick_len}}, t.border, 1.f);
+        dl.text(fmt::format("{:.6g}", tx), Point{X{x - 15.f}, Y{bottom + tick_len + 2.f}},
+                11.f, t.text_muted);
     }
 
     for (double ty : y_ticks) {
         auto px = map.to_pixel(0.0, ty);
         float y = px.y.raw();
         if (y < top || y > bottom) continue;
-        dl.text(fmt::format("{:.6g}", ty), Point{X{left - 55.f}, Y{y - 6.f}}, 11.f, t.text_muted);
+        dl.line(Point{X{left - tick_len}, Y{y}}, Point{X{left}, Y{y}}, t.border, 1.f);
+        auto label = fmt::format("{:.6g}", ty);
+        float label_w = static_cast<float>(label.size()) * 7.f;
+        dl.text(std::move(label), Point{X{left - tick_len - 2.f - label_w}, Y{y - 6.f}},
+                11.f, t.text_muted);
     }
 }
 
@@ -229,9 +236,9 @@ inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,
         dl.text(x_label, Point{X{cx - 30.f}, Y{bottom + 18.f}}, 12.f, t.text);
 
     if (!y_label.empty()) {
-        float lx = map.plot_area.origin.x.raw() - margin_left + 2.f;
-        float ly = map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw() / 2.f;
-        dl.text(y_label, Point{X{lx}, Y{ly}}, 12.f, t.text);
+        float lx = map.plot_area.origin.x.raw() - margin_left + 10.f;
+        float cy = map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw() / 2.f;
+        dl.text_rotated(y_label, Point{X{lx}, Y{cy}}, 12.f, t.text, 90.f);
     }
 }
 
