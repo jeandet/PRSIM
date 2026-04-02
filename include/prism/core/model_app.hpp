@@ -34,7 +34,8 @@ namespace detail {
 
 inline void route_mouse_move(WidgetTree& tree, const SceneSnapshot& snap,
                              const MouseMove& mm) {
-    tree.update_hover(hit_test(snap, mm.position));
+    auto hovered = hit_test(snap, mm.position);
+    tree.update_hover(hovered);
     if (tree.in_scrollbar_drag()) {
         tree.update_scrollbar_drag(mm.position.y);
         return;
@@ -43,6 +44,10 @@ inline void route_mouse_move(WidgetTree& tree, const SceneSnapshot& snap,
         auto rect = find_widget_rect(snap, cid);
         InputEvent ev = mm;
         tree.dispatch(cid, rect ? localize_mouse(ev, *rect) : ev);
+    } else if (hovered) {
+        auto rect = find_widget_rect(snap, *hovered);
+        InputEvent ev = mm;
+        tree.dispatch(*hovered, rect ? localize_mouse(ev, *rect) : ev);
     }
 }
 
@@ -85,8 +90,12 @@ inline void route_mouse_scroll(WidgetTree& tree, const SceneSnapshot& snap,
                                const MouseScroll& ms) {
     constexpr float wheel_multiplier = 60.f;
     auto id = hit_test(snap, ms.position);
-    if (id)
+    if (id) {
+        auto rect = find_widget_rect(snap, *id);
+        InputEvent ev = ms;
+        tree.dispatch(*id, rect ? localize_mouse(ev, *rect) : ev);
         tree.scroll_at(*id, DY{ms.dy.raw() * wheel_multiplier});
+    }
 }
 
 inline void route_key_press(WidgetTree& tree, const InputEvent& ev,

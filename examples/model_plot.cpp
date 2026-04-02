@@ -58,7 +58,8 @@ int main()
     PlotDemo demo;
     demo.update_data();
 
-    prism::model_app({.title = "Plot Demo", .width = 800, .height = 600},
+    prism::model_app({.title = "Plot Demo", .width = 800, .height = 600,
+                       .decoration = prism::DecorationMode::Native},
                      demo, [&](prism::AppContext& /*ctx*/) {
         demo.frequency.observe([&](const prism::Slider<>&) { demo.update_data(); });
         demo.amplitude.observe([&](const prism::Slider<>&) { demo.update_data(); });

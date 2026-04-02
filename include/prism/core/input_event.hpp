@@ -56,6 +56,11 @@ inline InputEvent localize_mouse(const InputEvent& ev, Rect widget_rect) {
         local.position = local.position - off;
         return local;
     }
+    if (auto* ms = std::get_if<MouseScroll>(&ev)) {
+        auto local = *ms;
+        local.position = local.position - off;
+        return local;
+    }
     return ev;
 }
 

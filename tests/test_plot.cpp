@@ -156,15 +156,19 @@ TEST_CASE("draw_grid emits grid lines and tick labels")
     };
     Theme t = default_theme();
 
-    prism::plot::draw_grid(dl, map, t);
+    prism::plot::draw_grid_lines(dl, map, t);
     CHECK(dl.size() > 0);
 
-    bool has_line = false, has_text = false;
-    for (auto& cmd : dl.commands) {
+    bool has_line = false;
+    for (auto& cmd : dl.commands)
         if (std::holds_alternative<Line>(cmd)) has_line = true;
-        if (std::holds_alternative<TextCmd>(cmd)) has_text = true;
-    }
     CHECK(has_line);
+
+    DrawList dl2;
+    prism::plot::draw_tick_labels(dl2, map, t);
+    bool has_text = false;
+    for (auto& cmd : dl2.commands)
+        if (std::holds_alternative<TextCmd>(cmd)) has_text = true;
     CHECK(has_text);
 }
 

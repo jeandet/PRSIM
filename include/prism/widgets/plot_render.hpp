@@ -126,7 +126,7 @@ inline void draw_background(DrawList& dl, Rect plot_area, const Theme& t)
     dl.rect_outline(plot_area, t.border);
 }
 
-inline void draw_grid(DrawList& dl, const PlotMapping& map, const Theme& t)
+inline void draw_grid_lines(DrawList& dl, const PlotMapping& map, const Theme& t)
 {
     auto x_ticks = nice_ticks(map.x_range.min, map.x_range.max, 6);
     auto y_ticks = nice_ticks(map.y_range.min, map.y_range.max, 5);
@@ -141,7 +141,6 @@ inline void draw_grid(DrawList& dl, const PlotMapping& map, const Theme& t)
         float x = px.x.raw();
         if (x < left || x > right) continue;
         dl.line(Point{X{x}, Y{top}}, Point{X{x}, Y{bottom}}, t.track, 1.f);
-        dl.text(fmt::format("{:.6g}", tx), Point{X{x - 15.f}, Y{bottom + 4.f}}, 11.f, t.text_muted);
     }
 
     for (double ty : y_ticks) {
@@ -149,11 +148,35 @@ inline void draw_grid(DrawList& dl, const PlotMapping& map, const Theme& t)
         float y = px.y.raw();
         if (y < top || y > bottom) continue;
         dl.line(Point{X{left}, Y{y}}, Point{X{right}, Y{y}}, t.track, 1.f);
-        dl.text(fmt::format("{:.6g}", ty), Point{X{left - 55.f}, Y{y - 6.f}}, 11.f, t.text_muted);
     }
 
     dl.line(Point{X{left}, Y{top}}, Point{X{left}, Y{bottom}}, t.border, 1.f);
     dl.line(Point{X{left}, Y{bottom}}, Point{X{right}, Y{bottom}}, t.border, 1.f);
+}
+
+inline void draw_tick_labels(DrawList& dl, const PlotMapping& map, const Theme& t)
+{
+    auto x_ticks = nice_ticks(map.x_range.min, map.x_range.max, 6);
+    auto y_ticks = nice_ticks(map.y_range.min, map.y_range.max, 5);
+
+    float left = map.plot_area.origin.x.raw();
+    float right = left + map.plot_area.extent.w.raw();
+    float top = map.plot_area.origin.y.raw();
+    float bottom = top + map.plot_area.extent.h.raw();
+
+    for (double tx : x_ticks) {
+        auto px = map.to_pixel(tx, 0.0);
+        float x = px.x.raw();
+        if (x < left || x > right) continue;
+        dl.text(fmt::format("{:.6g}", tx), Point{X{x - 15.f}, Y{bottom + 4.f}}, 11.f, t.text_muted);
+    }
+
+    for (double ty : y_ticks) {
+        auto px = map.to_pixel(0.0, ty);
+        float y = px.y.raw();
+        if (y < top || y > bottom) continue;
+        dl.text(fmt::format("{:.6g}", ty), Point{X{left - 55.f}, Y{y - 6.f}}, 11.f, t.text_muted);
+    }
 }
 
 template <typename SeriesRange>
