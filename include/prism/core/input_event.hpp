@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/draw_list.hpp> // Point
+#include <prism/core/types.hpp>
 
 #include <cstdint>
 #include <string>

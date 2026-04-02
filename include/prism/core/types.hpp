@@ -3,6 +3,7 @@
 #include <cmath>
 #include <compare>
 #include <concepts>
+#include <cstdint>
 
 namespace prism {
 
@@ -240,6 +241,22 @@ constexpr Size operator-(Size a, Size b) { return {a.w - b.w, a.h - b.h}; }
 constexpr Size operator*(Size s, float f) { return {s.w * f, s.h * f}; }
 constexpr Size operator*(float f, Size s) { return {f * s.w, f * s.h}; }
 constexpr Size operator/(Size s, float f) { return {s.w / f, s.h / f}; }
+
+struct Color {
+    uint8_t r, g, b, a;
+
+    static constexpr Color rgba(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
+    {
+        return {r, g, b, a};
+    }
+};
+
+inline Color lerp(Color a, Color b, EasedProgress t) {
+    auto mix = [&](uint8_t x, uint8_t y) -> uint8_t {
+        return static_cast<uint8_t>(x + (y - x) * t.raw() + 0.5f);
+    };
+    return {mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), mix(a.a, b.a)};
+}
 
 enum class ExpandAxis { None, Both, Horizontal, Vertical };
 
