@@ -1,9 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/context.hpp>
+#include <prism/ui/context.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/widget_tree.hpp>
+#include <prism/app/widget_tree.hpp>
 
 TEST_CASE("default_theme returns consistent values") {
     auto t = prism::default_theme();

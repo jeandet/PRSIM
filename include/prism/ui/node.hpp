@@ -1,8 +1,8 @@
 #pragma once
 
 #include <prism/core/connection.hpp>
-#include <prism/core/delegate.hpp>
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/ui/delegate.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 #include <cstdint>
 #include <functional>

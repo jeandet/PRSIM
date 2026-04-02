@@ -1,8 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/layout.hpp>
-#include <prism/core/widget_tree.hpp>
+#include <prism/ui/layout.hpp>
+#include <prism/app/widget_tree.hpp>
 
 using namespace prism;
 

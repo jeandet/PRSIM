@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/svg_export.hpp>
+#include <prism/render/svg_export.hpp>
 
 namespace {
 prism::Rect R(float x, float y, float w, float h) {

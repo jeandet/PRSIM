@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 #include <optional>
 

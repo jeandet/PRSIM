@@ -1,11 +1,11 @@
 #pragma once
 
-#include <prism/core/app.hpp>
-#include <prism/core/backend.hpp>
+#include <prism/app/app.hpp>
+#include <prism/app/backend.hpp>
 #include <prism/core/exec.hpp>
-#include <prism/core/input_event.hpp>
-#include <prism/core/layout.hpp>
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/input/input_event.hpp>
+#include <prism/ui/layout.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 #include <cstdint>
 #include <functional>

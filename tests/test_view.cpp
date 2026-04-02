@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include <prism/core/widget_tree.hpp>
+#include <prism/app/widget_tree.hpp>
 
 TEST_CASE("WidgetNode has layout_kind defaulting to Default") {
     prism::WidgetNode node;

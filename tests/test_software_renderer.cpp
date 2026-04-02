@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
-#include <prism/core/software_renderer.hpp>
+#include <prism/render/software_renderer.hpp>
 
 namespace {
 prism::Rect R(float x, float y, float w, float h) {

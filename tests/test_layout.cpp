@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/layout.hpp>
+#include <prism/ui/layout.hpp>
 
 namespace {
 prism::Rect R(float x, float y, float w, float h) {

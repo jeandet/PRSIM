@@ -1,8 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/animation.hpp>
-#include <prism/core/draw_list.hpp>
+#include <prism/ui/animation.hpp>
+#include <prism/render/draw_list.hpp>
 #include <prism/core/field.hpp>
 #include <string>
 

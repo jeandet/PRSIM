@@ -1,11 +1,11 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/delegate.hpp>
+#include <prism/ui/delegate.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/draw_list.hpp>
-#include <prism/core/input_event.hpp>
-#include <prism/core/widget_tree.hpp>
+#include <prism/render/draw_list.hpp>
+#include <prism/input/input_event.hpp>
+#include <prism/app/widget_tree.hpp>
 
 #include <string>
 

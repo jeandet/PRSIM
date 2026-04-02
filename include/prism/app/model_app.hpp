@@ -1,12 +1,12 @@
 #pragma once
 
-#include <prism/core/animation.hpp>
-#include <prism/core/backend.hpp>
+#include <prism/ui/animation.hpp>
+#include <prism/app/backend.hpp>
 #include <prism/core/exec.hpp>
-#include <prism/core/hit_test.hpp>
-#include <prism/core/input_event.hpp>
-#include <prism/core/widget_tree.hpp>
-#include <prism/core/window_chrome.hpp>
+#include <prism/input/hit_test.hpp>
+#include <prism/input/input_event.hpp>
+#include <prism/app/widget_tree.hpp>
+#include <prism/ui/window_chrome.hpp>
 
 #include <cstdint>
 #include <thread>

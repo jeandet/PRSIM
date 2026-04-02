@@ -1,9 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/test_backend.hpp>
-#include <prism/core/backend.hpp>
-#include <prism/core/input_event.hpp>
+#include <prism/app/test_backend.hpp>
+#include <prism/app/backend.hpp>
+#include <prism/input/input_event.hpp>
 
 #include <vector>
 

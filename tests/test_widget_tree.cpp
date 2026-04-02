@@ -1,9 +1,9 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/widget_tree.hpp>
+#include <prism/app/widget_tree.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/input_event.hpp>
+#include <prism/input/input_event.hpp>
 
 #include <string>
 

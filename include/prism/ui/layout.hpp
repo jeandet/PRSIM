@@ -1,8 +1,8 @@
 #pragma once
 
-#include <prism/core/draw_list.hpp>
-#include <prism/core/context.hpp>
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/render/draw_list.hpp>
+#include <prism/ui/context.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 #include <algorithm>
 #include <cstdint>

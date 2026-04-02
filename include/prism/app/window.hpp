@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/input_event.hpp>
+#include <prism/input/input_event.hpp>
 
 #include <cstdint>
 #include <string_view>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <prism/core/backend.hpp>
-#include <prism/core/headless_window.hpp>
+#include <prism/app/backend.hpp>
+#include <prism/app/headless_window.hpp>
 
 namespace prism {
 

@@ -1,5 +1,5 @@
 #include <prism/prism.hpp>
-#include <prism/core/svg_export.hpp>
+#include <prism/render/svg_export.hpp>
 
 #include <fmt/format.h>
 #include <array>

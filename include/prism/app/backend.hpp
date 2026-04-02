@@ -1,8 +1,8 @@
 #pragma once
 
-#include <prism/core/input_event.hpp>
-#include <prism/core/scene_snapshot.hpp>
-#include <prism/core/window.hpp>
+#include <prism/input/input_event.hpp>
+#include <prism/render/scene_snapshot.hpp>
+#include <prism/app/window.hpp>
 
 #include <functional>
 #include <memory>

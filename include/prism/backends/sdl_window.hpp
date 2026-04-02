@@ -1,10 +1,10 @@
 #pragma once
 
-#include <prism/core/window.hpp>
-#include <prism/core/window_chrome.hpp>
-#include <prism/core/draw_list.hpp>
-#include <prism/core/scene_snapshot.hpp>
-#include <prism/core/context.hpp>
+#include <prism/app/window.hpp>
+#include <prism/ui/window_chrome.hpp>
+#include <prism/render/draw_list.hpp>
+#include <prism/render/scene_snapshot.hpp>
+#include <prism/ui/context.hpp>
 
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>

@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/draw_list.hpp>
+#include <prism/render/draw_list.hpp>
 
 namespace {
 prism::Rect R(float x, float y, float w, float h) {

@@ -1,12 +1,12 @@
 #pragma once
 
 #include <prism/core/connection.hpp>
-#include <prism/core/context.hpp>
-#include <prism/core/delegate.hpp>
-#include <prism/core/draw_list.hpp>
+#include <prism/ui/context.hpp>
+#include <prism/ui/delegate.hpp>
+#include <prism/render/draw_list.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/input_event.hpp>
-#include <prism/core/node.hpp>
+#include <prism/input/input_event.hpp>
+#include <prism/ui/node.hpp>
 
 #include <algorithm>
 #include <cmath>

@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/hit_test.hpp>
+#include <prism/input/hit_test.hpp>
 
 namespace {
 prism::Rect R(float x, float y, float w, float h) {

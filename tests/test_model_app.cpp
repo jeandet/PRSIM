@@ -1,12 +1,12 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/model_app.hpp>
-#include <prism/core/null_backend.hpp>
-#include <prism/core/headless_window.hpp>
+#include <prism/app/model_app.hpp>
+#include <prism/app/null_backend.hpp>
+#include <prism/app/headless_window.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/hit_test.hpp>
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/input/hit_test.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 #include <string>
 
@@ -178,7 +178,7 @@ TEST_CASE("model_app setup callback receives scheduler and window") {
     CHECK(setup_called);
 }
 
-#include <prism/core/delegate.hpp>
+#include <prism/ui/delegate.hpp>
 #include <prism/core/on.hpp>
 #include <fmt/format.h>
 

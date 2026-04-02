@@ -1,10 +1,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/ui.hpp>
-#include <prism/core/null_backend.hpp>
-#include <prism/core/test_backend.hpp>
-#include <prism/core/headless_window.hpp>
+#include <prism/app/ui.hpp>
+#include <prism/app/null_backend.hpp>
+#include <prism/app/test_backend.hpp>
+#include <prism/app/headless_window.hpp>
 
 #include <string>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/window.hpp>
+#include <prism/app/window.hpp>
 
 #include <string>
 

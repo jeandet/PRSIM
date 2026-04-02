@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
-#include <prism/core/widget_tree.hpp>
+#include <prism/app/widget_tree.hpp>
 
 TEST_CASE("node_leaf creates a leaf Node from Field<int>") {
     prism::Field<int> count{0};

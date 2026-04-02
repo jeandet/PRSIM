@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/widget_node.hpp>
+#include <prism/ui/widget_node.hpp>
 
 #include <algorithm>
 #include <span>

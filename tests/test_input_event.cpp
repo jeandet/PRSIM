@@ -1,6 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
-#include <prism/core/input_event.hpp>
+#include <prism/input/input_event.hpp>
 
 TEST_CASE("InputEvent variant holds WindowClose") {
     prism::InputEvent ev = prism::WindowClose{};

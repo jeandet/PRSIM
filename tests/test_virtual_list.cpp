@@ -40,7 +40,7 @@ TEST_CASE("IntScalar arithmetic: ItemCount + ItemCount = ItemCount") {
     CHECK(result.raw() == 5);
 }
 
-#include <prism/core/widget_tree.hpp>
+#include <prism/app/widget_tree.hpp>
 
 TEST_CASE("VirtualListState default construction") {
     prism::VirtualListState state;

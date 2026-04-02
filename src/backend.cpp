@@ -1,4 +1,4 @@
-#include <prism/core/backend.hpp>
+#include <prism/app/backend.hpp>
 
 namespace prism {
 

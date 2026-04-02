@@ -1,7 +1,7 @@
 #pragma once
 
-#include <prism/core/draw_list.hpp>
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/render/draw_list.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 #include <cstdio>
 #include <sstream>

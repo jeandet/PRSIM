@@ -1,10 +1,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/delegate.hpp>
+#include <prism/ui/delegate.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/hit_test.hpp>
-#include <prism/core/widget_tree.hpp>
+#include <prism/input/hit_test.hpp>
+#include <prism/app/widget_tree.hpp>
 
 // File-scope models for tests that use WidgetTree (reflection requires non-local types)
 

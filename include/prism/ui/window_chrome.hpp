@@ -1,7 +1,7 @@
 #pragma once
 
-#include <prism/core/draw_list.hpp>
-#include <prism/core/context.hpp>
+#include <prism/render/draw_list.hpp>
+#include <prism/ui/context.hpp>
 
 #include <string_view>
 

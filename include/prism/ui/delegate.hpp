@@ -1,9 +1,9 @@
 #pragma once
 
-#include <prism/core/context.hpp>
-#include <prism/core/draw_list.hpp>
+#include <prism/ui/context.hpp>
+#include <prism/render/draw_list.hpp>
 #include <prism/core/field.hpp>
-#include <prism/core/input_event.hpp>
+#include <prism/input/input_event.hpp>
 
 #include <algorithm>
 #include <memory>

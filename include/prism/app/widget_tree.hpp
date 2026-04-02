@@ -1,13 +1,13 @@
 #pragma once
 
-#include <prism/core/dropdown_delegates.hpp>
-#include <prism/core/tabs_delegates.hpp>
-#include <prism/core/layout.hpp>
+#include <prism/delegates/dropdown_delegates.hpp>
+#include <prism/delegates/tabs_delegates.hpp>
+#include <prism/ui/layout.hpp>
 #include <prism/core/list.hpp>
-#include <prism/core/table.hpp>
-#include <prism/core/text_delegates.hpp>
+#include <prism/ui/table.hpp>
+#include <prism/delegates/text_delegates.hpp>
 #include <prism/core/traits.hpp>
-#include <prism/core/widget_node.hpp>
+#include <prism/ui/widget_node.hpp>
 #if __cpp_impl_reflection
 #include <prism/core/reflect.hpp>
 #endif

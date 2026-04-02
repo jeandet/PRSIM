@@ -1,8 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include <prism/core/window.hpp>
-#include <prism/core/headless_window.hpp>
+#include <prism/app/window.hpp>
+#include <prism/app/headless_window.hpp>
 
 TEST_CASE("WindowConfig has sensible defaults") {
     prism::WindowConfig cfg;

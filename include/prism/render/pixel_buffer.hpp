@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/draw_list.hpp> // Rect, Color
+#include <prism/render/draw_list.hpp> // Rect, Color
 
 #include <algorithm>
 #include <cstdint>

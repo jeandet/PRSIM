@@ -1,6 +1,6 @@
 #pragma once
 
-#include <prism/core/backend.hpp>
+#include <prism/app/backend.hpp>
 #include <prism/backends/sdl_window.hpp>
 
 #include <SDL3/SDL.h>

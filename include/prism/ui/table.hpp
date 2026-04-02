@@ -4,7 +4,7 @@
 #include <prism/core/list.hpp>
 #include <prism/core/traits.hpp>
 #include <prism/core/types.hpp>
-#include <prism/core/widget_node.hpp>
+#include <prism/ui/widget_node.hpp>
 
 #include <fmt/format.h>
 #include <functional>

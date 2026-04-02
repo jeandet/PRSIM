@@ -1,5 +1,5 @@
 #include <prism/backends/software_backend.hpp>
-#include <prism/core/window_chrome.hpp>
+#include <prism/ui/window_chrome.hpp>
 
 #include <cmath>
 

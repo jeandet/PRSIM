@@ -1,7 +1,7 @@
 #pragma once
-#include <prism/core/draw_list.hpp>
-#include <prism/core/delegate.hpp>
-#include <prism/core/context.hpp>
+#include <prism/render/draw_list.hpp>
+#include <prism/ui/delegate.hpp>
+#include <prism/ui/context.hpp>
 #include <fmt/format.h>
 #include <algorithm>
 #include <array>

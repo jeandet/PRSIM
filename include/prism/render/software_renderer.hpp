@@ -1,7 +1,7 @@
 #pragma once
 
-#include <prism/core/pixel_buffer.hpp>
-#include <prism/core/scene_snapshot.hpp>
+#include <prism/render/pixel_buffer.hpp>
+#include <prism/render/scene_snapshot.hpp>
 
 namespace prism {
 
