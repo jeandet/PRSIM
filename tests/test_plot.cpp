@@ -381,3 +381,18 @@ TEST_CASE("PlotModel drag pans view")
     plot.handle_canvas_input(up, node, bounds);
     CHECK(plot.drag_mode == DragMode::None);
 }
+
+TEST_CASE("default_series_colors returns 8 distinct colors")
+{
+    auto colors = prism::plot::default_series_colors(prism::default_theme());
+    CHECK(colors.size() == 8);
+
+    for (auto& c : colors)
+        CHECK(c.a == 255);
+
+    for (size_t i = 0; i < colors.size(); ++i)
+        for (size_t j = i + 1; j < colors.size(); ++j)
+            CHECK((colors[i].r != colors[j].r
+                   || colors[i].g != colors[j].g
+                   || colors[i].b != colors[j].b));
+}

@@ -3,6 +3,7 @@
 #include <prism/core/context.hpp>
 #include <fmt/format.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <span>
@@ -208,6 +209,20 @@ inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,
 
     if (!y_label.empty())
         dl.text(y_label, Point{X{2.f}, Y{map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw() / 2.f}}, 12.f, t.text);
+}
+
+inline std::array<Color, 8> default_series_colors(const Theme& t)
+{
+    return {{
+        t.accent,                              // cyan-ish
+        t.primary,                             // blue
+        Color::rgba(220, 80, 60),              // red
+        Color::rgba(80, 180, 80),              // green
+        Color::rgba(200, 160, 40),             // yellow
+        Color::rgba(160, 80, 200),             // purple
+        Color::rgba(240, 130, 40),             // orange
+        Color::rgba(100, 200, 200),            // teal
+    }};
 }
 
 } // namespace prism::plot
