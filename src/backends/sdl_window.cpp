@@ -2,7 +2,12 @@
 
 #include <cmath>
 
-namespace prism {
+namespace prism::backends {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::ui;
+using namespace prism::app;
+using namespace prism::input;
 
 namespace {
 
@@ -380,4 +385,4 @@ void SdlWindow::end_resize() {
     resize_zone_ = WindowChrome::HitZone::Client;
 }
 
-} // namespace prism
+} // namespace prism::backends

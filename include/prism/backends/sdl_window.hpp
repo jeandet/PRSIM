@@ -12,7 +12,11 @@
 #include <string>
 #include <vector>
 
-namespace prism {
+namespace prism::backends {
+using namespace prism::render;
+using namespace prism::ui;
+using namespace prism::app;
+
 
 class SdlWindow final : public Window {
 public:
@@ -88,4 +92,4 @@ private:
     void render_cmd(const Circle& cmd);
 };
 
-} // namespace prism
+} // namespace prism::backends

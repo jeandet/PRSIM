@@ -4,7 +4,9 @@
 
 #include <cstdint>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::render;
+
 
 // Bitmask of interactive states a widget can be in.
 enum class WidgetState : uint8_t {
@@ -111,4 +113,4 @@ concept Widget = requires(const T w, DrawList& dl, const Context& ctx) {
     { w.record(dl, ctx) } -> std::same_as<void>;
 };
 
-} // namespace prism
+} // namespace prism::ui

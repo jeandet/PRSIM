@@ -12,7 +12,11 @@
 #include <thread>
 #include <variant>
 
-namespace prism {
+namespace prism::app {
+using namespace prism::core;
+using namespace prism::input;
+using namespace prism::ui;
+
 
 class AppContext {
 public:
@@ -229,4 +233,4 @@ void model_app(std::string_view title, Model& model,
     model_app(WindowConfig{.title = title.data()}, model, std::move(setup));
 }
 
-} // namespace prism
+} // namespace prism::app

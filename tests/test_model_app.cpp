@@ -9,6 +9,7 @@
 #include <prism/render/scene_snapshot.hpp>
 
 #include <string>
+namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
 
 struct TestModel {
     prism::Field<int> count{42};
@@ -181,6 +182,7 @@ TEST_CASE("model_app setup callback receives scheduler and window") {
 #include <prism/ui/delegate.hpp>
 #include <prism/core/on.hpp>
 #include <fmt/format.h>
+
 
 // Reproducer: on_change callback that sets another field must not crash.
 // A common mistake is capturing a local lambda by reference in a then()

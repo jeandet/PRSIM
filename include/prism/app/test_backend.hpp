@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace prism {
+namespace prism::app {
 
 class TestBackend final : public BackendBase {
     std::vector<InputEvent> events_;
@@ -31,4 +31,4 @@ public:
     void quit() override {}
 };
 
-} // namespace prism
+} // namespace prism::app

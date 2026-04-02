@@ -17,7 +17,9 @@
 #include <meta>
 #endif
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::core;
+
 
 struct TableSource {
     std::function<size_t()> column_count;
@@ -148,4 +150,4 @@ struct TableState {
     }
 };
 
-} // namespace prism
+} // namespace prism::ui

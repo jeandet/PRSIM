@@ -5,7 +5,7 @@
 #include <concepts>
 #include <cstdint>
 
-namespace prism {
+namespace prism::core {
 
 template <typename Tag>
 struct Scalar {
@@ -270,4 +270,4 @@ constexpr Width operator""_w(long double v) { return Width{static_cast<float>(v)
 constexpr Height operator""_h(long double v) { return Height{static_cast<float>(v)}; }
 } // namespace literals
 
-} // namespace prism
+} // namespace prism::core

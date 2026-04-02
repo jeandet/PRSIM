@@ -11,6 +11,10 @@
 #include <cmath>
 
 namespace prism::plot {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
 
 template <typename T>
 concept PlotSource = requires(const T& src, size_t i) {

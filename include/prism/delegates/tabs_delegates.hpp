@@ -5,7 +5,8 @@
 #include <functional>
 #include <string>
 
-namespace prism {
+namespace prism::ui {
+
 namespace detail {
 
 inline const TabBarEditState& get_tabs_state(const WidgetNode& node) {
@@ -125,4 +126,4 @@ inline void Delegate<TabBar<>>::handle_input(Field<TabBar<>>& field, const Input
         });
 }
 
-} // namespace prism
+} // namespace prism::ui

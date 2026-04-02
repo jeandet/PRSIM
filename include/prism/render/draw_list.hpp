@@ -9,7 +9,9 @@
 #include <variant>
 #include <vector>
 
-namespace prism {
+namespace prism::render {
+using namespace prism::core;
+
 
 struct FilledRect {
     Rect rect;
@@ -196,4 +198,4 @@ struct DrawList {
     }
 };
 
-} // namespace prism
+} // namespace prism::render

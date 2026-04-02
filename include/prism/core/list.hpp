@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace prism {
+namespace prism::core {
 
 template <typename T>
 class List {
@@ -44,4 +44,4 @@ private:
     SenderHub<size_t, const T&> updated_;
 };
 
-} // namespace prism
+} // namespace prism::core

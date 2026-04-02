@@ -5,7 +5,9 @@
 
 #include <string_view>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::render;
+
 
 struct WindowChrome {
     static constexpr float title_bar_h = 32.f;
@@ -95,4 +97,4 @@ struct WindowChrome {
     }
 };
 
-} // namespace prism
+} // namespace prism::ui

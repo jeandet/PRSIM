@@ -4,7 +4,7 @@
 
 #include <string>
 
-namespace prism {
+namespace prism::app {
 
 class HeadlessWindow final : public Window {
 public:
@@ -46,4 +46,4 @@ private:
     DecorationMode decoration_;
 };
 
-} // namespace prism
+} // namespace prism::app

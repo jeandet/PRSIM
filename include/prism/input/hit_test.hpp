@@ -4,7 +4,9 @@
 
 #include <optional>
 
-namespace prism {
+namespace prism::input {
+using namespace prism::core;
+using namespace prism::render;
 
 [[nodiscard]] inline std::optional<WidgetId> hit_test(
     const SceneSnapshot& snap, Point pos)
@@ -43,4 +45,4 @@ namespace prism {
     return std::nullopt;
 }
 
-} // namespace prism
+} // namespace prism::input

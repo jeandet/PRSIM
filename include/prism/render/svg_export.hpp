@@ -7,7 +7,7 @@
 #include <sstream>
 #include <string>
 
-namespace prism {
+namespace prism::render {
 namespace detail {
 
 inline std::string fmt_float(float v) {
@@ -198,4 +198,4 @@ inline std::string to_svg(const SceneSnapshot& snap) {
     return e.out.str();
 }
 
-} // namespace prism
+} // namespace prism::render

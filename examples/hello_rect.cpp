@@ -1,6 +1,9 @@
 #include <prism/prism.hpp>
 
 #include <SDL3/SDL_keycode.h>
+namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
+
+
 
 struct State {
     int selected_panel = 0;
@@ -29,7 +32,7 @@ void content_card(auto& ui, float w, float h, prism::Color c) {
 }
 
 int main() {
-    prism::app<State>("PRISM Layout Demo", State{},
+    prism::app::app<State>("PRISM Layout Demo", State{},
         [](auto& ui) {
             // Root: full-window column (header / body / footer)
             ui.column([&] {

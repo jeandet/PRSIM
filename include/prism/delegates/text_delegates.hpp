@@ -8,7 +8,8 @@
 #include <string_view>
 #include <type_traits>
 
-namespace prism {
+namespace prism::ui {
+
 namespace detail {
 
 inline const TextEditState& get_text_edit_state(const WidgetNode& node) {
@@ -452,4 +453,4 @@ void Delegate<TextArea<T>>::handle_input(Field<TextArea<T>>& field, const InputE
     detail::text_area_handle_input(field, ev, node);
 }
 
-} // namespace prism
+} // namespace prism::ui

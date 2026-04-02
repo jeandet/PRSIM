@@ -9,7 +9,10 @@
 #include <memory>
 #include <vector>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::core;
+using namespace prism::render;
+
 
 struct WidgetNode;
 
@@ -47,4 +50,4 @@ struct Node {
     std::shared_ptr<TabsState> tabs_state;
 };
 
-} // namespace prism
+} // namespace prism::ui

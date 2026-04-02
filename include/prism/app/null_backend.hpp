@@ -3,7 +3,7 @@
 #include <prism/app/backend.hpp>
 #include <prism/app/headless_window.hpp>
 
-namespace prism {
+namespace prism::app {
 
 class NullBackend final : public BackendBase {
     HeadlessWindow window_{0, {}};
@@ -23,4 +23,4 @@ public:
     void quit() override {}
 };
 
-} // namespace prism
+} // namespace prism::app

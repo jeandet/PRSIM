@@ -10,7 +10,9 @@
 
 #include <vector>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::render;
+
 
 namespace scrollbar {
     inline constexpr Width track_width{6.f};
@@ -440,4 +442,4 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     }
 }
 
-} // namespace prism
+} // namespace prism::ui

@@ -5,8 +5,14 @@
 #include <prism/render/draw_list.hpp>
 #include <prism/core/field.hpp>
 #include <string>
+namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
 
 using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
 
 TEST_CASE("ease::linear") {
     CHECK(ease::linear(Progress{0.f}).raw() == doctest::Approx(0.f));
@@ -80,6 +86,7 @@ TEST_CASE("Lerpable concept") {
 }
 
 #include <chrono>
+
 using namespace std::chrono_literals;
 
 TEST_CASE("Spring starts at zero progress") {

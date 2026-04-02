@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace prism {
+namespace prism::render {
 
 // ARGB8888 pixel buffer for CPU rasterisation.
 // Pixel layout matches SDL_PIXELFORMAT_ARGB8888.
@@ -59,4 +59,4 @@ private:
     }
 };
 
-} // namespace prism
+} // namespace prism::render

@@ -10,7 +10,9 @@
 #include <variant>
 #include <vector>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::core;
+
 
 namespace ease {
 
@@ -404,4 +406,4 @@ template <Lerpable T>
     return TransitionGuard<T>(clock, field, std::move(config));
 }
 
-} // namespace prism
+} // namespace prism::ui

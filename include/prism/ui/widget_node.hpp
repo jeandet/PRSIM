@@ -15,7 +15,11 @@
 #include <memory>
 #include <vector>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+
 
 struct WidgetNode {
     WidgetId id = 0;
@@ -160,4 +164,4 @@ Node node_canvas(T& model, WidgetId& next_id) {
     return n;
 }
 
-} // namespace prism
+} // namespace prism::ui

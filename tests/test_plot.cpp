@@ -2,6 +2,8 @@
 #include <doctest.h>
 #include <prism/widgets/plot_render.hpp>
 #include <prism/widgets/plot.hpp>
+namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
+
 
 TEST_CASE("nice_ticks produces human-friendly values")
 {
@@ -48,6 +50,11 @@ TEST_CASE("nice_ticks handles degenerate range")
 TEST_CASE("PlotMapping to_pixel maps data corners to plot area corners")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     prism::plot::PlotMapping map{
         .x_range = {0.0, 10.0},
         .y_range = {0.0, 100.0},
@@ -68,6 +75,11 @@ TEST_CASE("PlotMapping to_pixel maps data corners to plot area corners")
 TEST_CASE("PlotMapping to_data roundtrips with to_pixel")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     prism::plot::PlotMapping map{
         .x_range = {-5.0, 5.0},
         .y_range = {0.0, 1.0},
@@ -119,6 +131,11 @@ TEST_CASE("auto_fit_range returns default for empty series")
 TEST_CASE("compute_mapping subtracts margins from bounds")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     Field<AxisRange> xr{{0.0, 10.0, false}};
@@ -135,6 +152,11 @@ TEST_CASE("compute_mapping subtracts margins from bounds")
 TEST_CASE("draw_background emits filled rect and border")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     DrawList dl;
     Rect area{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}};
     Theme t = default_theme();
@@ -148,6 +170,11 @@ TEST_CASE("draw_background emits filled rect and border")
 TEST_CASE("draw_grid emits grid lines and tick labels")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     DrawList dl;
     prism::plot::PlotMapping map{
         .x_range = {0.0, 10.0},
@@ -176,6 +203,11 @@ TEST_CASE("draw_grid emits grid lines and tick labels")
 TEST_CASE("draw_series emits polylines for each series")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
     DrawList dl;
     PlotMapping map{
@@ -199,6 +231,11 @@ TEST_CASE("draw_series emits polylines for each series")
 TEST_CASE("draw_cursor emits crosshair when visible")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
     DrawList dl;
     PlotMapping map{
@@ -221,6 +258,11 @@ TEST_CASE("draw_cursor emits crosshair when visible")
 TEST_CASE("draw_cursor emits nothing when not visible")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
     DrawList dl;
     PlotMapping map{
@@ -238,6 +280,11 @@ TEST_CASE("draw_cursor emits nothing when not visible")
 TEST_CASE("PlotModel canvas produces draw commands")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     PlotModel plot;
@@ -299,6 +346,11 @@ TEST_CASE("PlotModel notify bumps revision")
 TEST_CASE("PlotModel cursor updates on mouse move")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     PlotModel plot;
@@ -323,6 +375,11 @@ TEST_CASE("PlotModel cursor updates on mouse move")
 TEST_CASE("PlotModel scroll zooms view")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     PlotModel plot;
@@ -350,6 +407,11 @@ TEST_CASE("PlotModel scroll zooms view")
 TEST_CASE("PlotModel drag pans view")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     PlotModel plot;
@@ -388,6 +450,11 @@ TEST_CASE("PlotModel drag pans view")
 TEST_CASE("PlotModel reset_view restores auto_fit")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     PlotModel plot;
@@ -408,6 +475,11 @@ TEST_CASE("PlotModel reset_view restores auto_fit")
 TEST_CASE("PlotModel right-click resets view")
 {
     using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
     using namespace prism::plot;
 
     PlotModel plot;

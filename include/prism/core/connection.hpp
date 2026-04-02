@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-namespace prism {
+namespace prism::core {
 
 class Connection {
 public:
@@ -99,4 +99,4 @@ template <typename... Args, typename F>
     return hub.connect(std::move(adaptor.fn));
 }
 
-} // namespace prism
+} // namespace prism::core

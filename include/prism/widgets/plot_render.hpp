@@ -11,6 +11,10 @@
 #include <vector>
 
 namespace prism::plot {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
 
 struct AxisRange {
     double min = 0.0;

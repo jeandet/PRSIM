@@ -6,7 +6,9 @@
 #include <string_view>
 #include <utility>
 
-namespace prism {
+namespace prism::app {
+using namespace prism::input;
+
 
 using WindowId = uint32_t;
 
@@ -58,4 +60,4 @@ struct WindowEvent {
     InputEvent event;
 };
 
-} // namespace prism
+} // namespace prism::app

@@ -5,7 +5,8 @@
 #include <functional>
 #include <string>
 
-namespace prism {
+namespace prism::ui {
+
 namespace detail {
 
 struct DropdownLabelResolver {
@@ -204,4 +205,4 @@ void Delegate<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputE
         });
 }
 
-} // namespace prism
+} // namespace prism::ui

@@ -14,7 +14,12 @@
 #include <thread>
 #include <vector>
 
-namespace prism {
+namespace prism::app {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+
 
 template <typename State>
 using UpdateFn = std::function<void(State&, const InputEvent&)>;
@@ -192,4 +197,4 @@ void app(std::string_view title,
     app<State>(title, State{}, std::move(view), std::move(update));
 }
 
-} // namespace prism
+} // namespace prism::app

@@ -5,7 +5,7 @@
 #include <functional>
 #include <vector>
 
-namespace prism {
+namespace prism::core {
 
 template <typename T, typename Derived>
 struct ObservableValue {
@@ -40,4 +40,4 @@ struct Field : ObservableValue<T, Field<T>> {
     using ObservableValue<T, Field<T>>::ObservableValue;
 };
 
-} // namespace prism
+} // namespace prism::core

@@ -3,7 +3,7 @@
 #include <atomic>
 #include <memory>
 
-namespace prism {
+namespace prism::core {
 
 // Single-value atomic cell for publishing immutable snapshots.
 // Multiple producers may store; a single consumer loads the latest.
@@ -30,4 +30,4 @@ public:
     }
 };
 
-} // namespace prism
+} // namespace prism::core

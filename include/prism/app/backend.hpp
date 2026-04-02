@@ -7,7 +7,10 @@
 #include <functional>
 #include <memory>
 
-namespace prism {
+namespace prism::app {
+using namespace prism::render;
+using namespace prism::input;
+
 
 class BackendBase {
 public:
@@ -41,4 +44,4 @@ public:
     Backend& operator=(Backend&&) noexcept = default;
 };
 
-} // namespace prism
+} // namespace prism::app

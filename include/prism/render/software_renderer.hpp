@@ -3,7 +3,7 @@
 #include <prism/render/pixel_buffer.hpp>
 #include <prism/render/scene_snapshot.hpp>
 
-namespace prism {
+namespace prism::render {
 
 // Rasterises a SceneSnapshot into a PixelBuffer.
 // Satisfies RenderBackend concept: render_frame(snap), resize(w, h).
@@ -44,4 +44,4 @@ private:
     void rasterise(const Circle&) {}      // POC: skip circles
 };
 
-} // namespace prism
+} // namespace prism::render

@@ -5,7 +5,7 @@
 #if __cpp_impl_reflection
 #include <meta>
 
-namespace prism {
+namespace prism::core {
 
 // Visit all Field<T> members of a struct (non-recursive)
 template <typename Model, typename Fn>
@@ -70,6 +70,6 @@ void for_each_member(Model& model, Fn&& fn) {
     }
 }
 
-} // namespace prism
+} // namespace prism::core
 
 #endif // __cpp_impl_reflection

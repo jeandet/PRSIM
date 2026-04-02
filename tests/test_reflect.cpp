@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
 
 struct Simple {
     prism::Field<int> x{1};
@@ -75,6 +76,7 @@ TEST_CASE("for_each_member visits fields and sub-components") {
 #endif // __cpp_impl_reflection
 
 #include <prism/core/state.hpp>
+
 
 struct ModelWithState {
     prism::Field<int> visible{0};

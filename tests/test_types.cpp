@@ -2,8 +2,15 @@
 #include <doctest.h>
 
 #include <prism/core/types.hpp>
+namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
+
 
 using namespace prism;
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+using namespace prism::ui;
+using namespace prism::app;
 using namespace prism::literals;
 
 TEST_CASE("Scalar construction and raw()") {

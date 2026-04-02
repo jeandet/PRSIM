@@ -22,7 +22,10 @@
 #include <unordered_map>
 #include <vector>
 
-namespace prism {
+namespace prism::app {
+using namespace prism::core;
+using namespace prism::ui;
+
 
 // index_ stores raw pointers into the tree -- valid only because the tree
 // is fully built before build_index runs and never mutated after construction.
@@ -369,7 +372,7 @@ public:
                 wn.record = [&field, names_ptr](WidgetNode& node) {
                     node.draws.clear();
                     node.overlay_draws.clear();
-                    detail::tabs_record(node.draws, node, field.get().selected, *names_ptr);
+                    prism::ui::detail::tabs_record(node.draws, node, field.get().selected, *names_ptr);
                 };
                 wn.record(wn);
                 wn.wire = [&field, names_ptr](WidgetNode& node) {
@@ -377,7 +380,7 @@ public:
                         node.on_input.connect([&field, names_ptr, &node](const InputEvent& ev) {
                             size_t count = names_ptr->size();
                             if (count == 0) return;
-                            detail::tabs_handle_input(ev, node, field.get().selected, count,
+                            prism::ui::detail::tabs_handle_input(ev, node, field.get().selected, count,
                                 [&field](size_t idx) {
                                     field.value.selected = idx;
                                     field.on_change().emit(field.value);
@@ -1480,4 +1483,4 @@ private:
     }
 };
 
-} // namespace prism
+} // namespace prism::app

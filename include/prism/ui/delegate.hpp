@@ -15,7 +15,11 @@
 #include <variant>
 #include <vector>
 
-namespace prism {
+namespace prism::ui {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+
 
 struct WidgetVisualState {
     bool hovered = false;
@@ -620,4 +624,4 @@ struct Delegate<TabBar<>> {
     static void handle_input(Field<TabBar<>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
-} // namespace prism
+} // namespace prism::ui

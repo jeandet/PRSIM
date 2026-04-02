@@ -2,7 +2,7 @@
 
 #include <type_traits>
 
-namespace prism {
+namespace prism::core {
 
 template <typename T>
 struct is_field : std::false_type {};
@@ -45,4 +45,4 @@ struct is_list<List<T>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_list_v = is_list<T>::value;
 
-} // namespace prism
+} // namespace prism::core

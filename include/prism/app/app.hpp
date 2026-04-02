@@ -12,7 +12,11 @@
 #include <optional>
 #include <thread>
 
-namespace prism {
+namespace prism::app {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::input;
+
 
 class Frame {
 public:
@@ -133,4 +137,4 @@ private:
     bool quit_requested_ = false;
 };
 
-} // namespace prism
+} // namespace prism::app

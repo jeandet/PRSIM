@@ -3,7 +3,7 @@
 #include <atomic>
 #include <optional>
 
-namespace prism {
+namespace prism::core {
 
 // Apple Silicon (aarch64 with 128-byte L1 lines) and POWER use 128, everything else 64.
 // There's no reliable compile-time way to distinguish Apple Silicon from other AArch64,
@@ -65,4 +65,4 @@ public:
     }
 };
 
-} // namespace prism
+} // namespace prism::core

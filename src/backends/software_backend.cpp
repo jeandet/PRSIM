@@ -3,7 +3,11 @@
 
 #include <cmath>
 
-namespace prism {
+namespace prism::backends {
+using namespace prism::core;
+using namespace prism::render;
+using namespace prism::ui;
+using namespace prism::app;
 
 const char* SoftwareBackend::resolve_font_path(const RenderConfig& cfg) {
     if (cfg.font_path) return cfg.font_path;
@@ -234,8 +238,4 @@ void SoftwareBackend::quit() {
     wake();
 }
 
-Backend Backend::software(RenderConfig cfg) {
-    return Backend{std::make_unique<SoftwareBackend>(cfg)};
-}
-
-} // namespace prism
+} // namespace prism::backends

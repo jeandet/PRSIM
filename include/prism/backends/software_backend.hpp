@@ -10,7 +10,9 @@
 #include <unordered_map>
 #include <memory>
 
-namespace prism {
+namespace prism::backends {
+using namespace prism::app;
+
 
 class SoftwareBackend final : public BackendBase {
 public:
@@ -47,4 +49,4 @@ private:
     static const char* resolve_font_path(const RenderConfig& cfg);
 };
 
-} // namespace prism
+} // namespace prism::backends

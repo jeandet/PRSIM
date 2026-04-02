@@ -6,7 +6,9 @@
 #include <string>
 #include <variant>
 
-namespace prism {
+namespace prism::input {
+using namespace prism::core;
+
 
 struct MouseMove   { Point position; };
 struct MouseButton { Point position; uint8_t button; bool pressed; };
@@ -70,4 +72,4 @@ inline InputEvent localize_mouse(const InputEvent& ev, Rect widget_rect) {
     return ev;
 }
 
-} // namespace prism
+} // namespace prism::input

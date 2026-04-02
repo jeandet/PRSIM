@@ -3,7 +3,7 @@
 #include <prism/core/connection.hpp>
 #include <prism/core/exec.hpp>
 
-namespace prism {
+namespace prism::core {
 
 // Scheduler adaptor: hub | prism::on(sched) | prism::then(f)
 // Wraps the downstream callback to execute on the given scheduler.
@@ -40,4 +40,4 @@ template <typename Scheduler, typename... Args, typename F>
     });
 }
 
-} // namespace prism
+} // namespace prism::core

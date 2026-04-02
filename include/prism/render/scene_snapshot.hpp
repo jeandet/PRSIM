@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace prism {
+namespace prism::render {
 
 using WidgetId = uint64_t;
 
@@ -38,4 +38,4 @@ inline void resolve_clips(SceneSnapshot& snap) {
     }
 }
 
-} // namespace prism
+} // namespace prism::render
