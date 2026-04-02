@@ -274,8 +274,18 @@ inline Point make_point(float x, float y) {
 }
 } // namespace detail
 
+namespace detail {
+inline constexpr float default_widget_h = 30.f;
+inline constexpr float default_widget_w = 200.f;
+
+inline float widget_w(const WidgetNode& node) {
+    auto sz = node_allocated(node);
+    return sz.w.raw() > 0 ? sz.w.raw() : default_widget_w;
+}
+} // namespace detail
+
 // Primary template: default delegate for any Field<T>.
-// Renders only a filled rect, ignores input.
+// Renders a filled rect, ignores input.
 template <typename T>
 struct Delegate {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
@@ -283,8 +293,27 @@ struct Delegate {
     static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
+        float w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
+        dl.filled_rect(detail::make_rect(0, 0, w, detail::default_widget_h), bg);
+    }
+
+    static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
+};
+
+// Numeric specialization: displays the value as text
+template <Numeric T>
+struct Delegate<T> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+
+    static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
+        auto& vs = node_vs(node);
+        auto& t = node_theme(node);
+        float w = detail::widget_w(node);
+        auto bg = vs.hovered ? t.surface_hover : t.surface;
+        dl.filled_rect(detail::make_rect(0, 0, w, detail::default_widget_h), bg);
+        dl.text(std::to_string(field.get()),
+                detail::make_point(4, 4), 14, t.text);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -298,8 +327,9 @@ struct Delegate<T> {
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
+        float w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, 200, 30), bg);
+        dl.filled_rect(detail::make_rect(0, 0, w, detail::default_widget_h), bg);
         dl.text(std::string(field.get().data(), field.get().size()),
                 detail::make_point(4, 4), 14, t.text);
     }
@@ -340,16 +370,17 @@ inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
 template <>
 struct Delegate<Checkbox> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_w = 200.f, widget_h = 30.f;
+    static constexpr float widget_h = 30.f;
     static constexpr float box_size = 16.f;
 
     static void record(DrawList& dl, const Field<Checkbox>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
         auto& cb = field.get();
+        float w = detail::widget_w(node);
 
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, widget_w, widget_h), bg);
+        dl.filled_rect(detail::make_rect(0, 0, w, widget_h), bg);
 
         float box_y = (widget_h - box_size) / 2.f;
         draw_check_box(dl, 8, box_y, cb.checked, vs, t);
@@ -358,7 +389,7 @@ struct Delegate<Checkbox> {
             dl.text(cb.label, detail::make_point(32, 7), 14, t.text);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-1, -1, widget_w + 2, widget_h + 2),
+            dl.rect_outline(detail::make_rect(-1, -1, w + 2, widget_h + 2),
                             t.focus_ring, 2.0f);
     }
 
@@ -385,17 +416,18 @@ struct Delegate<bool> {
     static void record(DrawList& dl, const Field<bool>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        constexpr float widget_w = 200.f, widget_h = 30.f;
+        constexpr float widget_h = 30.f;
         constexpr float box_size = 16.f;
+        float w = detail::widget_w(node);
 
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, widget_w, widget_h), bg);
+        dl.filled_rect(detail::make_rect(0, 0, w, widget_h), bg);
 
         float box_y = (widget_h - box_size) / 2.f;
         draw_check_box(dl, 8, box_y, field.get(), vs, t);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-1, -1, widget_w + 2, widget_h + 2),
+            dl.rect_outline(detail::make_rect(-1, -1, w + 2, widget_h + 2),
                             t.focus_ring, 2.0f);
     }
 
@@ -415,7 +447,8 @@ struct Delegate<Label<T>> {
 
     static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode& node) {
         auto& t = node_theme(node);
-        dl.filled_rect(detail::make_rect(0, 0, 200, 24), t.surface);
+        float w = detail::widget_w(node);
+        dl.filled_rect(detail::make_rect(0, 0, w, 24), t.surface);
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
                 detail::make_point(4, 4), 14, t.text_muted);
     }
@@ -527,14 +560,15 @@ struct Delegate<Button> {
     static void record(DrawList& dl, const Field<Button>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
+        float w = detail::widget_w(node);
         Color bg = vs.pressed ? t.primary_active
                  : vs.hovered ? t.primary_hover
                  : t.primary;
-        dl.filled_rect(detail::make_rect(0, 0, 200, 32), bg);
-        dl.rect_outline(detail::make_rect(0, 0, 200, 32), t.primary_outline, 1.0f);
+        dl.filled_rect(detail::make_rect(0, 0, w, 32), bg);
+        dl.rect_outline(detail::make_rect(0, 0, w, 32), t.primary_outline, 1.0f);
         dl.text(field.get().text, detail::make_point(8, 7), 14, t.text_on_primary);
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-2, -2, 204, 36), t.focus_ring, 2.0f);
+            dl.rect_outline(detail::make_rect(-2, -2, w + 4, 36), t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {
@@ -555,7 +589,6 @@ struct Delegate<Button> {
 template <StringLike T>
 struct Delegate<TextField<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_w = 200.f;
     static constexpr float widget_h = 30.f;
     static constexpr float padding = 4.f;
     static constexpr float font_size = 14.f;
@@ -571,7 +604,6 @@ struct Delegate<TextField<T>> {
 template <StringLike T>
 struct Delegate<Password<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_w = 200.f;
     static constexpr float widget_h = 30.f;
     static constexpr float padding = 4.f;
     static constexpr float font_size = 14.f;
@@ -586,7 +618,6 @@ struct Delegate<Password<T>> {
 template <StringLike T>
 struct Delegate<TextArea<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_w = 200.f;
     static constexpr float padding = 4.f;
     static constexpr float font_size = 14.f;
     static constexpr float line_height = font_size * 1.4f;

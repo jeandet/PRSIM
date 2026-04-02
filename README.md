@@ -60,6 +60,106 @@ graph TB
 
 **The frame contract:** the renderer guarantees frame delivery independent of application state. The application never blocks the renderer. The renderer never calls into application code.
 
+## Quick Tour
+
+Screenshots are auto-generated: each model is compiled, rendered headlessly, and exported as SVG. Run `scripts/update_screenshots.sh` to regenerate.
+
+**Hello World** — define a struct, get a UI. With C++26 reflection, there is no boilerplate:
+
+```cpp
+struct Counter {
+    prism::Field<int> count{42};
+    prism::Field<std::string> label{"Hello, PRISM!"};
+};
+
+Counter counter;
+prism::model_app("My App", counter);  // reflection generates the UI
+```
+
+<p align="center"><img src="doc/screenshots/counter.svg" alt="Counter" width="400"/></p>
+
+On C++23 (no reflection), add a one-liner `view()` method — same result:
+
+```cpp
+void view(prism::WidgetTree::ViewBuilder& vb) { vb.vstack(count, label); }
+```
+
+**Widgets from types** — the type inside `Field<T>` determines the widget. No registration:
+
+```cpp
+struct AudioMixer {
+    prism::Field<prism::Slider<>> volume{{.value = 0.75, .min = 0.0, .max = 1.0}};
+    prism::Field<prism::Slider<int>> quality{{.value = 3, .min = 1, .max = 5, .step = 1}};
+    prism::Field<prism::Checkbox> mute{{.checked = false, .label = "Mute"}};
+};
+```
+
+<p align="center"><img src="doc/screenshots/slider.svg" alt="Slider" width="400"/></p>
+
+**Composition** — nest structs. Reflection walks them recursively:
+
+```cpp
+struct Settings {
+    prism::Field<std::string> username{"jeandet"};
+    prism::Field<bool> dark_mode{true};
+};
+
+struct Dashboard {
+    Settings settings;                   // nested group — recurses automatically
+    prism::Field<prism::Slider<>> brightness{{.value = 0.6, .min = 0.0, .max = 1.0}};
+    prism::Field<prism::Button> apply{{"Apply"}};
+};
+```
+
+For custom layouts (e.g. `hstack`), add a `view()` method:
+
+```cpp
+void view(prism::WidgetTree::ViewBuilder& vb) {
+    vb.vstack([&] {
+        vb.component(settings);
+        vb.hstack(brightness, apply);
+    });
+}
+```
+
+<p align="center"><img src="doc/screenshots/layout.svg" alt="Layout" width="400"/></p>
+
+**Canvas escape hatch** — drop to raw drawing when you need it:
+
+```cpp
+struct Waveform {
+    prism::Field<prism::Slider<>> frequency{{.value = 3.0, .min = 0.5, .max = 8.0}};
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
+        // Custom drawing: polyline, shapes, theme colors...
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.canvas(*this).depends_on(frequency);
+        vb.widget(frequency);
+    }
+};
+```
+
+<p align="center"><img src="doc/screenshots/canvas.svg" alt="Canvas" width="400"/></p>
+
+**Plot widget** — scientific data visualization with zoom, pan, and crosshair:
+
+```cpp
+struct PlotShowcase {
+    prism::plot::PlotModel plot;
+    // ... populate with XYData series ...
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.canvas(plot)
+            .depends_on(plot.x_range).depends_on(plot.y_range)
+            .depends_on(plot.view).depends_on(plot.cursor)
+            .depends_on(plot.revision);
+    }
+};
+```
+
+<p align="center"><img src="doc/screenshots/plot.svg" alt="Plot" width="600"/></p>
+
 ## Core Abstractions: `Field<T>` and `State<T>`
 
 Two observable types share the same core (`.get()`, `.set()`, `.on_change()`):

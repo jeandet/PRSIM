@@ -45,6 +45,7 @@
 #include <prism/app/headless_window.hpp>
 #include <prism/app/null_backend.hpp>
 #include <prism/app/test_backend.hpp>
+#include <prism/app/capturing_backend.hpp>
 #include <prism/app/app.hpp>
 #include <prism/app/ui.hpp>
 #include <prism/app/model_app.hpp>

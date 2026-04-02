@@ -26,7 +26,6 @@ inline DropdownEditState& ensure_dropdown_state(WidgetNode& node) {
     return std::get<DropdownEditState>(node.edit_state);
 }
 
-constexpr float dd_widget_w = 200.f;
 constexpr float dd_widget_h = 30.f;
 constexpr float dd_padding = 8.f;
 constexpr float dd_font_size = 14.f;
@@ -37,19 +36,20 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
                             const DropdownLabelResolver& resolver) {
     auto& vs = node_vs(node);
     auto& es = ensure_dropdown_state(node);
+    float w = detail::widget_w(node);
 
     auto& t = *node.theme;
     auto bg = es.open    ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(0, 0, dd_widget_w, dd_widget_h), bg);
+    dl.filled_rect(make_rect(0, 0, w, dd_widget_h), bg);
 
     dl.text(current_label, make_point(dd_padding, 7), dd_font_size, t.text);
 
-    dl.text("\xe2\x96\xbe", make_point(dd_widget_w - 20, 7), dd_font_size, t.text_muted);
+    dl.text("\xe2\x96\xbe", make_point(w - 20, 7), dd_font_size, t.text_muted);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(-1, -1, dd_widget_w + 2, dd_widget_h + 2),
+        dl.rect_outline(make_rect(-1, -1, w + 2, dd_widget_h + 2),
                         t.focus_ring, 2.0f);
 
     node.overlay_draws.clear();
@@ -63,17 +63,17 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
             popup_y = -popup_h;
 
         node.overlay_draws.filled_rect(
-            make_rect(0, popup_y, dd_widget_w, popup_h),
+            make_rect(0, popup_y, w, popup_h),
             t.popup_bg);
         node.overlay_draws.rect_outline(
-            make_rect(0, popup_y, dd_widget_w, popup_h),
+            make_rect(0, popup_y, w, popup_h),
             t.popup_border, 1.0f);
 
         for (size_t i = 0; i < resolver.count; ++i) {
             float y = popup_y + static_cast<float>(i) * dd_option_h;
             if (i == es.highlighted) {
                 node.overlay_draws.filled_rect(
-                    make_rect(0, y, dd_widget_w, dd_option_h),
+                    make_rect(0, y, w, dd_option_h),
                     t.popup_highlight);
             }
             node.overlay_draws.text(
@@ -83,7 +83,7 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
                                     : t.text);
         }
 
-        es.popup_rect = make_rect(0, popup_y, dd_widget_w, popup_h);
+        es.popup_rect = make_rect(0, popup_y, w, popup_h);
     }
 }
 
@@ -98,7 +98,7 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
             float popup_y = es.popup_rect.origin.y.raw();
             float rel_y = mb->position.y.raw() - popup_y;
             if (rel_y >= 0 && rel_y < static_cast<float>(count) * dd_option_h
-                && mb->position.x.raw() >= 0 && mb->position.x.raw() < dd_widget_w) {
+                && mb->position.x.raw() >= 0 && mb->position.x.raw() < detail::widget_w(node)) {
                 size_t idx = static_cast<size_t>(rel_y / dd_option_h);
                 select(idx);
                 changed = true;
@@ -110,7 +110,7 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
             es.highlighted = current_index;
             float popup_h = static_cast<float>(count) * dd_option_h;
             // Default: open below; record() may flip upward
-            es.popup_rect = make_rect(0, dd_widget_h, dd_widget_w, popup_h);
+            es.popup_rect = make_rect(0, dd_widget_h, detail::widget_w(node), popup_h);
             node.dirty = true;
         }
     } else if (auto* kp = std::get_if<KeyPress>(&ev)) {

@@ -32,7 +32,6 @@ inline std::string mask_string(size_t len) {
     return result;
 }
 
-constexpr float tf_widget_w = 200.f;
 constexpr float tf_widget_h = 30.f;
 constexpr float tf_padding = 4.f;
 constexpr float tf_font_size = 14.f;
@@ -45,18 +44,19 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     auto& sf = field.get();
     auto& es = get_text_edit_state(node);
     float cw = char_width(tf_font_size);
+    float w = detail::widget_w(node);
 
     auto& t = *node.theme;
     auto bg = vs.focused ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(0, 0, tf_widget_w, tf_widget_h), bg);
+    dl.filled_rect(make_rect(0, 0, w, tf_widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(-1, -1, tf_widget_w + 2, tf_widget_h + 2),
+        dl.rect_outline(make_rect(-1, -1, w + 2, tf_widget_h + 2),
                         t.focus_ring, 2.0f);
 
-    float text_area_w = tf_widget_w - 2 * tf_padding;
+    float text_area_w = w - 2 * tf_padding;
     dl.clip_push(make_point(tf_padding, 0), Size{Width{text_area_w}, Height{tf_widget_h}});
 
     if (sf.value.empty() && !vs.focused) {
@@ -134,7 +134,8 @@ void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widge
     }
 
     float cw = char_width(tf_font_size);
-    float text_area_w = tf_widget_w - 2 * tf_padding;
+    float w = detail::widget_w(node);
+    float text_area_w = w - 2 * tf_padding;
     float cursor_px = static_cast<float>(es.cursor) * cw;
     if (cursor_px - es.scroll_offset > text_area_w)
         es.scroll_offset = cursor_px - text_area_w;
@@ -217,7 +218,6 @@ inline TextAreaEditState& ensure_text_area_edit_state(WidgetNode& node) {
     return std::get<TextAreaEditState>(node.edit_state);
 }
 
-constexpr float ta_widget_w = 200.f;
 constexpr float ta_padding = 4.f;
 constexpr float ta_font_size = 14.f;
 constexpr float ta_line_height = ta_font_size * 1.4f;
@@ -229,7 +229,8 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     auto& sf = field.get();
     auto& es = get_text_area_edit_state(node);
     float cw = char_width(ta_font_size);
-    float text_area_w = ta_widget_w - 2 * ta_padding;
+    float w = detail::widget_w(node);
+    float text_area_w = w - 2 * ta_padding;
     float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
     float widget_h = ta_padding * 2 + text_area_h;
 
@@ -237,10 +238,10 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     auto bg = vs.focused ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(0, 0, ta_widget_w, widget_h), bg);
+    dl.filled_rect(make_rect(0, 0, w, widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(-1, -1, ta_widget_w + 2, widget_h + 2),
+        dl.rect_outline(make_rect(-1, -1, w + 2, widget_h + 2),
                         t.focus_ring, 2.0f);
 
     dl.clip_push(make_point(ta_padding, ta_padding), Size{Width{text_area_w}, Height{text_area_h}});
@@ -279,7 +280,8 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
     auto len = sf.value.size();
     es.cursor = std::min(es.cursor, len);
     float cw = char_width(ta_font_size);
-    float text_area_w = ta_widget_w - 2 * ta_padding;
+    float w = detail::widget_w(node);
+    float text_area_w = w - 2 * ta_padding;
     float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
 
     auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),

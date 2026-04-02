@@ -82,6 +82,8 @@ struct SvgEmitter {
             << "\" fill=\"" << fmt_color(c.color) << "\"";
         if (c.anchor == TextAnchor::Center)
             out << " text-anchor=\"middle\" dominant-baseline=\"central\"";
+        else
+            out << " dominant-baseline=\"hanging\"";
         if (c.angle != 0.f)
             out << " transform=\"rotate(" << fmt_float(-c.angle)
                 << " " << fmt_float(c.origin.x.raw())
@@ -187,6 +189,29 @@ inline std::string to_svg(const SceneSnapshot& snap) {
           << detail::fmt_float(min_y) << " "
           << detail::fmt_float(max_x - min_x) << " "
           << detail::fmt_float(max_y - min_y) << "\">\n";
+
+    for (uint16_t idx : snap.z_order)
+        e.emit_commands(snap.draw_lists[idx]);
+
+    if (!snap.overlay.empty())
+        e.emit_commands(snap.overlay);
+
+    e.out << "</svg>\n";
+    return e.out.str();
+}
+
+// Viewport-aware overload: uses explicit width/height for viewBox and adds
+// a background rect so the SVG matches the actual window appearance.
+inline std::string to_svg(const SceneSnapshot& snap, float width, float height,
+                          Color bg = Color::rgba(30, 30, 30)) {
+    detail::SvgEmitter e;
+    e.out << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 "
+          << detail::fmt_float(width) << " "
+          << detail::fmt_float(height) << "\">\n";
+
+    e.out << "<rect width=\"" << detail::fmt_float(width)
+          << "\" height=\"" << detail::fmt_float(height)
+          << "\" fill=\"" << detail::fmt_color(bg) << "\"/>\n";
 
     for (uint16_t idx : snap.z_order)
         e.emit_commands(snap.draw_lists[idx]);
