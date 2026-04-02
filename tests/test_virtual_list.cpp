@@ -3,7 +3,12 @@
 
 #include <prism/core/types.hpp>
 #include <fmt/format.h>
-namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
+namespace prism::core {} namespace prism::render {} namespace prism::input {}
+namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
+namespace prism {
+using namespace core; using namespace render; using namespace input;
+using namespace ui; using namespace app; using namespace plot;
+}
 
 using namespace prism;
 using namespace prism::core;

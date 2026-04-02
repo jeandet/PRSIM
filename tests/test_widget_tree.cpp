@@ -6,7 +6,12 @@
 #include <prism/input/input_event.hpp>
 
 #include <string>
-namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
+namespace prism::core {} namespace prism::render {} namespace prism::input {}
+namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
+namespace prism {
+using namespace core; using namespace render; using namespace input;
+using namespace ui; using namespace app; using namespace plot;
+}
 
 namespace {
 prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }

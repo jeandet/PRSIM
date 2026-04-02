@@ -4,7 +4,12 @@
 #include <string>
 
 #include <prism/app/widget_tree.hpp>
-namespace prism::core {} namespace prism::render {} namespace prism::input {} namespace prism::ui {} namespace prism::app {} namespace prism::plot {} namespace prism { using namespace core; using namespace render; using namespace input; using namespace ui; using namespace app; using namespace plot; }
+namespace prism::core {} namespace prism::render {} namespace prism::input {}
+namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
+namespace prism {
+using namespace core; using namespace render; using namespace input;
+using namespace ui; using namespace app; using namespace plot;
+}
 
 
 TEST_CASE("WidgetNode has layout_kind defaulting to Default") {
