@@ -68,6 +68,8 @@ struct ViewTransform {
 
 enum class DragMode { None, Pan };
 
+constexpr double zoom_base = 1.1;
+
 inline PlotMapping compute_mapping(Rect bounds,
                                    const Field<AxisRange>& xr,
                                    const Field<AxisRange>& yr,
@@ -150,17 +152,18 @@ struct PlotModel {
                                    std::span<const Series>(series_));
 
         draw_background(dl, map.plot_area, t);
+        auto ticks = compute_ticks(map);
 
         // Inside clip_push, coordinates are local (origin = {0,0})
         PlotMapping local_map = map;
         local_map.plot_area.origin = Point{X{0}, Y{0}};
 
         dl.clip_push(map.plot_area.origin, map.plot_area.extent);
-        draw_grid_lines(dl, local_map, t);
+        draw_grid_lines(dl, local_map, ticks, t);
         draw_series(dl, local_map, std::span<const Series>(series_));
         draw_cursor(dl, local_map, cursor.get(), t);
         dl.clip_pop();
-        draw_tick_labels(dl, map, t);
+        draw_tick_labels(dl, map, ticks, t);
         draw_axes_labels(dl, map, x_label.get(), y_label.get(), t);
     }
 
@@ -215,7 +218,7 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*n
         }
 
     } else if (auto* mb = std::get_if<MouseButton>(&ev)) {
-        if (mb->button == 1) {
+        if (mb->button == buttons::left) {
             if (mb->pressed) {
                 drag_mode = DragMode::Pan;
                 drag_start_pixel = mb->position;
@@ -225,7 +228,7 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*n
             } else {
                 drag_mode = DragMode::None;
             }
-        } else if (mb->button == 3 && mb->pressed) {
+        } else if (mb->button == buttons::right && mb->pressed) {
             if (map.plot_area.contains(mb->position))
                 reset_view();
         }
@@ -233,42 +236,36 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*n
     } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
         float px = ms->position.x.raw();
         float py = ms->position.y.raw();
-        float left = map.plot_area.origin.x.raw();
-        float right = left + map.plot_area.extent.w.raw();
-        float top = map.plot_area.origin.y.raw();
-        float bottom = top + map.plot_area.extent.h.raw();
 
         bool in_plot = map.plot_area.contains(ms->position);
-        bool in_x_axis = (px >= left && px <= right && py > bottom && py <= bottom + margin_bottom);
-        bool in_y_axis = (py >= top && py <= bottom && px >= left - margin_left && px < left);
+        bool in_x_axis = (px >= map.left() && px <= map.right()
+                          && py > map.bottom() && py <= map.bottom() + margin_bottom);
+        bool in_y_axis = (py >= map.top() && py <= map.bottom()
+                          && px >= map.left() - margin_left && px < map.left());
 
         if (!in_plot && !in_x_axis && !in_y_axis) return;
 
         freeze_auto_fit();
 
-        double factor = std::pow(1.1, ms->dy.raw());
-        Point clamp_pt{X{std::clamp(px, left, right)}, Y{std::clamp(py, top, bottom)}};
+        double factor = std::pow(zoom_base, ms->dy.raw());
+        Point clamp_pt{X{std::clamp(px, map.left(), map.right())},
+                       Y{std::clamp(py, map.top(), map.bottom())}};
         auto [data_x, data_y] = map.to_data(clamp_pt);
 
+        auto zoom_axis = [factor](double& scale, double& offset,
+                                  double data_anchor, AxisRange base) {
+            double old = scale;
+            scale *= factor;
+            double center = (base.min + base.max) / 2.0;
+            offset = data_anchor - center
+                     + (center + offset - data_anchor) * old / scale;
+        };
+
         auto v = view.get();
-        auto base_x = x_range.get();
-        auto base_y = y_range.get();
-
-        bool zoom_x = in_plot || in_x_axis;
-        bool zoom_y = in_plot || in_y_axis;
-
-        if (zoom_x) {
-            double old = v.scale_x;
-            v.scale_x *= factor;
-            double cx = (base_x.min + base_x.max) / 2.0;
-            v.offset_x = data_x - cx + (cx + v.offset_x - data_x) * old / v.scale_x;
-        }
-        if (zoom_y) {
-            double old = v.scale_y;
-            v.scale_y *= factor;
-            double cy = (base_y.min + base_y.max) / 2.0;
-            v.offset_y = data_y - cy + (cy + v.offset_y - data_y) * old / v.scale_y;
-        }
+        if (in_plot || in_x_axis)
+            zoom_axis(v.scale_x, v.offset_x, data_x, x_range.get());
+        if (in_plot || in_y_axis)
+            zoom_axis(v.scale_y, v.offset_y, data_y, y_range.get());
 
         view.set(v);
     }

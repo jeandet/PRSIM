@@ -44,6 +44,12 @@ namespace mods {
     inline constexpr uint16_t shift = 0x0003;  // matches SDL_KMOD_SHIFT
 }
 
+namespace buttons {
+    inline constexpr uint8_t left   = 1;  // matches SDL_BUTTON_LEFT
+    inline constexpr uint8_t middle = 2;  // matches SDL_BUTTON_MIDDLE
+    inline constexpr uint8_t right  = 3;  // matches SDL_BUTTON_RIGHT
+}
+
 inline InputEvent localize_mouse(const InputEvent& ev, Rect widget_rect) {
     Offset off{DX{widget_rect.origin.x.raw()}, DY{widget_rect.origin.y.raw()}};
     if (auto* mb = std::get_if<MouseButton>(&ev)) {

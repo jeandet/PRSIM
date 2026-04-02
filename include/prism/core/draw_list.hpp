@@ -133,15 +133,8 @@ struct DrawList {
             {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, radius, thickness});
     }
 
-    void text(std::string s, Point origin, float size, Color c)
-    {
-        auto o = current_offset();
-        commands.emplace_back(
-            TextCmd{std::move(s), Point{origin.x + o.dx, origin.y + o.dy}, size, c});
-    }
-
-    void text_rotated(std::string s, Point origin, float size, Color c, float angle,
-                      TextAnchor anchor = TextAnchor::Center)
+    void text(std::string s, Point origin, float size, Color c,
+              float angle = 0.f, TextAnchor anchor = TextAnchor::TopLeft)
     {
         auto o = current_offset();
         commands.emplace_back(

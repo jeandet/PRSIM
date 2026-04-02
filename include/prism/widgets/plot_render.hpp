@@ -1,5 +1,6 @@
 #pragma once
 #include <prism/core/draw_list.hpp>
+#include <prism/core/delegate.hpp>
 #include <prism/core/context.hpp>
 #include <fmt/format.h>
 #include <algorithm>
@@ -46,6 +47,11 @@ struct PlotMapping {
                       * (y_range.max - y_range.min);
         return {dx, dy};
     }
+
+    float left() const { return plot_area.origin.x.raw(); }
+    float right() const { return left() + plot_area.extent.w.raw(); }
+    float top() const { return plot_area.origin.y.raw(); }
+    float bottom() const { return top() + plot_area.extent.h.raw(); }
 
     static AxisRange apply_view(AxisRange base, double offset, double scale)
     {
@@ -112,6 +118,9 @@ constexpr float margin_left = 60.f;
 constexpr float margin_bottom = 45.f;
 constexpr float margin_top = 10.f;
 constexpr float margin_right = 10.f;
+constexpr float tick_len = 5.f;
+constexpr float tick_font_size = 11.f;
+constexpr float label_font_size = 12.f;
 
 struct CursorState {
     double data_x = 0.0;
@@ -126,63 +135,61 @@ inline void draw_background(DrawList& dl, Rect plot_area, const Theme& t)
     dl.rect_outline(plot_area, t.border);
 }
 
-inline void draw_grid_lines(DrawList& dl, const PlotMapping& map, const Theme& t)
+struct TickArrays {
+    std::vector<double> x;
+    std::vector<double> y;
+};
+
+inline TickArrays compute_ticks(const PlotMapping& map)
 {
-    auto x_ticks = nice_ticks(map.x_range.min, map.x_range.max, 6);
-    auto y_ticks = nice_ticks(map.y_range.min, map.y_range.max, 5);
-
-    float left = map.plot_area.origin.x.raw();
-    float right = left + map.plot_area.extent.w.raw();
-    float top = map.plot_area.origin.y.raw();
-    float bottom = top + map.plot_area.extent.h.raw();
-
-    for (double tx : x_ticks) {
-        auto px = map.to_pixel(tx, 0.0);
-        float x = px.x.raw();
-        if (x < left || x > right) continue;
-        dl.line(Point{X{x}, Y{top}}, Point{X{x}, Y{bottom}}, t.track, 1.f);
-    }
-
-    for (double ty : y_ticks) {
-        auto px = map.to_pixel(0.0, ty);
-        float y = px.y.raw();
-        if (y < top || y > bottom) continue;
-        dl.line(Point{X{left}, Y{y}}, Point{X{right}, Y{y}}, t.track, 1.f);
-    }
-
-    dl.line(Point{X{left}, Y{top}}, Point{X{left}, Y{bottom}}, t.border, 1.f);
-    dl.line(Point{X{left}, Y{bottom}}, Point{X{right}, Y{bottom}}, t.border, 1.f);
+    return {nice_ticks(map.x_range.min, map.x_range.max, 6),
+            nice_ticks(map.y_range.min, map.y_range.max, 5)};
 }
 
-inline void draw_tick_labels(DrawList& dl, const PlotMapping& map, const Theme& t)
+inline void draw_grid_lines(DrawList& dl, const PlotMapping& map,
+                            const TickArrays& ticks, const Theme& t)
 {
-    constexpr float tick_len = 5.f;
-    auto x_ticks = nice_ticks(map.x_range.min, map.x_range.max, 6);
-    auto y_ticks = nice_ticks(map.y_range.min, map.y_range.max, 5);
-
-    float left = map.plot_area.origin.x.raw();
-    float right = left + map.plot_area.extent.w.raw();
-    float top = map.plot_area.origin.y.raw();
-    float bottom = top + map.plot_area.extent.h.raw();
-
-    for (double tx : x_ticks) {
-        auto px = map.to_pixel(tx, 0.0);
-        float x = px.x.raw();
-        if (x < left || x > right) continue;
-        dl.line(Point{X{x}, Y{bottom}}, Point{X{x}, Y{bottom + tick_len}}, t.border, 1.f);
-        dl.text(fmt::format("{:.6g}", tx), Point{X{x - 15.f}, Y{bottom + tick_len + 2.f}},
-                11.f, t.text_muted);
+    for (double tx : ticks.x) {
+        float x = map.to_pixel(tx, 0.0).x.raw();
+        if (x < map.left() || x > map.right()) continue;
+        dl.line(Point{X{x}, Y{map.top()}}, Point{X{x}, Y{map.bottom()}}, t.track, 1.f);
     }
 
-    for (double ty : y_ticks) {
-        auto px = map.to_pixel(0.0, ty);
-        float y = px.y.raw();
-        if (y < top || y > bottom) continue;
-        dl.line(Point{X{left - tick_len}, Y{y}}, Point{X{left}, Y{y}}, t.border, 1.f);
+    for (double ty : ticks.y) {
+        float y = map.to_pixel(0.0, ty).y.raw();
+        if (y < map.top() || y > map.bottom()) continue;
+        dl.line(Point{X{map.left()}, Y{y}}, Point{X{map.right()}, Y{y}}, t.track, 1.f);
+    }
+
+    dl.line(Point{X{map.left()}, Y{map.top()}}, Point{X{map.left()}, Y{map.bottom()}}, t.border, 1.f);
+    dl.line(Point{X{map.left()}, Y{map.bottom()}}, Point{X{map.right()}, Y{map.bottom()}}, t.border, 1.f);
+}
+
+inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
+                             const TickArrays& ticks, const Theme& t)
+{
+    float cw = char_width(tick_font_size);
+
+    for (double tx : ticks.x) {
+        float x = map.to_pixel(tx, 0.0).x.raw();
+        if (x < map.left() || x > map.right()) continue;
+        dl.line(Point{X{x}, Y{map.bottom()}},
+                Point{X{x}, Y{map.bottom() + tick_len}}, t.border, 1.f);
+        dl.text(fmt::format("{:.6g}", tx),
+                Point{X{x - 15.f}, Y{map.bottom() + tick_len + 2.f}},
+                tick_font_size, t.text_muted);
+    }
+
+    for (double ty : ticks.y) {
+        float y = map.to_pixel(0.0, ty).y.raw();
+        if (y < map.top() || y > map.bottom()) continue;
+        dl.line(Point{X{map.left() - tick_len}, Y{y}},
+                Point{X{map.left()}, Y{y}}, t.border, 1.f);
         auto label = fmt::format("{:.6g}", ty);
-        float label_w = static_cast<float>(label.size()) * 7.f;
-        dl.text(std::move(label), Point{X{left - tick_len - 2.f - label_w}, Y{y - 6.f}},
-                11.f, t.text_muted);
+        float label_w = static_cast<float>(label.size()) * cw;
+        dl.text(std::move(label),
+                Point{X{map.left() - tick_len - 2.f - label_w}, Y{y - 6.f}},
+                tick_font_size, t.text_muted);
     }
 }
 
@@ -205,40 +212,36 @@ inline void draw_cursor(DrawList& dl, const PlotMapping& map,
     if (!cursor.visible) return;
 
     auto px = map.to_pixel(cursor.data_x, cursor.data_y);
-    float left = map.plot_area.origin.x.raw();
-    float right = left + map.plot_area.extent.w.raw();
-    float top = map.plot_area.origin.y.raw();
-    float bottom = top + map.plot_area.extent.h.raw();
-
     Color crosshair_color = Color::rgba(t.text_muted.r, t.text_muted.g, t.text_muted.b, 80);
 
-    dl.line(Point{X{px.x.raw()}, Y{top}}, Point{X{px.x.raw()}, Y{bottom}}, crosshair_color, 1.f);
-    dl.line(Point{X{left}, Y{px.y.raw()}}, Point{X{right}, Y{px.y.raw()}}, crosshair_color, 1.f);
+    dl.line(Point{X{px.x.raw()}, Y{map.top()}},
+            Point{X{px.x.raw()}, Y{map.bottom()}}, crosshair_color, 1.f);
+    dl.line(Point{X{map.left()}, Y{px.y.raw()}},
+            Point{X{map.right()}, Y{px.y.raw()}}, crosshair_color, 1.f);
 
     auto label = fmt::format("({:.4g}, {:.4g})", cursor.data_x, cursor.data_y);
     float tx = px.x.raw() + 10.f;
     float ty = px.y.raw() - 20.f;
-    if (tx + 120.f > right) tx = px.x.raw() - 130.f;
-    if (ty < top) ty = px.y.raw() + 10.f;
+    if (tx + 120.f > map.right()) tx = px.x.raw() - 130.f;
+    if (ty < map.top()) ty = px.y.raw() + 10.f;
 
     dl.filled_rect(Rect{Point{X{tx - 2.f}, Y{ty - 2.f}}, Size{Width{120.f}, Height{18.f}}}, t.surface);
-    dl.text(std::move(label), Point{X{tx}, Y{ty}}, 12.f, t.text);
+    dl.text(std::move(label), Point{X{tx}, Y{ty}}, label_font_size, t.text);
 }
 
 inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,
                              const std::string& x_label, const std::string& y_label,
                              const Theme& t)
 {
-    float bottom = map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw();
-    float cx = map.plot_area.origin.x.raw() + map.plot_area.extent.w.raw() / 2.f;
+    float cx = (map.left() + map.right()) / 2.f;
 
     if (!x_label.empty())
-        dl.text(x_label, Point{X{cx - 30.f}, Y{bottom + 18.f}}, 12.f, t.text);
+        dl.text(x_label, Point{X{cx - 30.f}, Y{map.bottom() + 18.f}}, label_font_size, t.text);
 
     if (!y_label.empty()) {
-        float lx = map.plot_area.origin.x.raw() - margin_left + 10.f;
-        float cy = map.plot_area.origin.y.raw() + map.plot_area.extent.h.raw() / 2.f;
-        dl.text_rotated(y_label, Point{X{lx}, Y{cy}}, 12.f, t.text, 90.f);
+        float lx = map.left() - margin_left + 10.f;
+        float cy = (map.top() + map.bottom()) / 2.f;
+        dl.text(y_label, Point{X{lx}, Y{cy}}, label_font_size, t.text, 90.f, TextAnchor::Center);
     }
 }
 
