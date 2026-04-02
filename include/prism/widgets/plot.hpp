@@ -8,6 +8,7 @@
 #include <vector>
 #include <span>
 #include <memory>
+#include <cmath>
 
 namespace prism::plot {
 
@@ -143,10 +144,84 @@ struct PlotModel {
         draw_axes_labels(dl, map, x_label.get(), y_label.get(), t);
     }
 
-    inline void handle_canvas_input(const InputEvent&, WidgetNode&, Rect) {}
+    void handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds);
 
   private:
     std::vector<Series> series_;
 };
+
+inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds)
+{
+    auto map = compute_mapping(bounds, x_range, y_range, view,
+                               std::span<const Series>(series_));
+
+    if (auto* mm = std::get_if<MouseMove>(&ev)) {
+        if (drag_mode == DragMode::Pan) {
+            float dx_px = mm->position.x.raw() - drag_start_pixel.x.raw();
+            float dy_px = mm->position.y.raw() - drag_start_pixel.y.raw();
+
+            double data_dx = dx_px / map.plot_area.extent.w.raw()
+                             * (map.x_range.max - map.x_range.min);
+            double data_dy = -(dy_px / map.plot_area.extent.h.raw()
+                               * (map.y_range.max - map.y_range.min));
+
+            auto v = drag_start_view;
+            v.offset_x -= data_dx;
+            v.offset_y -= data_dy;
+            view.set(v);
+        }
+
+        if (map.plot_area.contains(mm->position)) {
+            auto [dx, dy] = map.to_data(mm->position);
+            cursor.set(CursorState{dx, dy, true});
+        } else {
+            auto c = cursor.get();
+            if (c.visible) cursor.set(CursorState{c.data_x, c.data_y, false});
+        }
+
+    } else if (auto* mb = std::get_if<MouseButton>(&ev)) {
+        if (mb->button == 0) {
+            if (mb->pressed) {
+                drag_mode = DragMode::Pan;
+                drag_start_pixel = mb->position;
+                drag_start_view = view.get();
+
+                auto xr = x_range.get();
+                auto yr = y_range.get();
+                if (xr.auto_fit) { xr.auto_fit = false; x_range.set(xr); }
+                if (yr.auto_fit) { yr.auto_fit = false; y_range.set(yr); }
+            } else {
+                drag_mode = DragMode::None;
+            }
+        }
+
+    } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
+        if (!map.plot_area.contains(ms->position)) return;
+
+        double factor = std::pow(1.1, ms->dy.raw());
+        auto [data_x, data_y] = map.to_data(ms->position);
+
+        auto v = view.get();
+        double old_scale_x = v.scale_x;
+        double old_scale_y = v.scale_y;
+        v.scale_x *= factor;
+        v.scale_y *= factor;
+
+        auto base_x = x_range.get();
+        auto base_y = y_range.get();
+        double cx = (base_x.min + base_x.max) / 2.0;
+        double cy = (base_y.min + base_y.max) / 2.0;
+
+        v.offset_x = data_x - cx + (cx + v.offset_x - data_x) * old_scale_x / v.scale_x;
+        v.offset_y = data_y - cy + (cy + v.offset_y - data_y) * old_scale_y / v.scale_y;
+
+        view.set(v);
+
+        auto xr = x_range.get();
+        auto yr = y_range.get();
+        if (xr.auto_fit) { xr.auto_fit = false; x_range.set(xr); }
+        if (yr.auto_fit) { yr.auto_fit = false; y_range.set(yr); }
+    }
+}
 
 } // namespace prism::plot

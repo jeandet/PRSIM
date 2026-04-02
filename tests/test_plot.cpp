@@ -292,3 +292,92 @@ TEST_CASE("PlotModel notify bumps revision")
     plot.notify();
     CHECK(plot.revision.get() == r0 + 1);
 }
+
+TEST_CASE("PlotModel cursor updates on mouse move")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.y_range.set({0.0, 10.0, false});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, plot.x_range, plot.y_range, plot.view,
+                               std::span<const Series>{});
+    Point center = map.plot_area.center();
+    InputEvent ev = MouseMove{center};
+
+    plot.handle_canvas_input(ev, node, bounds);
+    CHECK(plot.cursor.get().visible);
+}
+
+TEST_CASE("PlotModel scroll zooms view")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.y_range.set({0.0, 10.0, false});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, plot.x_range, plot.y_range, plot.view,
+                               std::span<const Series>{});
+    Point center = map.plot_area.center();
+
+    InputEvent ev = MouseScroll{center, DX{0}, DY{3}};
+    plot.handle_canvas_input(ev, node, bounds);
+
+    auto v = plot.view.get();
+    CHECK(v.scale_x > 1.0);
+    CHECK(v.scale_y > 1.0);
+}
+
+TEST_CASE("PlotModel drag pans view")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.y_range.set({0.0, 10.0, false});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, plot.x_range, plot.y_range, plot.view,
+                               std::span<const Series>{});
+    Point center = map.plot_area.center();
+
+    // Mouse down
+    InputEvent down = MouseButton{center, 0, true};
+    plot.handle_canvas_input(down, node, bounds);
+    CHECK(plot.drag_mode == DragMode::Pan);
+
+    // Mouse move (drag right)
+    Point moved{X{center.x.raw() + 50.f}, center.y};
+    InputEvent drag = MouseMove{moved};
+    plot.handle_canvas_input(drag, node, bounds);
+
+    auto v = plot.view.get();
+    CHECK(v.offset_x != 0.0);
+
+    // Mouse up
+    InputEvent up = MouseButton{moved, 0, false};
+    plot.handle_canvas_input(up, node, bounds);
+    CHECK(plot.drag_mode == DragMode::None);
+}
