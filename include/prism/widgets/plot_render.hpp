@@ -109,7 +109,7 @@ AxisRange auto_fit_range(const Range& series, Axis axis)
 }
 
 constexpr float margin_left = 60.f;
-constexpr float margin_bottom = 30.f;
+constexpr float margin_bottom = 45.f;
 constexpr float margin_top = 10.f;
 constexpr float margin_right = 10.f;
 

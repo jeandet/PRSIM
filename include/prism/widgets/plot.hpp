@@ -143,10 +143,15 @@ struct PlotModel {
                                    std::span<const Series>(series_));
 
         draw_background(dl, map.plot_area, t);
+
+        // Inside clip_push, coordinates are local (origin = {0,0})
+        PlotMapping local_map = map;
+        local_map.plot_area.origin = Point{X{0}, Y{0}};
+
         dl.clip_push(map.plot_area.origin, map.plot_area.extent);
-        draw_grid_lines(dl, map, t);
-        draw_series(dl, map, std::span<const Series>(series_));
-        draw_cursor(dl, map, cursor.get(), t);
+        draw_grid_lines(dl, local_map, t);
+        draw_series(dl, local_map, std::span<const Series>(series_));
+        draw_cursor(dl, local_map, cursor.get(), t);
         dl.clip_pop();
         draw_tick_labels(dl, map, t);
         draw_axes_labels(dl, map, x_label.get(), y_label.get(), t);
