@@ -97,3 +97,29 @@ TEST_CASE("without transaction, callbacks fire immediately") {
     f.set(2);
     CHECK(calls == 2);
 }
+
+TEST_CASE("nested transactions: callbacks fire only at outermost commit") {
+    prism::Field<int> f{0};
+    int calls = 0;
+    int last_value = -1;
+    auto conn = f.on_change().connect([&](const int& v) {
+        ++calls;
+        last_value = v;
+    });
+
+    prism::transaction([&] {
+        f.set(1);
+
+        prism::transaction([&] {
+            f.set(2);
+            CHECK(calls == 0);
+        });
+
+        // inner transaction committed, but outer still active
+        CHECK(calls == 0);
+        f.set(3);
+    });
+
+    CHECK(calls == 1);
+    CHECK(last_value == 3);
+}
