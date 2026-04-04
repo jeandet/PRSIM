@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/core/connection.hpp>
+#include <prism/core/transaction.hpp>
 
 #include <functional>
 #include <vector>
@@ -20,7 +21,14 @@ struct ObservableValue {
     void set(T new_value) {
         if (value == new_value) return;
         value = std::move(new_value);
-        changed_.emit(value);
+        if (transaction_active()) {
+            current_transaction().queue.push_back({
+                static_cast<void*>(&changed_),
+                [this] { changed_.emit(value); }
+            });
+        } else {
+            changed_.emit(value);
+        }
     }
 
     void observe(std::function<void(const T&)> cb) {
