@@ -123,3 +123,23 @@ TEST_CASE("nested transactions: callbacks fire only at outermost commit") {
     CHECK(calls == 1);
     CHECK(last_value == 3);
 }
+
+TEST_CASE("TransactionGuard works identically to transaction()") {
+    prism::Field<int> f{0};
+    int calls = 0;
+    int last_value = -1;
+    auto conn = f.on_change().connect([&](const int& v) {
+        ++calls;
+        last_value = v;
+    });
+
+    {
+        prism::TransactionGuard tx;
+        f.set(10);
+        f.set(20);
+        CHECK(calls == 0);
+    }
+
+    CHECK(calls == 1);
+    CHECK(last_value == 20);
+}
