@@ -5,6 +5,7 @@
 #include <prism/core/traits.hpp>
 #include <prism/core/connection.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/transaction.hpp>
 #include <prism/core/state.hpp>
 #include <prism/core/list.hpp>
 #include <prism/core/atomic_cell.hpp>

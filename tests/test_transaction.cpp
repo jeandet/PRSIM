@@ -3,6 +3,7 @@
 
 #include <prism/core/field.hpp>
 #include <prism/core/transaction.hpp>
+#include <prism/core/state.hpp>
 #include <string>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
@@ -142,4 +143,19 @@ TEST_CASE("TransactionGuard works identically to transaction()") {
 
     CHECK(calls == 1);
     CHECK(last_value == 20);
+}
+
+TEST_CASE("transaction works with State<T> too") {
+    prism::core::State<int> s{0};
+    int calls = 0;
+    auto conn = s.on_change().connect([&](const int&) { ++calls; });
+
+    prism::transaction([&] {
+        s.set(1);
+        s.set(2);
+        CHECK(calls == 0);
+    });
+
+    CHECK(calls == 1);
+    CHECK(s.get() == 2);
 }
