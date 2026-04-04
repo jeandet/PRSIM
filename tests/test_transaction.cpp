@@ -3,6 +3,7 @@
 
 #include <prism/core/field.hpp>
 #include <prism/core/transaction.hpp>
+#include <string>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
@@ -46,4 +47,24 @@ TEST_CASE("transaction coalesces multiple sets to same field") {
 
     CHECK(calls == 1);
     CHECK(last_value == 3);
+}
+
+TEST_CASE("transaction with multiple fields fires each callback once") {
+    prism::Field<int> a{0};
+    prism::Field<std::string> b{""};
+    int a_calls = 0, b_calls = 0;
+    auto c1 = a.on_change().connect([&](const int&) { ++a_calls; });
+    auto c2 = b.on_change().connect([&](const std::string&) { ++b_calls; });
+
+    prism::transaction([&] {
+        a.set(1);
+        b.set("hello");
+        CHECK(a_calls == 0);
+        CHECK(b_calls == 0);
+    });
+
+    CHECK(a_calls == 1);
+    CHECK(b_calls == 1);
+    CHECK(a.get() == 1);
+    CHECK(b.get() == "hello");
 }
