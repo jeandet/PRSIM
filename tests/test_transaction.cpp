@@ -68,3 +68,32 @@ TEST_CASE("transaction with multiple fields fires each callback once") {
     CHECK(a.get() == 1);
     CHECK(b.get() == "hello");
 }
+
+TEST_CASE("transaction: set to same value produces no callback") {
+    prism::Field<int> f{5};
+    int calls = 0;
+    auto conn = f.on_change().connect([&](const int&) { ++calls; });
+
+    prism::transaction([&] {
+        f.set(5);
+    });
+
+    CHECK(calls == 0);
+}
+
+TEST_CASE("empty transaction does not crash") {
+    prism::transaction([&] {
+        // nothing
+    });
+}
+
+TEST_CASE("without transaction, callbacks fire immediately") {
+    prism::Field<int> f{0};
+    int calls = 0;
+    auto conn = f.on_change().connect([&](const int&) { ++calls; });
+
+    f.set(1);
+    CHECK(calls == 1);
+    f.set(2);
+    CHECK(calls == 2);
+}
