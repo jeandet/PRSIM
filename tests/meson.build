@@ -35,6 +35,7 @@ headless_tests = {
   'svg_export' : files('test_svg_export.cpp'),
   'plot' : files('test_plot.cpp'),
   'transaction' : files('test_transaction.cpp'),
+  'derived' : files('test_derived.cpp'),
 }
 
 foreach name, src : headless_tests
