@@ -460,3 +460,87 @@ TEST_CASE("Checkbox observer fires on toggle") {
     prism::Widget<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(fire_count == 1);
 }
+
+// --- User-defined sentinel: a Knob with custom edit state ---
+
+struct KnobEditState {
+    bool dragging = false;
+};
+
+struct Knob {
+    double value = 0.5;
+    double min = 0.0;
+    double max = 1.0;
+    bool operator==(const Knob&) const = default;
+};
+
+template <>
+struct prism::Widget<Knob> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
+
+    static void record(DrawList& dl, const Field<Knob>& field, WidgetNode& node) {
+        auto& es = node.get_or_create<KnobEditState>();
+        auto& vs = node_vs(node);
+        auto bg = vs.hovered ? Color::rgba(80, 80, 80) : Color::rgba(60, 60, 60);
+        dl.filled_rect({Point{X{0}, Y{0}}, Size{Width{40}, Height{40}}}, bg);
+        (void)es;
+        (void)field;
+    }
+
+    static void handle_input(Field<Knob>& field, const InputEvent& ev, WidgetNode& node) {
+        auto& es = node.get_or_create<KnobEditState>();
+        if (auto* mb = std::get_if<MouseButton>(&ev)) {
+            if (mb->pressed) {
+                es.dragging = true;
+                auto range = field.get().max - field.get().min;
+                field.set({field.get().value + range * 0.1,
+                           field.get().min, field.get().max});
+            } else {
+                es.dragging = false;
+            }
+        }
+    }
+};
+
+TEST_CASE("User-defined Widget<Knob> renders through node_leaf pipeline") {
+    prism::Field<Knob> knob{{.value = 0.5, .min = 0.0, .max = 1.0}};
+    prism::WidgetId next_id = 1;
+    auto node = prism::node_leaf(knob, next_id);
+    CHECK(node.is_leaf);
+    CHECK(node.id == 1);
+    CHECK(next_id == 2);
+
+    // Build into a WidgetNode and verify rendering
+    auto wn = make_node();
+    wn.id = node.id;
+    node.build_widget(wn);
+    CHECK(wn.focus_policy == prism::FocusPolicy::tab_and_click);
+
+    // record() must be called to populate draws
+    wn.record(wn);
+    CHECK(wn.draws.size() > 0);
+}
+
+TEST_CASE("User-defined Widget<Knob> handles input and uses custom edit state") {
+    prism::Field<Knob> knob{{.value = 0.5, .min = 0.0, .max = 1.0}};
+    prism::WidgetId next_id = 1;
+    auto node = prism::node_leaf(knob, next_id);
+
+    auto wn = make_node();
+    wn.id = node.id;
+    node.build_widget(wn);
+
+    // Wire input handler
+    wn.wire(wn);
+
+    // Simulate mouse press
+    prism::MouseButton press{P(20, 20), 1, true};
+    wn.on_input.emit(prism::InputEvent{press});
+
+    // Value should have increased by 10% of range (0.1)
+    CHECK(knob.get().value == doctest::Approx(0.6));
+
+    // Edit state should show dragging
+    auto& es = wn.get_or_create<KnobEditState>();
+    CHECK(es.dragging == true);
+}
