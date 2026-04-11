@@ -48,6 +48,9 @@ struct Node {
 
     // Tabs metadata (only meaningful when layout_kind == Tabs)
     std::shared_ptr<TabsState> tabs_state;
+
+    // Shared<T> drain callback (set for Shared<T> leaf nodes)
+    std::function<void()> drain_fn;
 };
 
 } // namespace prism::ui

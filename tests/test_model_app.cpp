@@ -5,6 +5,7 @@
 #include <prism/app/null_backend.hpp>
 #include <prism/app/headless_window.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/shared.hpp>
 #include <prism/input/hit_test.hpp>
 #include <prism/render/scene_snapshot.hpp>
 
@@ -314,4 +315,56 @@ TEST_CASE("model_app routes click to Slider and updates value") {
     prism::model_app(backend, window, model);
 
     CHECK(model.volume.get().value > 0.8);
+}
+
+struct SharedModel {
+    prism::core::Shared<int> value{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(value);
+    }
+};
+
+TEST_CASE("Shared<T> drain fires observer during model_app event loop") {
+    std::atomic<int> observed_value{-1};
+    std::atomic<size_t> snap_count{0};
+
+    struct SharedBackend final : public prism::BackendBase {
+        std::atomic<size_t>& count;
+        prism::HeadlessWindow window_{0, {}};
+        explicit SharedBackend(std::atomic<size_t>& c) : count(c) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            // Wait for initial publish
+            count.wait(0, std::memory_order_acquire);
+            // Send a resize to trigger another event loop tick (drain happens each tick)
+            cb(prism::WindowEvent{window_.id(), prism::WindowResize{800, 600}});
+            auto before = count.load(std::memory_order_acquire);
+            count.wait(before, std::memory_order_acquire);
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    SharedModel model;
+    model.value.observe([&](const int& v) {
+        observed_value.store(v, std::memory_order_release);
+    });
+    // Set value before model_app — pending flag is set, drain should fire on first tick
+    model.value.set(42);
+
+    auto backend = prism::Backend{std::make_unique<SharedBackend>(snap_count)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
+
+    CHECK(model.value.get() == 42);
+    CHECK(observed_value.load() == 42);
 }

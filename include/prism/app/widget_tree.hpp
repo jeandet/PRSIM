@@ -103,8 +103,9 @@ public:
         template <typename T>
         void widget(Shared<T>& shared) {
             placed_.insert(&shared);
-            current_parent().children.push_back(
-                node_readonly_leaf<T>(shared, tree_.next_id_));
+            auto node = node_readonly_leaf<T>(shared, tree_.next_id_);
+            node.drain_fn = [&shared] { shared.drain_notifications(); };
+            current_parent().children.push_back(std::move(node));
         }
 
         [[nodiscard]] const std::set<const void*>& placed() const { return placed_; }
@@ -449,6 +450,7 @@ public:
     template <typename Model>
     explicit WidgetTree(Model& model) {
         auto node_tree = build_node_tree(model);
+        collect_drains(node_tree);
         root_ = build_widget_node(node_tree);
         propagate_theme(root_);
         connect_dirty(node_tree, root_);
@@ -466,6 +468,11 @@ public:
     [[nodiscard]] bool any_dirty() const { return check_dirty(root_); }
 
     void clear_dirty() { clear_dirty_impl(root_); }
+
+    void drain_shared() {
+        for (auto& fn : drain_callbacks_)
+            fn();
+    }
 
     const Theme& theme() const { return theme_; }
 
@@ -702,6 +709,14 @@ private:
     std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;
     std::unordered_map<WidgetId, WidgetId> parent_map_;
+    std::vector<std::function<void()>> drain_callbacks_;
+
+    void collect_drains(const Node& node) {
+        if (node.drain_fn)
+            drain_callbacks_.push_back(node.drain_fn);
+        for (const auto& child : node.children)
+            collect_drains(child);
+    }
 
     static ScrollState& ensure_scroll_state(WidgetNode& node) {
         if (!std::holds_alternative<ScrollState>(node.edit_state))
@@ -929,7 +944,9 @@ private:
                     root.children.push_back(node_readonly_leaf<Inner>(member, next_id_));
                 } else if constexpr (is_shared_v<M>) {
                     using Inner = std::remove_cvref_t<decltype(member.get())>;
-                    root.children.push_back(node_readonly_leaf<Inner>(member, next_id_));
+                    auto node = node_readonly_leaf<Inner>(member, next_id_);
+                    node.drain_fn = [&member] { member.drain_notifications(); };
+                    root.children.push_back(std::move(node));
                 } else if constexpr (is_component_v<M>) {
                     root.children.push_back(build_node_tree(member));
                 }

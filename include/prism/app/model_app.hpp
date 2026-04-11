@@ -195,6 +195,7 @@ void model_app(Backend& backend, Window& window, Model& model,
                     if (std::get_if<TextInput>(&ev))
                         detail::route_text_input(tree, ev);
 
+                    tree.drain_shared();
                     if (tree.any_dirty() || needs_publish)
                         publish();
                     schedule_tick();
