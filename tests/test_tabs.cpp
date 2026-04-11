@@ -84,18 +84,18 @@ prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
 }
 }
 
-TEST_CASE("Delegate<TabBar> focus policy is tab_and_click") {
-    static_assert(prism::Delegate<prism::TabBar<>>::focus_policy == prism::FocusPolicy::tab_and_click);
+TEST_CASE("Widget<TabBar> focus policy is tab_and_click") {
+    static_assert(prism::Widget<prism::TabBar<>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
-TEST_CASE("Delegate<TabBar> records header text") {
+TEST_CASE("Widget<TabBar> records header text") {
     prism::Field<prism::TabBar<>> field{{.selected = 0}};
     auto node = make_node();
     auto names = std::make_shared<std::vector<std::string>>(
         std::vector<std::string>{"Alpha", "Beta"});
     node.tab_names = names;
     prism::DrawList dl;
-    prism::Delegate<prism::TabBar<>>::record(dl, field, node);
+    prism::Widget<prism::TabBar<>>::record(dl, field, node);
 
     CHECK(!dl.commands.empty());
 
@@ -112,18 +112,18 @@ TEST_CASE("tabs_handle_input: Left/Right switches tabs") {
     node.tab_names = names;
 
     prism::DrawList dl;
-    prism::Delegate<prism::TabBar<>>::record(dl, field, node);
+    prism::Widget<prism::TabBar<>>::record(dl, field, node);
 
-    prism::Delegate<prism::TabBar<>>::handle_input(
+    prism::Widget<prism::TabBar<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
     CHECK(field.get().selected == 1);
 
-    prism::Delegate<prism::TabBar<>>::handle_input(
+    prism::Widget<prism::TabBar<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
     CHECK(field.get().selected == 0);
 
     // Left wraps to last
-    prism::Delegate<prism::TabBar<>>::handle_input(
+    prism::Widget<prism::TabBar<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
     CHECK(field.get().selected == 2);
 }

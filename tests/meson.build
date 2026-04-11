@@ -16,7 +16,7 @@ headless_tests = {
   'list' : files('test_list.cpp'),
   'reflect' : files('test_reflect.cpp'),
   'widget_tree' : files('test_widget_tree.cpp'),
-  'delegate' : files('test_delegate.cpp'),
+  'widget' : files('test_widget.cpp'),
   'exec' : files('test_exec.cpp'),
   'text_field' : files('test_text_field.cpp'),
   'dropdown' : files('test_dropdown.cpp'),

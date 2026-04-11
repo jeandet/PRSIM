@@ -41,8 +41,8 @@ TEST_CASE("TextEditable concept matches Password") {
     static_assert(prism::TextEditable<prism::Password<>>);
 }
 
-TEST_CASE("Delegate<Password<>> has tab_and_click focus policy") {
-    CHECK(prism::Delegate<prism::Password<>>::focus_policy == prism::FocusPolicy::tab_and_click);
+TEST_CASE("Widget<Password<>> has tab_and_click focus policy") {
+    CHECK(prism::Widget<prism::Password<>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 // --- record() tests ---
@@ -51,7 +51,7 @@ TEST_CASE("Password record renders masked text, not actual value") {
     prism::Field<prism::Password<>> field{{.value = "abc"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Password<>>::record(dl, field, node);
+    prism::Widget<prism::Password<>>::record(dl, field, node);
 
     bool has_actual_value = false;
     bool has_bullets = false;
@@ -69,7 +69,7 @@ TEST_CASE("Password record shows placeholder when empty and unfocused") {
     prism::Field<prism::Password<>> field{{.placeholder = "Enter password"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Password<>>::record(dl, field, node);
+    prism::Widget<prism::Password<>>::record(dl, field, node);
 
     bool has_placeholder = false;
     for (auto& cmd : dl.commands) {
@@ -84,7 +84,7 @@ TEST_CASE("Password record hides placeholder when focused") {
     prism::Field<prism::Password<>> field{{.placeholder = "Enter password"}};
     prism::DrawList dl;
     auto node = make_node({.focused = true});
-    prism::Delegate<prism::Password<>>::record(dl, field, node);
+    prism::Widget<prism::Password<>>::record(dl, field, node);
 
     bool has_placeholder = false;
     for (auto& cmd : dl.commands) {
@@ -99,7 +99,7 @@ TEST_CASE("Password record shows cursor when focused") {
     prism::Field<prism::Password<>> field{{.value = "hi"}};
     prism::DrawList dl;
     auto node = make_node({.focused = true});
-    prism::Delegate<prism::Password<>>::record(dl, field, node);
+    prism::Widget<prism::Password<>>::record(dl, field, node);
 
     int thin_rects = 0;
     for (auto& cmd : dl.commands) {
@@ -114,7 +114,7 @@ TEST_CASE("Password record uses clip_push/pop") {
     prism::Field<prism::Password<>> field{{.value = "test"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Password<>>::record(dl, field, node);
+    prism::Widget<prism::Password<>>::record(dl, field, node);
 
     int clips = 0;
     for (auto& cmd : dl.commands) {
@@ -128,7 +128,7 @@ TEST_CASE("Password record renders focus ring when focused") {
     prism::Field<prism::Password<>> field{{.value = "test"}};
     prism::DrawList dl;
     auto node = make_node({.focused = true});
-    prism::Delegate<prism::Password<>>::record(dl, field, node);
+    prism::Widget<prism::Password<>>::record(dl, field, node);
 
     bool has_outline = false;
     for (auto& cmd : dl.commands) {
@@ -142,10 +142,10 @@ TEST_CASE("Password record renders focus ring when focused") {
 TEST_CASE("Password TextInput inserts text") {
     prism::Field<prism::Password<>> field{{.value = "ab"}};
     auto node = make_node({.focused = true});
-    auto& es = prism::Delegate<prism::Password<>>::ensure_edit_state(node);
+    auto& es = prism::Widget<prism::Password<>>::ensure_edit_state(node);
     es.cursor = 1;
 
-    prism::Delegate<prism::Password<>>::handle_input(field, prism::TextInput{"X"}, node);
+    prism::Widget<prism::Password<>>::handle_input(field, prism::TextInput{"X"}, node);
     CHECK(field.get().value == "aXb");
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 }
@@ -153,10 +153,10 @@ TEST_CASE("Password TextInput inserts text") {
 TEST_CASE("Password backspace deletes char before cursor") {
     prism::Field<prism::Password<>> field{{.value = "abc"}};
     auto node = make_node({.focused = true});
-    auto& es = prism::Delegate<prism::Password<>>::ensure_edit_state(node);
+    auto& es = prism::Widget<prism::Password<>>::ensure_edit_state(node);
     es.cursor = 2;
 
-    prism::Delegate<prism::Password<>>::handle_input(
+    prism::Widget<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::backspace, 0}, node);
     CHECK(field.get().value == "ac");
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
@@ -165,14 +165,14 @@ TEST_CASE("Password backspace deletes char before cursor") {
 TEST_CASE("Password arrow keys move cursor") {
     prism::Field<prism::Password<>> field{{.value = "abc"}};
     auto node = make_node({.focused = true});
-    auto& es = prism::Delegate<prism::Password<>>::ensure_edit_state(node);
+    auto& es = prism::Widget<prism::Password<>>::ensure_edit_state(node);
     es.cursor = 1;
 
-    prism::Delegate<prism::Password<>>::handle_input(
+    prism::Widget<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 
-    prism::Delegate<prism::Password<>>::handle_input(
+    prism::Widget<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
 }
@@ -180,14 +180,14 @@ TEST_CASE("Password arrow keys move cursor") {
 TEST_CASE("Password Home/End move cursor") {
     prism::Field<prism::Password<>> field{{.value = "abc"}};
     auto node = make_node({.focused = true});
-    auto& es = prism::Delegate<prism::Password<>>::ensure_edit_state(node);
+    auto& es = prism::Widget<prism::Password<>>::ensure_edit_state(node);
     es.cursor = 1;
 
-    prism::Delegate<prism::Password<>>::handle_input(
+    prism::Widget<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::end, 0}, node);
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
 
-    prism::Delegate<prism::Password<>>::handle_input(
+    prism::Widget<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::home, 0}, node);
     CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 }
@@ -195,10 +195,10 @@ TEST_CASE("Password Home/End move cursor") {
 TEST_CASE("Password max_length enforced") {
     prism::Field<prism::Password<>> field{{.value = "ab", .max_length = 3}};
     auto node = make_node({.focused = true});
-    auto& es = prism::Delegate<prism::Password<>>::ensure_edit_state(node);
+    auto& es = prism::Widget<prism::Password<>>::ensure_edit_state(node);
     es.cursor = 2;
 
-    prism::Delegate<prism::Password<>>::handle_input(field, prism::TextInput{"XY"}, node);
+    prism::Widget<prism::Password<>>::handle_input(field, prism::TextInput{"XY"}, node);
     CHECK(field.get().value == "abX");
 }
 

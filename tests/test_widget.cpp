@@ -30,24 +30,24 @@ prism::WidgetNode make_node(prism::WidgetVisualState vs = {}) {
 prism::Point P(float x, float y) { return {prism::X{x}, prism::Y{y}}; }
 }
 
-TEST_CASE("Delegate<bool> record produces draws") {
+TEST_CASE("Widget<bool> record produces draws") {
     prism::Field<bool> field{false};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<bool>::record(dl, field, node);
+    prism::Widget<bool>::record(dl, field, node);
     CHECK_FALSE(dl.empty());
 }
 
-TEST_CASE("Delegate<bool> record changes with value") {
+TEST_CASE("Widget<bool> record changes with value") {
     prism::Field<bool> field{false};
     auto node = make_node();
 
     prism::DrawList dl1;
-    prism::Delegate<bool>::record(dl1, field, node);
+    prism::Widget<bool>::record(dl1, field, node);
 
     field.set(true);
     prism::DrawList dl2;
-    prism::Delegate<bool>::record(dl2, field, node);
+    prism::Widget<bool>::record(dl2, field, node);
 
     // commands[0] is background (same for true/false); commands[1] is the checkbox box fill
     // true adds a checkmark text, so sizes differ
@@ -56,25 +56,25 @@ TEST_CASE("Delegate<bool> record changes with value") {
     CHECK(color1.r != color2.r);  // false=grey, true=blue
 }
 
-TEST_CASE("Delegate<bool> handle_input toggles on press") {
+TEST_CASE("Widget<bool> handle_input toggles on press") {
     prism::Field<bool> field{false};
     auto node = make_node();
-    prism::Delegate<bool>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<bool>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get() == true);
 }
 
-TEST_CASE("Delegate<bool> handle_input ignores release") {
+TEST_CASE("Widget<bool> handle_input ignores release") {
     prism::Field<bool> field{false};
     auto node = make_node();
-    prism::Delegate<bool>::handle_input(field, prism::MouseButton{P(0, 0), 1, false}, node);
+    prism::Widget<bool>::handle_input(field, prism::MouseButton{P(0, 0), 1, false}, node);
     CHECK(field.get() == false);
 }
 
-TEST_CASE("Delegate<bool> renders checkbox box outline") {
+TEST_CASE("Widget<bool> renders checkbox box outline") {
     prism::Field<bool> field{false};
     auto node = make_node();
     prism::DrawList dl;
-    prism::Delegate<bool>::record(dl, field, node);
+    prism::Widget<bool>::record(dl, field, node);
     bool has_outline = false;
     for (auto& cmd : dl.commands) {
         if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
@@ -86,14 +86,14 @@ TEST_CASE("Default Delegate record produces draws for int") {
     prism::Field<int> field{42};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<int>::record(dl, field, node);
+    prism::Widget<int>::record(dl, field, node);
     CHECK_FALSE(dl.empty());
 }
 
 TEST_CASE("Default Delegate handle_input is a no-op for int") {
     prism::Field<int> field{42};
     auto node = make_node();
-    prism::Delegate<int>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<int>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get() == 42);
 }
 
@@ -101,7 +101,7 @@ TEST_CASE("Label sentinel renders as read-only text") {
     prism::Field<prism::Label<>> field{{"All systems go"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Label<>>::record(dl, field, node);
+    prism::Widget<prism::Label<>>::record(dl, field, node);
     CHECK(dl.size() >= 1);
     bool has_text = false;
     for (auto& cmd : dl.commands) {
@@ -115,7 +115,7 @@ TEST_CASE("Label sentinel renders as read-only text") {
 TEST_CASE("Label sentinel ignores input") {
     prism::Field<prism::Label<>> field{{"OK"}};
     auto node = make_node();
-    prism::Delegate<prism::Label<>>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<prism::Label<>>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get().value == "OK");
 }
 
@@ -123,7 +123,7 @@ TEST_CASE("Slider sentinel renders track and thumb") {
     prism::Field<prism::Slider<>> field{{.value = 0.5}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Slider<>>::record(dl, field, node);
+    prism::Widget<prism::Slider<>>::record(dl, field, node);
     CHECK(dl.size() >= 2);
 }
 
@@ -133,8 +133,8 @@ TEST_CASE("Slider sentinel renders thumb position proportional to value") {
     auto node = make_node();
 
     prism::DrawList dl_lo, dl_hi;
-    prism::Delegate<prism::Slider<>>::record(dl_lo, field_lo, node);
-    prism::Delegate<prism::Slider<>>::record(dl_hi, field_hi, node);
+    prism::Widget<prism::Slider<>>::record(dl_lo, field_lo, node);
+    prism::Widget<prism::Slider<>>::record(dl_hi, field_hi, node);
 
     auto thumb_lo = std::get<prism::FilledRect>(dl_lo.commands[1]).rect.origin.x.raw();
     auto thumb_hi = std::get<prism::FilledRect>(dl_hi.commands[1]).rect.origin.x.raw();
@@ -145,20 +145,20 @@ TEST_CASE("Slider<int> with step snaps value") {
     prism::Field<prism::Slider<int>> field{{.value = 3, .min = 1, .max = 5, .step = 1}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Slider<int>>::record(dl, field, node);
+    prism::Widget<prism::Slider<int>>::record(dl, field, node);
     CHECK(dl.size() >= 2);
 }
 
 // --- WidgetVisualState tests ---
 
-TEST_CASE("Delegate<bool> record differs with hovered state") {
+TEST_CASE("Widget<bool> record differs with hovered state") {
     prism::Field<bool> field{false};
     auto normal = make_node();
     auto hovered = make_node({.hovered = true});
 
     prism::DrawList dl_normal, dl_hovered;
-    prism::Delegate<bool>::record(dl_normal, field, normal);
-    prism::Delegate<bool>::record(dl_hovered, field, hovered);
+    prism::Widget<bool>::record(dl_normal, field, normal);
+    prism::Widget<bool>::record(dl_hovered, field, hovered);
 
     auto c1 = std::get<prism::FilledRect>(dl_normal.commands[0]).color;
     auto c2 = std::get<prism::FilledRect>(dl_hovered.commands[0]).color;
@@ -171,8 +171,8 @@ TEST_CASE("Slider record differs with hovered state") {
     auto hovered = make_node({.hovered = true});
 
     prism::DrawList dl_normal, dl_hovered;
-    prism::Delegate<prism::Slider<>>::record(dl_normal, field, normal);
-    prism::Delegate<prism::Slider<>>::record(dl_hovered, field, hovered);
+    prism::Widget<prism::Slider<>>::record(dl_normal, field, normal);
+    prism::Widget<prism::Slider<>>::record(dl_hovered, field, hovered);
 
     auto thumb_normal = std::get<prism::FilledRect>(dl_normal.commands[1]).color;
     auto thumb_hovered = std::get<prism::FilledRect>(dl_hovered.commands[1]).color;
@@ -185,7 +185,7 @@ TEST_CASE("Button sentinel renders text and background") {
     prism::Field<prism::Button> field{{"Click me"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Button>::record(dl, field, node);
+    prism::Widget<prism::Button>::record(dl, field, node);
     CHECK(dl.size() >= 2);  // filled rect + outline + text
     bool has_text = false;
     for (auto& cmd : dl.commands) {
@@ -200,16 +200,16 @@ TEST_CASE("Button click increments click_count") {
     prism::Field<prism::Button> field{{"Go"}};
     auto node = make_node();
     CHECK(field.get().click_count == 0);
-    prism::Delegate<prism::Button>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<prism::Button>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get().click_count == 1);
-    prism::Delegate<prism::Button>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<prism::Button>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get().click_count == 2);
 }
 
 TEST_CASE("Button ignores mouse release") {
     prism::Field<prism::Button> field{{"Go"}};
     auto node = make_node();
-    prism::Delegate<prism::Button>::handle_input(field, prism::MouseButton{P(0, 0), 1, false}, node);
+    prism::Widget<prism::Button>::handle_input(field, prism::MouseButton{P(0, 0), 1, false}, node);
     CHECK(field.get().click_count == 0);
 }
 
@@ -219,8 +219,8 @@ TEST_CASE("Button record differs with visual state") {
     auto pressed = make_node({.hovered = true, .pressed = true});
 
     prism::DrawList dl_normal, dl_pressed;
-    prism::Delegate<prism::Button>::record(dl_normal, field, normal);
-    prism::Delegate<prism::Button>::record(dl_pressed, field, pressed);
+    prism::Widget<prism::Button>::record(dl_normal, field, normal);
+    prism::Widget<prism::Button>::record(dl_pressed, field, pressed);
 
     auto c1 = std::get<prism::FilledRect>(dl_normal.commands[0]).color;
     auto c2 = std::get<prism::FilledRect>(dl_pressed.commands[0]).color;
@@ -228,65 +228,65 @@ TEST_CASE("Button record differs with visual state") {
 }
 
 TEST_CASE("FocusPolicy: non-interactive delegates are not focusable") {
-    CHECK(prism::Delegate<int>::focus_policy == prism::FocusPolicy::none);
-    CHECK(prism::Delegate<std::string>::focus_policy == prism::FocusPolicy::none);
-    CHECK(prism::Delegate<prism::Label<>>::focus_policy == prism::FocusPolicy::none);
+    CHECK(prism::Widget<int>::focus_policy == prism::FocusPolicy::none);
+    CHECK(prism::Widget<std::string>::focus_policy == prism::FocusPolicy::none);
+    CHECK(prism::Widget<prism::Label<>>::focus_policy == prism::FocusPolicy::none);
 }
 
 TEST_CASE("FocusPolicy: interactive delegates are focusable") {
-    CHECK(prism::Delegate<bool>::focus_policy == prism::FocusPolicy::tab_and_click);
-    CHECK(prism::Delegate<prism::Slider<>>::focus_policy == prism::FocusPolicy::tab_and_click);
-    CHECK(prism::Delegate<prism::Button>::focus_policy == prism::FocusPolicy::tab_and_click);
-    CHECK(prism::Delegate<prism::Checkbox>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<bool>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<prism::Slider<>>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<prism::Button>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<prism::Checkbox>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
-TEST_CASE("Delegate<bool> toggles on Space key") {
+TEST_CASE("Widget<bool> toggles on Space key") {
     prism::Field<bool> field{false};
     auto node = make_node();
-    prism::Delegate<bool>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<bool>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
     CHECK(field.get() == true);
 }
 
-TEST_CASE("Delegate<bool> toggles on Enter key") {
+TEST_CASE("Widget<bool> toggles on Enter key") {
     prism::Field<bool> field{false};
     auto node = make_node();
-    prism::Delegate<bool>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    prism::Widget<bool>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
     CHECK(field.get() == true);
 }
 
-TEST_CASE("Delegate<bool> ignores other keys") {
+TEST_CASE("Widget<bool> ignores other keys") {
     prism::Field<bool> field{false};
     auto node = make_node();
-    prism::Delegate<bool>::handle_input(field, prism::KeyPress{0x41, 0}, node);  // 'A'
+    prism::Widget<bool>::handle_input(field, prism::KeyPress{0x41, 0}, node);  // 'A'
     CHECK(field.get() == false);
 }
 
 TEST_CASE("Button activates on Space key") {
     prism::Field<prism::Button> field{{"Go"}};
     auto node = make_node();
-    prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<prism::Button>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
     CHECK(field.get().click_count == 1);
 }
 
 TEST_CASE("Button activates on Enter key") {
     prism::Field<prism::Button> field{{"Go"}};
     auto node = make_node();
-    prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    prism::Widget<prism::Button>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
     CHECK(field.get().click_count == 1);
 }
 
 TEST_CASE("Button ignores other keys") {
     prism::Field<prism::Button> field{{"Go"}};
     auto node = make_node();
-    prism::Delegate<prism::Button>::handle_input(field, prism::KeyPress{0x41, 0}, node);
+    prism::Widget<prism::Button>::handle_input(field, prism::KeyPress{0x41, 0}, node);
     CHECK(field.get().click_count == 0);
 }
 
-TEST_CASE("Delegate<bool> renders focus ring when focused") {
+TEST_CASE("Widget<bool> renders focus ring when focused") {
     prism::Field<bool> field{false};
     auto node = make_node({.focused = true});
     prism::DrawList dl;
-    prism::Delegate<bool>::record(dl, field, node);
+    prism::Widget<bool>::record(dl, field, node);
     bool has_outline = false;
     for (auto& cmd : dl.commands) {
         if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
@@ -294,11 +294,11 @@ TEST_CASE("Delegate<bool> renders focus ring when focused") {
     CHECK(has_outline);
 }
 
-TEST_CASE("Delegate<bool> no focus ring when not focused") {
+TEST_CASE("Widget<bool> no focus ring when not focused") {
     prism::Field<bool> field{false};
     auto node = make_node();
     prism::DrawList dl;
-    prism::Delegate<bool>::record(dl, field, node);
+    prism::Widget<bool>::record(dl, field, node);
     // The checkbox box border is always present; the focus ring adds a second outline
     int outline_count = 0;
     for (auto& cmd : dl.commands) {
@@ -311,7 +311,7 @@ TEST_CASE("Slider renders focus ring when focused") {
     prism::Field<prism::Slider<>> field{{.value = 0.5}};
     auto node = make_node({.focused = true});
     prism::DrawList dl;
-    prism::Delegate<prism::Slider<>>::record(dl, field, node);
+    prism::Widget<prism::Slider<>>::record(dl, field, node);
     bool has_outline = false;
     for (auto& cmd : dl.commands) {
         if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
@@ -323,7 +323,7 @@ TEST_CASE("Button renders focus ring when focused") {
     prism::Field<prism::Button> field{{"Go"}};
     auto node = make_node({.focused = true});
     prism::DrawList dl;
-    prism::Delegate<prism::Button>::record(dl, field, node);
+    prism::Widget<prism::Button>::record(dl, field, node);
     int outline_count = 0;
     for (auto& cmd : dl.commands) {
         if (std::holds_alternative<prism::RectOutline>(cmd)) outline_count++;
@@ -341,7 +341,7 @@ TEST_CASE("Checkbox sentinel renders box and label") {
     prism::Field<prism::Checkbox> field{{.label = "Dark mode"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Checkbox>::record(dl, field, node);
+    prism::Widget<prism::Checkbox>::record(dl, field, node);
     CHECK_FALSE(dl.empty());
     bool has_label = false;
     for (auto& cmd : dl.commands) {
@@ -356,7 +356,7 @@ TEST_CASE("Checkbox renders checkmark when checked") {
     prism::Field<prism::Checkbox> field{{.checked = true, .label = "On"}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Checkbox>::record(dl, field, node);
+    prism::Widget<prism::Checkbox>::record(dl, field, node);
     int text_count = 0;
     for (auto& cmd : dl.commands) {
         if (std::holds_alternative<prism::TextCmd>(cmd)) text_count++;
@@ -368,49 +368,49 @@ TEST_CASE("Checkbox toggle via mouse click") {
     prism::Field<prism::Checkbox> field{{.label = "Toggle me"}};
     auto node = make_node();
     CHECK(field.get().checked == false);
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get().checked == true);
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(field.get().checked == false);
 }
 
 TEST_CASE("Checkbox ignores mouse release") {
     prism::Field<prism::Checkbox> field{{.label = "X"}};
     auto node = make_node();
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, false}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, false}, node);
     CHECK(field.get().checked == false);
 }
 
 TEST_CASE("Checkbox toggle via Space key") {
     prism::Field<prism::Checkbox> field{{.label = "X"}};
     auto node = make_node();
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
     CHECK(field.get().checked == true);
 }
 
 TEST_CASE("Checkbox toggle via Enter key") {
     prism::Field<prism::Checkbox> field{{.label = "X"}};
     auto node = make_node();
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
     CHECK(field.get().checked == true);
 }
 
 TEST_CASE("Checkbox ignores other keys") {
     prism::Field<prism::Checkbox> field{{.label = "X"}};
     auto node = make_node();
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::KeyPress{0x41, 0}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::KeyPress{0x41, 0}, node);
     CHECK(field.get().checked == false);
 }
 
 TEST_CASE("Checkbox focus policy is tab_and_click") {
-    CHECK(prism::Delegate<prism::Checkbox>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<prism::Checkbox>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 TEST_CASE("Checkbox renders focus ring when focused") {
     prism::Field<prism::Checkbox> field{{.label = "X"}};
     auto node = make_node({.focused = true});
     prism::DrawList dl;
-    prism::Delegate<prism::Checkbox>::record(dl, field, node);
+    prism::Widget<prism::Checkbox>::record(dl, field, node);
     bool has_outline = false;
     for (auto& cmd : dl.commands) {
         if (std::holds_alternative<prism::RectOutline>(cmd)) has_outline = true;
@@ -419,8 +419,8 @@ TEST_CASE("Checkbox renders focus ring when focused") {
 }
 
 TEST_CASE("FocusPolicy: enum delegates are focusable") {
-    CHECK(prism::Delegate<TestColor>::focus_policy == prism::FocusPolicy::tab_and_click);
-    CHECK(prism::Delegate<prism::Dropdown<TestColor>>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<TestColor>::focus_policy == prism::FocusPolicy::tab_and_click);
+    CHECK(prism::Widget<prism::Dropdown<TestColor>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 // --- get_or_create tests ---
@@ -457,6 +457,6 @@ TEST_CASE("Checkbox observer fires on toggle") {
     auto node = make_node();
     int fire_count = 0;
     auto conn = field.on_change().connect([&](const prism::Checkbox&) { fire_count++; });
-    prism::Delegate<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
+    prism::Widget<prism::Checkbox>::handle_input(field, prism::MouseButton{P(0, 0), 1, true}, node);
     CHECK(fire_count == 1);
 }

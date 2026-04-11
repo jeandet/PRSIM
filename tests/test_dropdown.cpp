@@ -83,19 +83,19 @@ TEST_CASE("DropdownEditState defaults to closed") {
     CHECK(es.highlighted == 0);
 }
 
-TEST_CASE("Delegate<ScopedEnum> has tab_and_click focus policy") {
-    CHECK(prism::Delegate<Color>::focus_policy == prism::FocusPolicy::tab_and_click);
+TEST_CASE("Widget<ScopedEnum> has tab_and_click focus policy") {
+    CHECK(prism::Widget<Color>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
-TEST_CASE("Delegate<Dropdown<T>> has tab_and_click focus policy") {
-    CHECK(prism::Delegate<prism::Dropdown<Color>>::focus_policy == prism::FocusPolicy::tab_and_click);
+TEST_CASE("Widget<Dropdown<T>> has tab_and_click focus policy") {
+    CHECK(prism::Widget<prism::Dropdown<Color>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
 TEST_CASE("Enum delegate record produces background and current label") {
     prism::Field<Color> field{Color::Green};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
 
     CHECK_FALSE(dl.empty());
     bool has_label = false;
@@ -111,7 +111,7 @@ TEST_CASE("Enum delegate record shows arrow indicator") {
     prism::Field<Color> field{Color::Red};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
 
     bool has_arrow = false;
     for (auto& cmd : dl.commands) {
@@ -126,7 +126,7 @@ TEST_CASE("Enum delegate renders focus ring when focused") {
     prism::Field<Color> field{Color::Red};
     prism::DrawList dl;
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
 
     bool has_outline = false;
     for (auto& cmd : dl.commands) {
@@ -140,12 +140,12 @@ TEST_CASE("Enum delegate open popup produces overlay draws") {
     auto node = make_node({.focused = true});
 
     // Open the dropdown
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Re-record to populate overlay
     prism::DrawList dl;
     node.overlay_draws.clear();
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
 
     CHECK_FALSE(node.overlay_draws.empty());
 
@@ -164,14 +164,14 @@ TEST_CASE("Enum delegate closed popup has no overlay draws") {
     prism::Field<Color> field{Color::Red};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
     CHECK(node.overlay_draws.empty());
 }
 
 TEST_CASE("Enum delegate click opens popup") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.open == true);
     CHECK(es.highlighted == 0);  // Red is index 0
@@ -180,7 +180,7 @@ TEST_CASE("Enum delegate click opens popup") {
 TEST_CASE("Enum delegate click opens with current selection highlighted") {
     prism::Field<Color> field{Color::Blue};
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.highlighted == 2);  // Blue is index 2
 }
@@ -188,7 +188,7 @@ TEST_CASE("Enum delegate click opens with current selection highlighted") {
 TEST_CASE("Enum delegate Space opens popup") {
     prism::Field<Color> field{Color::Green};
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.open == true);
     CHECK(es.highlighted == 1);
@@ -197,7 +197,7 @@ TEST_CASE("Enum delegate Space opens popup") {
 TEST_CASE("Enum delegate Enter opens popup") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.open == true);
 }
@@ -207,20 +207,20 @@ TEST_CASE("Enum delegate Down navigates when open") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.highlighted == 0);
 
     // Down
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
     CHECK(es.highlighted == 1);
 
     // Down again
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
     CHECK(es.highlighted == 2);
 
     // Down wraps
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
     CHECK(es.highlighted == 0);
 }
 
@@ -229,18 +229,18 @@ TEST_CASE("Enum delegate Up navigates when open") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.highlighted == 2);
 
     // Up
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
     CHECK(es.highlighted == 1);
 
     // Up wraps
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
     CHECK(es.highlighted == 0);
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
     CHECK(es.highlighted == 2);
 }
 
@@ -249,10 +249,10 @@ TEST_CASE("Enum delegate Enter selects highlighted option") {
     auto node = make_node({.focused = true});
 
     // Open, navigate to Blue (index 2), select
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::enter, 0}, node);
 
     CHECK(field.get() == Color::Blue);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
@@ -263,9 +263,9 @@ TEST_CASE("Enum delegate Escape closes without changing") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
 
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::escape, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::space, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::escape, 0}, node);
 
     CHECK(field.get() == Color::Red);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
@@ -277,12 +277,12 @@ TEST_CASE("Enum delegate click on option selects and closes") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Click on second option (Green, index 1)
     // y = widget_h + 1 * option_h + half = 30 + 28 + 14 = mid of Green row
     float click_y = 30.f + 1 * 28.f + 14.f;
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
 
     CHECK(field.get() == Color::Green);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
@@ -294,10 +294,10 @@ TEST_CASE("Enum delegate click outside popup closes without changing") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Click outside popup area (below all options: y = 30 + 3*28 + 10 = 124)
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 124), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 124), 1, true}, node);
 
     CHECK(field.get() == Color::Red);
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
@@ -308,16 +308,16 @@ TEST_CASE("Enum delegate Up/Down quick-select when closed") {
     prism::Field<Color> field{Color::Red};
     auto node = make_node({.focused = true});
 
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
     CHECK(field.get() == Color::Green);
 
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
     CHECK(field.get() == Color::Blue);
 
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::down, 0}, node);
     CHECK(field.get() == Color::Red);  // wraps
 
-    prism::Delegate<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
+    prism::Widget<Color>::handle_input(field, prism::KeyPress{prism::keys::up, 0}, node);
     CHECK(field.get() == Color::Blue);  // wraps back
 }
 
@@ -328,7 +328,7 @@ TEST_CASE("Dropdown<T> renders custom labels") {
     }};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Dropdown<Color>>::record(dl, field, node);
+    prism::Widget<prism::Dropdown<Color>>::record(dl, field, node);
 
     bool has_custom_label = false;
     for (auto& cmd : dl.commands) {
@@ -347,13 +347,13 @@ TEST_CASE("Dropdown<T> popup shows custom labels") {
     auto node = make_node({.focused = true});
 
     // Open
-    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+    prism::Widget<prism::Dropdown<Color>>::handle_input(
         field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Re-record to populate overlay
     prism::DrawList dl;
     node.overlay_draws.clear();
-    prism::Delegate<prism::Dropdown<Color>>::record(dl, field, node);
+    prism::Widget<prism::Dropdown<Color>>::record(dl, field, node);
 
     bool has_rouge = false, has_vert = false, has_bleu = false;
     for (auto& cmd : node.overlay_draws.commands) {
@@ -372,7 +372,7 @@ TEST_CASE("Dropdown<T> falls back to reflection labels when labels empty") {
     prism::Field<prism::Dropdown<Color>> field{{.value = Color::Green}};
     prism::DrawList dl;
     auto node = make_node();
-    prism::Delegate<prism::Dropdown<Color>>::record(dl, field, node);
+    prism::Widget<prism::Dropdown<Color>>::record(dl, field, node);
 
     bool has_reflection_label = false;
     for (auto& cmd : dl.commands) {
@@ -388,13 +388,13 @@ TEST_CASE("Dropdown<T> selection updates value") {
     auto node = make_node({.focused = true});
 
     // Open, navigate to Blue, select
-    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+    prism::Widget<prism::Dropdown<Color>>::handle_input(
         field, prism::KeyPress{prism::keys::space, 0}, node);
-    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+    prism::Widget<prism::Dropdown<Color>>::handle_input(
         field, prism::KeyPress{prism::keys::down, 0}, node);
-    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+    prism::Widget<prism::Dropdown<Color>>::handle_input(
         field, prism::KeyPress{prism::keys::down, 0}, node);
-    prism::Delegate<prism::Dropdown<Color>>::handle_input(
+    prism::Widget<prism::Dropdown<Color>>::handle_input(
         field, prism::KeyPress{prism::keys::enter, 0}, node);
 
     CHECK(field.get().value == Color::Blue);
@@ -497,11 +497,11 @@ TEST_CASE("Dropdown popup flips upward when near bottom of viewport") {
     node.absolute_y = prism::Y{80};
 
     // Open dropdown
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     // Record to position popup
     prism::DrawList dl;
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
 
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.open);
@@ -510,7 +510,7 @@ TEST_CASE("Dropdown popup flips upward when near bottom of viewport") {
 
     // Click on second option (Green) in flipped popup
     float click_y = es.popup_rect.origin.y.raw() + 1 * 28.f + 14.f;
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, click_y), 1, true}, node);
     CHECK(field.get() == Color::Green);
 }
 
@@ -520,10 +520,10 @@ TEST_CASE("Dropdown popup opens below when enough room") {
     node.viewport_height = prism::Height{600};
     node.absolute_y = prism::Y{10};
 
-    prism::Delegate<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
+    prism::Widget<Color>::handle_input(field, prism::MouseButton{P(10, 10), 1, true}, node);
 
     prism::DrawList dl;
-    prism::Delegate<Color>::record(dl, field, node);
+    prism::Widget<Color>::record(dl, field, node);
 
     auto& es = *std::any_cast<prism::DropdownEditState>(&node.edit_state);
     CHECK(es.popup_rect.origin.y.raw() > 0);  // below the widget
