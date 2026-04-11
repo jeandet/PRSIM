@@ -16,14 +16,12 @@ struct DropdownLabelResolver {
 
 inline const DropdownEditState& get_dropdown_state(const WidgetNode& node) {
     static const DropdownEditState default_state;
-    auto* p = std::get_if<DropdownEditState>(&node.edit_state);
+    auto* p = std::any_cast<DropdownEditState>(&node.edit_state);
     return p ? *p : default_state;
 }
 
 inline DropdownEditState& ensure_dropdown_state(WidgetNode& node) {
-    if (!std::holds_alternative<DropdownEditState>(node.edit_state))
-        node.edit_state = DropdownEditState{};
-    return std::get<DropdownEditState>(node.edit_state);
+    return node.get_or_create<DropdownEditState>();
 }
 
 constexpr float dd_widget_h = 30.f;

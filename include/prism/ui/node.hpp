@@ -15,6 +15,8 @@ using namespace prism::render;
 
 
 struct WidgetNode;
+struct TableState;
+struct TabsState;
 
 struct Node {
     WidgetId id = 0;

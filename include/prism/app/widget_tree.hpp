@@ -160,9 +160,7 @@ public:
             scroll_node.scroll_bar_policy = field.get().scrollbar;
             scroll_node.scroll_event_policy = field.get().event_policy;
             scroll_node.build_widget = [&field](WidgetNode& wn) {
-                if (!std::holds_alternative<ScrollState>(wn.edit_state))
-                    wn.edit_state = ScrollState{};
-                auto& ss = std::get<ScrollState>(wn.edit_state);
+                auto& ss = wn.get_or_create<ScrollState>();
                 ss.scrollbar = field.get().scrollbar;
                 ss.event_policy = field.get().event_policy;
                 ss.offset_y = field.get().scroll_y;
@@ -217,7 +215,7 @@ public:
                 wn.connections.clear();
                 wn.draws.clear();
                 wn.overlay_draws.clear();
-                wn.edit_state = std::monostate{};
+                wn.edit_state.reset();
                 wn.wire = nullptr;
                 wn.record = nullptr;
                 wn.dirty = false;
@@ -479,7 +477,7 @@ public:
                     DY new_off{std::clamp(sv->offset.raw() + delta.raw(), 0.f, max_off.raw())};
 
                     if (std::abs(new_off.raw() - sv->offset.raw()) < 0.001f) {
-                        auto* ss = std::get_if<ScrollState>(&it->second->edit_state);
+                        auto* ss = std::any_cast<ScrollState>(&it->second->edit_state);
                         if (ss && ss->event_policy == ScrollEventPolicy::BubbleAtBounds) {
                             auto pit = parent_map_.find(current);
                             current = (pit != parent_map_.end()) ? pit->second : 0;
@@ -709,23 +707,21 @@ private:
     }
 
     static ScrollState& ensure_scroll_state(WidgetNode& node) {
-        if (!std::holds_alternative<ScrollState>(node.edit_state))
-            node.edit_state = ScrollState{};
-        return std::get<ScrollState>(node.edit_state);
+        return node.get_or_create<ScrollState>();
     }
 
     static TableState* get_table_state(WidgetNode& node) {
-        auto* sp = std::get_if<std::shared_ptr<TableState>>(&node.edit_state);
+        auto* sp = std::any_cast<std::shared_ptr<TableState>>(&node.edit_state);
         return sp ? sp->get() : nullptr;
     }
 
     static VirtualListState* get_vlist_state(WidgetNode& node) {
-        auto* sp = std::get_if<std::shared_ptr<VirtualListState>>(&node.edit_state);
+        auto* sp = std::any_cast<std::shared_ptr<VirtualListState>>(&node.edit_state);
         return sp ? sp->get() : nullptr;
     }
 
     static TabsState* get_tabs_state_ptr(WidgetNode& node) {
-        auto* sp = std::get_if<std::shared_ptr<TabsState>>(&node.edit_state);
+        auto* sp = std::any_cast<std::shared_ptr<TabsState>>(&node.edit_state);
         return sp ? sp->get() : nullptr;
     }
 
@@ -737,7 +733,7 @@ private:
     };
 
     static std::optional<ScrollView> get_scroll_view(WidgetNode& node) {
-        if (auto* ss = std::get_if<ScrollState>(&node.edit_state))
+        if (auto* ss = std::any_cast<ScrollState>(&node.edit_state))
             return ScrollView{ss->offset_y, ss->viewport_h, ss->content_h, ss->show_ticks};
         if (auto* vls = get_vlist_state(node)) {
             Height ch{static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
@@ -1021,7 +1017,7 @@ private:
             && node.layout_kind != LayoutKind::Table
             && node.layout_kind != LayoutKind::Tabs) {
             node.overlay_draws.clear();
-            node.edit_state = std::monostate{};
+            node.edit_state.reset();
             node.dirty = true;
         }
         for (auto& c : node.children) close_overlays_impl(c);
@@ -1442,7 +1438,7 @@ private:
             container.kind = LayoutNode::Kind::Scroll;
             container.id = node.id;
             container.theme = node.theme;
-            if (auto* ss = std::get_if<ScrollState>(&node.edit_state))
+            if (auto* ss = std::any_cast<ScrollState>(&node.edit_state))
                 container.scroll_offset = ss->offset_y;
             for (auto& c : node.children)
                 build_layout(c, container);

@@ -11,14 +11,12 @@ namespace detail {
 
 inline const TabBarEditState& get_tabs_state(const WidgetNode& node) {
     static const TabBarEditState default_state;
-    auto* p = std::get_if<TabBarEditState>(&node.edit_state);
+    auto* p = std::any_cast<TabBarEditState>(&node.edit_state);
     return p ? *p : default_state;
 }
 
 inline TabBarEditState& ensure_tabs_state(WidgetNode& node) {
-    if (!std::holds_alternative<TabBarEditState>(node.edit_state))
-        node.edit_state = TabBarEditState{};
-    return std::get<TabBarEditState>(node.edit_state);
+    return node.get_or_create<TabBarEditState>();
 }
 
 constexpr float tab_h = 32.f;

@@ -193,7 +193,7 @@ TEST_CASE("Click selects row via hit_test in multi-widget layout") {
     MESSAGE("table rect: y=", table_rect->origin.y.raw(),
             " h=", table_rect->extent.h.raw());
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -250,7 +250,7 @@ TEST_CASE("Table selection via full route_mouse_button path") {
     REQUIRE(table_rect.has_value());
     MESSAGE("table y=", table_rect->origin.y.raw(), " h=", table_rect->extent.h.raw());
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -314,7 +314,7 @@ TEST_CASE("Click on table row sets selected_row") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -361,7 +361,7 @@ TEST_CASE("hit_test finds table, not cells") {
     CHECK(*hit_id == table_node->id);
 
     // Now dispatch a localized click on row 1 and verify selection works
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -392,7 +392,7 @@ TEST_CASE("Click selected row deselects") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -423,7 +423,7 @@ TEST_CASE("Arrow keys move selection") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -477,7 +477,7 @@ TEST_CASE("Mouse wheel scrolls table vertically") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -505,7 +505,7 @@ TEST_CASE("Arrow key selection scrolls into view") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 
@@ -574,7 +574,7 @@ TEST_CASE("headers() builder overrides table headers") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
     REQUIRE(ts.header_overrides.size() == 1);
@@ -597,7 +597,7 @@ TEST_CASE("Full table workflow: render, scroll, select, observe") {
     }
     REQUIRE(table_node != nullptr);
 
-    auto* sp = std::get_if<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
     REQUIRE(sp);
     auto& ts = **sp;
 

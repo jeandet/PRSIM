@@ -99,7 +99,7 @@ TEST_CASE("Delegate<TabBar> records header text") {
 
     CHECK(!dl.commands.empty());
 
-    auto* es = std::get_if<prism::TabBarEditState>(&node.edit_state);
+    auto* es = std::any_cast<prism::TabBarEditState>(&node.edit_state);
     REQUIRE(es);
     CHECK(es->header_x_ranges.size() == 2);
 }

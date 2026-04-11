@@ -14,14 +14,12 @@ namespace detail {
 
 inline const TextEditState& get_text_edit_state(const WidgetNode& node) {
     static const TextEditState default_state;
-    auto* p = std::get_if<TextEditState>(&node.edit_state);
+    auto* p = std::any_cast<TextEditState>(&node.edit_state);
     return p ? *p : default_state;
 }
 
 inline TextEditState& ensure_text_edit_state(WidgetNode& node) {
-    if (!std::holds_alternative<TextEditState>(node.edit_state))
-        node.edit_state = TextEditState{};
-    return std::get<TextEditState>(node.edit_state);
+    return node.get_or_create<TextEditState>();
 }
 
 inline std::string mask_string(size_t len) {
@@ -208,14 +206,12 @@ inline size_t line_col_to_cursor(size_t line, size_t col, std::span<const LineSp
 
 inline const TextAreaEditState& get_text_area_edit_state(const WidgetNode& node) {
     static const TextAreaEditState default_state;
-    auto* p = std::get_if<TextAreaEditState>(&node.edit_state);
+    auto* p = std::any_cast<TextAreaEditState>(&node.edit_state);
     return p ? *p : default_state;
 }
 
 inline TextAreaEditState& ensure_text_area_edit_state(WidgetNode& node) {
-    if (!std::holds_alternative<TextAreaEditState>(node.edit_state))
-        node.edit_state = TextAreaEditState{};
-    return std::get<TextAreaEditState>(node.edit_state);
+    return node.get_or_create<TextAreaEditState>();
 }
 
 constexpr float ta_padding = 4.f;

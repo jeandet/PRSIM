@@ -6,13 +6,13 @@
 #include <prism/input/input_event.hpp>
 
 #include <algorithm>
+#include <any>
 #include <memory>
 #if __cpp_impl_reflection
 #include <meta>
 #endif
 #include <string>
 #include <type_traits>
-#include <variant>
 #include <vector>
 
 namespace prism::ui {
@@ -235,24 +235,10 @@ struct TabBarEditState {
     std::vector<std::pair<float, float>> header_x_ranges;
 };
 
-// Closed set of ephemeral widget states stored in WidgetNode::edit_state.
-// std::shared_ptr<void> holds type-erased lifetime (e.g. virtual list row Field<T>).
-struct VirtualListState;
-struct TableState;
-struct TabsState;
-
-using EditState = std::variant<
-    std::monostate,
-    TextEditState,
-    TextAreaEditState,
-    DropdownEditState,
-    ScrollState,
-    TabBarEditState,
-    std::shared_ptr<VirtualListState>,
-    std::shared_ptr<TableState>,
-    std::shared_ptr<TabsState>,
-    std::shared_ptr<void>
->;
+// Type-erased ephemeral widget state stored in WidgetNode::edit_state.
+// Any default-constructible type can be stored; get_or_create<S>() provides
+// typed access with lazy initialization.
+using EditState = std::any;
 
 // WidgetNode is defined in widget_tree.hpp; declared here so delegate
 // signatures can take WidgetNode& without creating a circular include.

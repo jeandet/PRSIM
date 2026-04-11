@@ -147,7 +147,7 @@ TEST_CASE("Password TextInput inserts text") {
 
     prism::Delegate<prism::Password<>>::handle_input(field, prism::TextInput{"X"}, node);
     CHECK(field.get().value == "aXb");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 2);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 }
 
 TEST_CASE("Password backspace deletes char before cursor") {
@@ -159,7 +159,7 @@ TEST_CASE("Password backspace deletes char before cursor") {
     prism::Delegate<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::backspace, 0}, node);
     CHECK(field.get().value == "ac");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 1);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
 }
 
 TEST_CASE("Password arrow keys move cursor") {
@@ -170,11 +170,11 @@ TEST_CASE("Password arrow keys move cursor") {
 
     prism::Delegate<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 2);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 
     prism::Delegate<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 1);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
 }
 
 TEST_CASE("Password Home/End move cursor") {
@@ -185,11 +185,11 @@ TEST_CASE("Password Home/End move cursor") {
 
     prism::Delegate<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::end, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 3);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
 
     prism::Delegate<prism::Password<>>::handle_input(
         field, prism::KeyPress{prism::keys::home, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 0);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 }
 
 TEST_CASE("Password max_length enforced") {

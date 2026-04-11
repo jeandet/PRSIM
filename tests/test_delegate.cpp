@@ -423,6 +423,35 @@ TEST_CASE("FocusPolicy: enum delegates are focusable") {
     CHECK(prism::Delegate<prism::Dropdown<TestColor>>::focus_policy == prism::FocusPolicy::tab_and_click);
 }
 
+// --- get_or_create tests ---
+
+struct CustomEditState {
+    int cursor = 0;
+    bool open = false;
+};
+
+TEST_CASE("WidgetNode::get_or_create returns default-constructed state") {
+    auto node = make_node();
+    auto& state = node.get_or_create<CustomEditState>();
+    CHECK(state.cursor == 0);
+    CHECK(state.open == false);
+}
+
+TEST_CASE("WidgetNode::get_or_create returns existing state") {
+    auto node = make_node();
+    auto& state = node.get_or_create<CustomEditState>();
+    state.cursor = 42;
+    auto& state2 = node.get_or_create<CustomEditState>();
+    CHECK(state2.cursor == 42);
+}
+
+TEST_CASE("WidgetNode::get_or_create replaces wrong type") {
+    auto node = make_node();
+    node.get_or_create<CustomEditState>().cursor = 10;
+    auto& text = node.get_or_create<prism::TextEditState>();
+    CHECK(text.cursor == 0);
+}
+
 TEST_CASE("Checkbox observer fires on toggle") {
     prism::Field<prism::Checkbox> field{{.label = "X"}};
     auto node = make_node();

@@ -30,6 +30,17 @@ struct WidgetNode {
     FocusPolicy focus_policy = FocusPolicy::none;
     WidgetVisualState visual_state;
     EditState edit_state;
+
+    template <typename S>
+    S& get_or_create() {
+        auto* p = std::any_cast<S>(&edit_state);
+        if (!p) {
+            edit_state = S{};
+            p = std::any_cast<S>(&edit_state);
+        }
+        return *p;
+    }
+
     DrawList draws;
     DrawList overlay_draws;
     std::vector<WidgetNode> children;

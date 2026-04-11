@@ -153,7 +153,7 @@ TEST_CASE("TextField TextInput inserts text at cursor") {
 
     prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"X"}, node);
     CHECK(field.get().value == "aXb");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 2);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 }
 
 TEST_CASE("TextField TextInput appends at end") {
@@ -164,7 +164,7 @@ TEST_CASE("TextField TextInput appends at end") {
 
     prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"!"}, node);
     CHECK(field.get().value == "hi!");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 3);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
 }
 
 TEST_CASE("TextField backspace deletes char before cursor") {
@@ -176,7 +176,7 @@ TEST_CASE("TextField backspace deletes char before cursor") {
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::backspace, 0}, node);
     CHECK(field.get().value == "ac");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 1);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
 }
 
 TEST_CASE("TextField backspace at position 0 is no-op") {
@@ -187,7 +187,7 @@ TEST_CASE("TextField backspace at position 0 is no-op") {
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::backspace, 0}, node);
     CHECK(field.get().value == "abc");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 0);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 }
 
 TEST_CASE("TextField delete removes char at cursor") {
@@ -199,7 +199,7 @@ TEST_CASE("TextField delete removes char at cursor") {
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::delete_, 0}, node);
     CHECK(field.get().value == "ac");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 1);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
 }
 
 TEST_CASE("TextField delete at end is no-op") {
@@ -221,7 +221,7 @@ TEST_CASE("TextField left arrow moves cursor left") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 1);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 1);
 }
 
 TEST_CASE("TextField left arrow at 0 stays at 0") {
@@ -231,7 +231,7 @@ TEST_CASE("TextField left arrow at 0 stays at 0") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 0);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 }
 
 TEST_CASE("TextField right arrow moves cursor right") {
@@ -242,7 +242,7 @@ TEST_CASE("TextField right arrow moves cursor right") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 2);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 }
 
 TEST_CASE("TextField right arrow at end stays at end") {
@@ -253,7 +253,7 @@ TEST_CASE("TextField right arrow at end stays at end") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 2);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 2);
 }
 
 TEST_CASE("TextField Home moves cursor to 0") {
@@ -264,7 +264,7 @@ TEST_CASE("TextField Home moves cursor to 0") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::home, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 0);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 }
 
 TEST_CASE("TextField End moves cursor to end") {
@@ -274,7 +274,7 @@ TEST_CASE("TextField End moves cursor to end") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::end, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 3);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
 }
 
 TEST_CASE("TextField max_length enforced on insert") {
@@ -285,7 +285,7 @@ TEST_CASE("TextField max_length enforced on insert") {
 
     prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"XY"}, node);
     CHECK(field.get().value == "abX");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 3);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 3);
 }
 
 TEST_CASE("TextField max_length blocks insert when full") {
@@ -351,7 +351,7 @@ TEST_CASE("TextField click positions cursor") {
     float click_x = 4.f + 2.5f * cw;
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::MouseButton{P(click_x, 15), 1, true}, node);
-    auto cursor = std::get<prism::TextEditState>(node.edit_state).cursor;
+    auto cursor = std::any_cast<prism::TextEditState>(node.edit_state).cursor;
     CHECK((cursor == 2 || cursor == 3));
 }
 
@@ -366,9 +366,9 @@ TEST_CASE("TextField scroll_offset adjusts when cursor moves past right edge") {
 
     float cw = prism::char_width(14.f);
     float text_area_w = 200.f - 2 * 4.f;
-    CHECK(std::get<prism::TextEditState>(node.edit_state).scroll_offset > 0.f);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset > 0.f);
     float cursor_px = 36 * cw; // end key moves cursor to len=36
-    CHECK(std::get<prism::TextEditState>(node.edit_state).scroll_offset ==
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset ==
           doctest::Approx(cursor_px - text_area_w));
 }
 
@@ -382,7 +382,7 @@ TEST_CASE("TextField scroll_offset resets when cursor moves to beginning") {
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::home, 0}, node);
 
-    CHECK(std::get<prism::TextEditState>(node.edit_state).scroll_offset == 0.f);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset == 0.f);
 }
 
 TEST_CASE("TextField operations on empty string are safe") {
@@ -401,11 +401,11 @@ TEST_CASE("TextField operations on empty string are safe") {
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::left, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 0);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 
     prism::Delegate<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::right, 0}, node);
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 0);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 0);
 }
 
 TEST_CASE("TextField TextInput on empty field inserts text") {
@@ -415,5 +415,5 @@ TEST_CASE("TextField TextInput on empty field inserts text") {
 
     prism::Delegate<prism::TextField<>>::handle_input(field, prism::TextInput{"hello"}, node);
     CHECK(field.get().value == "hello");
-    CHECK(std::get<prism::TextEditState>(node.edit_state).cursor == 5);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).cursor == 5);
 }
