@@ -502,3 +502,26 @@ TEST_CASE("Derived<T> widget re-renders when source changes") {
     m.x.set(10);
     CHECK(tree.any_dirty());
 }
+
+struct CanvasDerivedModel {
+    prism::Field<int> x{5};
+    prism::core::Derived<int> doubled{[this] { return x.get() * 2; }, x};
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+        dl.filled_rect(bounds, prism::Color::rgba(0, 0, 0));
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(x);
+        vb.canvas(*this).depends_on(doubled);
+    }
+};
+
+TEST_CASE("canvas depends_on accepts Derived<T>") {
+    CanvasDerivedModel m;
+    prism::WidgetTree tree(m);
+    tree.clear_dirty();
+
+    m.x.set(10);  // triggers doubled recomputation
+    CHECK(tree.any_dirty());
+}

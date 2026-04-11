@@ -59,6 +59,28 @@ public:
                 return *this;
             }
 
+            template <typename U>
+            TableBuilder& depends_on(Derived<U>& derived) {
+                node_ref.dependencies.push_back(
+                    [&derived](std::function<void()> cb) -> Connection {
+                        return derived.on_change().connect(
+                            [cb = std::move(cb)](const U&) { cb(); });
+                    }
+                );
+                return *this;
+            }
+
+            template <typename U>
+            TableBuilder& depends_on(Shared<U>& shared) {
+                node_ref.dependencies.push_back(
+                    [&shared](std::function<void()> cb) -> Connection {
+                        return shared.on_change().connect(
+                            [cb = std::move(cb)](const U&) { cb(); });
+                    }
+                );
+                return *this;
+            }
+
             TableBuilder& headers(std::vector<std::string> hdrs) {
                 if (node_ref.table_state)
                     node_ref.table_state->header_overrides = std::move(hdrs);
@@ -76,6 +98,28 @@ public:
                 node_ref.dependencies.push_back(
                     [&field](std::function<void()> cb) -> Connection {
                         return field.on_change().connect(
+                            [cb = std::move(cb)](const U&) { cb(); });
+                    }
+                );
+                return *this;
+            }
+
+            template <typename U>
+            CanvasHandle& depends_on(Derived<U>& derived) {
+                node_ref.dependencies.push_back(
+                    [&derived](std::function<void()> cb) -> Connection {
+                        return derived.on_change().connect(
+                            [cb = std::move(cb)](const U&) { cb(); });
+                    }
+                );
+                return *this;
+            }
+
+            template <typename U>
+            CanvasHandle& depends_on(Shared<U>& shared) {
+                node_ref.dependencies.push_back(
+                    [&shared](std::function<void()> cb) -> Connection {
+                        return shared.on_change().connect(
                             [cb = std::move(cb)](const U&) { cb(); });
                     }
                 );
