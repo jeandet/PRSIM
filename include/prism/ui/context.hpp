@@ -107,9 +107,9 @@ struct Context {
     WidgetState  state = WidgetState::Normal;
 };
 
-// A widget is any type that can record draw commands given a context.
+// A drawable is any type that can record draw commands given a context.
 template <typename T>
-concept Widget = requires(const T w, DrawList& dl, const Context& ctx) {
+concept Drawable = requires(const T w, DrawList& dl, const Context& ctx) {
     { w.record(dl, ctx) } -> std::same_as<void>;
 };
 

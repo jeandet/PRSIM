@@ -116,24 +116,37 @@ Node node_leaf(Field<T>& field, WidgetId& next_id) {
     n.is_leaf = true;
 
     n.build_widget = [&field](WidgetNode& wn) {
-        wn.focus_policy = Delegate<T>::focus_policy;
-        if constexpr (requires { Delegate<T>::expand; })
-            wn.expand = Delegate<T>::expand;
-        if constexpr (requires { Delegate<T>::expand_axis; })
-            wn.expand_axis = Delegate<T>::expand_axis;
-        wn.record = [&field](WidgetNode& node) {
-            node.draws.clear();
-            node.overlay_draws.clear();
-            Delegate<T>::record(node.draws, field, node);
-        };
+        if constexpr (is_widget_v<T>) {
+            wn.focus_policy = Widget<T>::focus_policy;
+            if constexpr (requires { Widget<T>::expand; })
+                wn.expand = Widget<T>::expand;
+            if constexpr (requires { Widget<T>::expand_axis; })
+                wn.expand_axis = Widget<T>::expand_axis;
+            wn.record = [&field](WidgetNode& node) {
+                node.draws.clear();
+                node.overlay_draws.clear();
+                Widget<T>::record(node.draws, field, node);
+            };
+            wn.wire = [&field](WidgetNode& node) {
+                node.connections.push_back(
+                    node.on_input.connect([&field, &node](const InputEvent& ev) {
+                        Widget<T>::handle_input(field, ev, node);
+                    })
+                );
+            };
+        } else {
+            wn.focus_policy = FocusPolicy::none;
+            wn.record = [](WidgetNode& node) {
+                node.draws.clear();
+                node.overlay_draws.clear();
+                const auto& vs = node_vs(node);
+                auto bg = vs.hovered ? Color::rgba(70, 70, 80)
+                                     : Color::rgba(50, 50, 60);
+                auto sz = node_allocated(node);
+                node.draws.filled_rect(Rect{Point{X{0}, Y{0}}, sz}, bg);
+            };
+        }
         wn.record(wn);
-        wn.wire = [&field](WidgetNode& node) {
-            node.connections.push_back(
-                node.on_input.connect([&field, &node](const InputEvent& ev) {
-                    Delegate<T>::handle_input(field, ev, node);
-                })
-            );
-        };
     };
 
     n.on_change = [&field](std::function<void()> cb) -> Connection {
@@ -151,14 +164,25 @@ Node node_readonly_leaf(Observable& obs, WidgetId& next_id) {
 
     n.build_widget = [&obs](WidgetNode& wn) {
         wn.focus_policy = FocusPolicy::none;
-        wn.record = [&obs](WidgetNode& node) {
-            node.draws.clear();
-            node.overlay_draws.clear();
-            Field<T> tmp{obs.get()};
-            Delegate<T>::record(node.draws, tmp, node);
-        };
+        if constexpr (is_widget_v<T>) {
+            wn.record = [&obs](WidgetNode& node) {
+                node.draws.clear();
+                node.overlay_draws.clear();
+                Field<T> tmp{obs.get()};
+                Widget<T>::record(node.draws, tmp, node);
+            };
+        } else {
+            wn.record = [](WidgetNode& node) {
+                node.draws.clear();
+                node.overlay_draws.clear();
+                const auto& vs = node_vs(node);
+                auto bg = vs.hovered ? Color::rgba(70, 70, 80)
+                                     : Color::rgba(50, 50, 60);
+                auto sz = node_allocated(node);
+                node.draws.filled_rect(Rect{Point{X{0}, Y{0}}, sz}, bg);
+            };
+        }
         wn.record(wn);
-        // No input wiring — read-only
     };
 
     n.on_change = [&obs](std::function<void()> cb) -> Connection {
