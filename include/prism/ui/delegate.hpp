@@ -270,10 +270,10 @@ inline float widget_w(const WidgetNode& node) {
 }
 } // namespace detail
 
-// Primary template: default delegate for any Field<T>.
+// Primary template: default widget for any Field<T>.
 // Renders a filled rect, ignores input.
 template <typename T>
-struct Delegate {
+struct Widget {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
@@ -287,9 +287,17 @@ struct Delegate {
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
 };
 
+/// True if Widget<T> has been specialized with record() and handle_input().
+template <typename T>
+concept is_widget_v = requires(DrawList& dl, const Field<T>& cf, Field<T>& f,
+                                const InputEvent& ev, WidgetNode& node) {
+    Widget<T>::record(dl, cf, node);
+    Widget<T>::handle_input(f, ev, node);
+};
+
 // Numeric specialization: displays the value as text
 template <Numeric T>
-struct Delegate<T> {
+struct Widget<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
@@ -307,7 +315,7 @@ struct Delegate<T> {
 
 // StringLike specialization: displays the string value
 template <StringLike T>
-struct Delegate<T> {
+struct Widget<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
@@ -330,7 +338,7 @@ struct Checkbox {
     bool operator==(const Checkbox&) const = default;
 };
 
-// Shared checkbox box rendering for Delegate<bool> and Delegate<Checkbox>
+// Shared checkbox box rendering for Widget<bool> and Widget<Checkbox>
 inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
                            const WidgetVisualState& vs, const Theme& t) {
     constexpr float box_size = 16.f;
@@ -354,7 +362,7 @@ inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
 }
 
 template <>
-struct Delegate<Checkbox> {
+struct Widget<Checkbox> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr float widget_h = 30.f;
     static constexpr float box_size = 16.f;
@@ -396,7 +404,7 @@ struct Delegate<Checkbox> {
 
 // bool specialization: toggle widget
 template <>
-struct Delegate<bool> {
+struct Widget<bool> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
     static void record(DrawList& dl, const Field<bool>& field, WidgetNode& node) {
@@ -428,7 +436,7 @@ struct Delegate<bool> {
 };
 
 template <StringLike T>
-struct Delegate<Label<T>> {
+struct Widget<Label<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode& node) {
@@ -455,7 +463,7 @@ struct Slider {
 };
 
 template <Numeric T, Orientation O>
-struct Delegate<Slider<T, O>> {
+struct Widget<Slider<T, O>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr bool vertical = (O == Orientation::Vertical);
     static constexpr bool expand = true;
@@ -540,7 +548,7 @@ struct Button {
 };
 
 template <>
-struct Delegate<Button> {
+struct Widget<Button> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
     static void record(DrawList& dl, const Field<Button>& field, WidgetNode& node) {
@@ -573,7 +581,7 @@ struct Delegate<Button> {
 };
 
 template <StringLike T>
-struct Delegate<TextField<T>> {
+struct Widget<TextField<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr float widget_h = 30.f;
     static constexpr float padding = 4.f;
@@ -588,7 +596,7 @@ struct Delegate<TextField<T>> {
 };
 
 template <StringLike T>
-struct Delegate<Password<T>> {
+struct Widget<Password<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr float widget_h = 30.f;
     static constexpr float padding = 4.f;
@@ -602,7 +610,7 @@ struct Delegate<Password<T>> {
 };
 
 template <StringLike T>
-struct Delegate<TextArea<T>> {
+struct Widget<TextArea<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
     static constexpr float padding = 4.f;
     static constexpr float font_size = 14.f;
@@ -618,7 +626,7 @@ struct Delegate<TextArea<T>> {
 // ScopedEnum delegate -- declared here, defined in widget_tree.hpp
 template <ScopedEnum T>
     requires (!TextEditable<T>)
-struct Delegate<T> {
+struct Widget<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node);
@@ -626,7 +634,7 @@ struct Delegate<T> {
 };
 
 template <ScopedEnum T>
-struct Delegate<Dropdown<T>> {
+struct Widget<Dropdown<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
     static void record(DrawList& dl, const Field<Dropdown<T>>& field, WidgetNode& node);
@@ -634,7 +642,7 @@ struct Delegate<Dropdown<T>> {
 };
 
 template <>
-struct Delegate<TabBar<>> {
+struct Widget<TabBar<>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
 
     static void record(DrawList& dl, const Field<TabBar<>>& field, WidgetNode& node);
