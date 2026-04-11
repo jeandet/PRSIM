@@ -3,6 +3,8 @@
 
 #include <prism/core/reflect.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/derived.hpp>
+#include <prism/core/shared.hpp>
 
 #include <string>
 #include <vector>
@@ -105,5 +107,31 @@ TEST_CASE("for_each_field skips State members") {
     int count = 0;
     prism::for_each_field(model, [&](auto&) { ++count; });
     CHECK(count == 1);
+}
+
+TEST_CASE("for_each_member visits Derived and Shared members") {
+    struct Model {
+        prism::Field<int> x{1};
+        prism::core::Derived<int> doubled{[this] { return x.get() * 2; }, x};
+        prism::core::Shared<float> temperature{22.5f};
+    };
+
+    Model m;
+    int count = 0;
+    prism::core::for_each_member(m, [&](auto&) { ++count; });
+    CHECK(count == 3);
+}
+
+TEST_CASE("is_component_v includes structs with Derived or Shared") {
+    struct DerivedOnly {
+        prism::Field<int> x{0};
+        prism::core::Derived<int> y{[this] { return x.get(); }, x};
+    };
+    struct SharedOnly {
+        prism::core::Shared<int> s{0};
+    };
+
+    CHECK(prism::core::is_component_v<DerivedOnly>);
+    CHECK(prism::core::is_component_v<SharedOnly>);
 }
 #endif // __cpp_impl_reflection

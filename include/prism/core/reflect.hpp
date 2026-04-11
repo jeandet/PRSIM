@@ -1,6 +1,8 @@
 #pragma once
 
 #include <prism/core/traits.hpp>
+#include <prism/core/derived.hpp>
+#include <prism/core/shared.hpp>
 
 #if __cpp_impl_reflection
 #include <meta>
@@ -31,7 +33,7 @@ consteval bool check_is_component() {
         bool found = false;
         template for (constexpr auto m : members) {
             using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
-            if constexpr (is_field_v<M> || is_state_v<M>) found = true;
+            if constexpr (is_field_v<M> || is_state_v<M> || is_derived_v<M> || is_shared_v<M>) found = true;
         }
         return found;
     }
@@ -64,7 +66,7 @@ void for_each_member(Model& model, Fn&& fn) {
     template for (constexpr auto m : members) {
         auto& member = model.[:m:];
         using M = std::remove_cvref_t<decltype(member)>;
-        if constexpr (is_field_v<M> || is_component_v<M>) {
+        if constexpr (is_field_v<M> || is_derived_v<M> || is_shared_v<M> || is_component_v<M>) {
             fn(member);
         }
     }
