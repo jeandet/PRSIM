@@ -74,22 +74,37 @@ struct prism::Widget<Knob<T>> {
 };
 ```
 
-### 5. `WidgetNode::get_or_create<S>()`
+### 5. EditState: variant → std::any
 
-Convenience for edit state access, replaces `std::any_cast` boilerplate:
+Currently `EditState` is a closed `std::variant` of known edit state types. Users cannot add custom edit states without modifying PRISM headers. Change to `std::any`:
+
+```cpp
+// BEFORE: closed variant
+using EditState = std::variant<std::monostate, TextEditState, TextAreaEditState, ...>;
+
+// AFTER: open type erasure
+using EditState = std::any;
+```
+
+### 6. `WidgetNode::get_or_create<S>()`
+
+Convenience for edit state access, replaces `std::holds_alternative`/`std::get` boilerplate:
 
 ```cpp
 template <typename S>
 S& get_or_create() {
-    if (!edit_state.has_value() || edit_state.type() != typeid(S))
+    auto* p = std::any_cast<S>(&edit_state);
+    if (!p) {
         edit_state = S{};
-    return std::any_cast<S&>(edit_state);
+        p = std::any_cast<S>(&edit_state);
+    }
+    return *p;
 }
 ```
 
 Used by built-in sentinels (TextField, Dropdown, etc.) and user sentinels equally.
 
-### 6. Concept-constrained partial specializations
+### 7. Concept-constrained partial specializations
 
 Existing concept-based delegates (`Numeric`, `StringLike`, `ScopedEnum`) become concept-constrained `Widget<T>` partial specializations:
 
@@ -104,7 +119,7 @@ template <ScopedEnum T>
 struct Widget<T> { /* auto-dropdown via reflection */ };
 ```
 
-### 7. Fallback for non-widget types
+### 8. Fallback for non-widget types
 
 `node_leaf<T>()` checks `is_widget_v<T>`:
 - If true: uses `Widget<T>::record`, `Widget<T>::handle_input`, reads optional members
@@ -128,8 +143,9 @@ Every place PRISM renders a `Field<T>` resolves through `Widget<T>`:
 **What changes:**
 - Rename `Delegate<T>` → `Widget<T>` in all specializations and dispatch sites
 - Add `is_widget_v<T>` concept
+- Change `EditState` from closed `std::variant` to `std::any`
 - Add `WidgetNode::get_or_create<S>()` helper
-- Migrate all built-in `std::any_cast` usages to `get_or_create`
+- Migrate all `std::holds_alternative`/`std::get` usages to `get_or_create`
 
 **What stays the same:**
 - `Field<T>`, `State<T>`, `Derived<T>`, `Shared<T>` — untouched
