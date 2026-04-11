@@ -36,6 +36,7 @@ headless_tests = {
   'plot' : files('test_plot.cpp'),
   'transaction' : files('test_transaction.cpp'),
   'derived' : files('test_derived.cpp'),
+  'shared' : files('test_shared.cpp'),
 }
 
 foreach name, src : headless_tests
