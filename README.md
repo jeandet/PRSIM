@@ -30,7 +30,7 @@ This is an **architectural problem**, not a tuning problem.
 PRISM follows a **Model-View-Behavior** pattern:
 
 - **Model** — plain structs with `Field<T>` members. Data + change notification. Knows nothing about rendering or input.
-- **View** — `Delegate<T>` specializations. Per-type rendering and widget-level input mechanics, automatic via P2996 reflection. PRISM-internal.
+- **View** — `Widget<T>` specializations. Per-type rendering and widget-level input mechanics, automatic via P2996 reflection. PRISM-internal.
 - **Behavior** — user-written `on_change()` / `observe()` chains. Business logic that reacts to field mutations.
 
 The application and renderer are decoupled through a versioned, immutable scene snapshot exchanged via atomic pointer swap. Both threads sleep at OS level when idle — zero CPU when nothing changes.
@@ -179,9 +179,9 @@ struct Settings {
 
 Both support equality-guarded `set()` (no spurious notifications) and RAII `Connection` lifetime on `on_change()`.
 
-## Sentinel Types & Delegates
+## Sentinel Types & Widgets
 
-The type inside `Field<T>` determines which **delegate** (View layer) renders it. Sentinel types are templated wrappers that encode presentation semantics:
+The type inside `Field<T>` determines which **widget** (View layer) renders it. Sentinel types are templated wrappers that encode presentation semantics:
 
 ```cpp
 enum class Theme { Light, Dark, System };
@@ -201,7 +201,7 @@ struct Editor {
 };
 ```
 
-Delegates are resolved at compile time via **concepts**, not concrete types. A delegate matches on traits (`StringLike`, `Numeric`, `ScopedEnum`), so custom types work automatically if they satisfy the right concept:
+Widgets are resolved at compile time via **concepts**, not concrete types. A widget matches on traits (`StringLike`, `Numeric`, `ScopedEnum`), so custom types work automatically if they satisfy the right concept:
 
 ```cpp
 // Your own string type works in Label<> if it satisfies StringLike
@@ -301,7 +301,7 @@ sequenceDiagram
     Note over Back: Blocks on SDL_WaitEvent
 
     Back->>App: InputEvent via run_loop scheduler
-    App->>App: Delegate handle_input (View)
+    App->>App: Widget handle_input (View)
     App->>App: field.set() → on_change (Behavior)
     App->>App: Rebuild dirty DrawLists only
     App->>Snap: Publish new snapshot (atomic swap)
@@ -319,7 +319,7 @@ Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when
 | Static Reflection (P2996) | Auto-generate UI from model structs | **Optional** — `view()` method is the fallback |
 | `std::execution` (P2300) | `run_loop` event loop, `prism::then` / `prism::on` pipe adaptors | Yes (via stdexec) |
 | Senders/receivers | Observer pattern — `Field<T>::on_change()` + `SenderHub` | Yes |
-| Concepts & Constraints | Delegate resolution (`StringLike`, `Numeric`, `SliderRenderable`), strong type algebra | Yes (C++20) |
+| Concepts & Constraints | Widget resolution (`StringLike`, `Numeric`, `SliderRenderable`), strong type algebra | Yes (C++20) |
 | `std::expected` | Fallible API operations — no exceptions at API boundary | Yes (C++23) |
 | Designated initialisers | Named-parameter widget construction | Yes (C++20) |
 | magic_enum | Enum introspection fallback when P2996 is unavailable | Auto — only on pre-C++26 |
@@ -357,7 +357,7 @@ graph LR
 
 - **Phase 1** (done) — DrawList, SceneSnapshot, SDL3 backend, event-driven loop
 - **Phase 2** (done) — Layout engine, hit testing, `Connection`/`SenderHub`, `Field<T>`, `List<T>`, P2996 reflection, `WidgetTree`, `model_app()`
-- **Phase 3** (done) — Delegate dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), custom `view()` override, `canvas()` escape hatch, strong coordinate types, `clip_push` local coordinate system
+- **Phase 3** (done) — Widget dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), custom `view()` override, `canvas()` escape hatch, strong coordinate types, `clip_push` local coordinate system
 - **Phase 3.5** (done) — stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, `AppContext`
 - **Phase 3.6** (done) — `Node` intermediate layer (type-erased `Field<T>` + children), pre-C++26 support via `view()` methods, magic_enum enum fallback, `#if __cpp_impl_reflection` guards (only 2 locations)
 - **Phase 4** — Animation, accessibility, scroll areas, data widgets (plot, table)
@@ -374,7 +374,7 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Input Events](doc/design/input-events.md) — input queue, event forwarding, hit testing
 - [Layout Engine](docs/superpowers/specs/2026-03-27-layout-hit-regions-design.md) — row/column/spacer, two-pass solver, hit testing
 - [Field/Sender/Widget Spec](docs/superpowers/specs/2026-03-27-field-sender-widget-design.md) — Field<T>, observer pattern, persistent widget tree
-- [Delegates & Sentinels](doc/design/delegates-and-sentinels.md) — concept-driven delegates, all sentinel types (incl. TextArea), overlay system, focus policy
+- [Widgets & Sentinels](doc/design/widgets-and-sentinels.md) — concept-driven widgets, all sentinel types (incl. TextArea), overlay system, focus policy
 - [Input Routing](docs/superpowers/specs/2026-03-27-input-routing-design.md) — hit_test → dispatch → delegate handle_input → field mutation
 - [stdexec Integration](doc/design/stdexec-integration.md) — run_loop event loops, prism::then/on pipe adaptors, AppContext
 - [SDL_Renderer Migration](docs/superpowers/specs/2026-03-28-sdl-renderer-migration-design.md) — SDL_Renderer + SDL3_ttf replaces PixelBuffer surface-blit

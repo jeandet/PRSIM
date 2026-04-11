@@ -1,11 +1,11 @@
-# Delegates & Sentinel Types
+# Widgets & Sentinel Types
 
 ## Overview
 
-In PRISM's **Model-View-Behavior (MVB)** architecture, delegates are the **View** layer — compile-time resolved rendering strategies selected by the field's value type. **Sentinel types** are templated wrapper types that carry both a value and its presentation semantics. **Concepts** drive delegate resolution, keeping the system generic and decoupled from specific types.
+In PRISM's **Model-View-Behavior (MVB)** architecture, widgets are the **View** layer — compile-time resolved rendering strategies selected by the field's value type. **Sentinel types** are templated wrapper types that carry both a value and its presentation semantics. **Concepts** drive widget resolution, keeping the system generic and decoupled from specific types.
 
 Two field wrapper types exist:
-- `Field<T>` — observable + rendered (delegate generates a widget). Part of the **Model** layer.
+- `Field<T>` — observable + rendered (widget generates the visual). Part of the **Model** layer.
 - `State<T>` — observable + invisible (no widget, used for backend state and synchronisation). Part of the **Model** layer.
 
 ## Widget Visual State
@@ -24,11 +24,11 @@ Visual state is managed by the `WidgetTree`:
 - `update_hover(optional<WidgetId>)` — MouseMove → hit_test → set hovered, clear previous
 - `set_pressed(WidgetId, bool)` — MouseButton down/up → set pressed state
 
-Delegates receive `WidgetNode&` (not `WidgetVisualState&`), giving access to `visual_state`, `edit_state`, and `dirty`:
+Widgets receive `WidgetNode&` (not `WidgetVisualState&`), giving access to `visual_state`, `edit_state`, and `dirty`:
 - `record(DrawList&, const Field<T>&, const WidgetNode&)` — for rendering with hover/press/focus feedback
-- `handle_input(Field<T>&, const InputEvent&, WidgetNode&)` — delegates can mutate node state
+- `handle_input(Field<T>&, const InputEvent&, WidgetNode&)` — widgets can mutate node state
 
-Since `WidgetNode` is forward-declared in `delegate.hpp` (to avoid circular includes with `widget_tree.hpp`), visual state is accessed via `node_vs(node)` helper. Delegates that need the complete `WidgetNode` type (e.g. for `edit_state` access) declare methods in `delegate.hpp` and define them in `widget_tree.hpp`.
+Since `WidgetNode` is forward-declared in `widget.hpp` (to avoid circular includes with `widget_tree.hpp`), visual state is accessed via `node_vs(node)` helper. Widgets that need the complete `WidgetNode` type (e.g. for `edit_state` access) declare methods in `widget.hpp` and define them in `widget_tree.hpp`.
 
 ## Field vs State
 
@@ -130,7 +130,7 @@ The template parameter defaults mean `Label<>` is `Label<std::string>`, `Slider<
 
 ## Concepts
 
-Concepts define the traits a type must have for a delegate to handle it. Delegates match on concepts, not concrete types:
+Concepts define the traits a type must have for a widget to handle it. Widgets match on concepts, not concrete types:
 
 ```cpp
 template <typename T>
@@ -143,7 +143,7 @@ template <typename T>
 concept Numeric = std::integral<T> || std::floating_point<T>;
 ```
 
-Sentinel-level concepts define what a delegate needs from the sentinel wrapper:
+Sentinel-level concepts define what a widget needs from the sentinel wrapper:
 
 ```cpp
 template <typename T>
@@ -169,35 +169,35 @@ concept Toggleable = requires(const T& s) {
 };
 ```
 
-## Delegate Resolution
+## Widget Resolution
 
-Delegates are resolved at compile time via concept matching. The delegate is a struct with a static `render` method:
+Widgets are resolved at compile time via concept matching. The widget is a struct with a static `render` method:
 
 ```cpp
-// Concept-based delegates — match on traits, not types
-// Each delegate has record() for rendering and handle_input() for interaction.
+// Concept-based widgets — match on traits, not types
+// Each widget has record() for rendering and handle_input() for interaction.
 // Both receive WidgetNode& for visual state, edit state, and dirty tracking.
 
 template <TextEditable T>
-struct Delegate<T> {
+struct Widget<T> {
     static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node);
     static void handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 template <TextDisplayable T>
-struct Delegate<Label<T>> {
+struct Widget<Label<T>> {
     static void record(DrawList& dl, const Field<Label<T>>& field, const WidgetNode& node);
     static void handle_input(Field<Label<T>>& field, const InputEvent& ev, WidgetNode& node);
 };
 
 template <SliderRenderable T>
-struct Delegate<T> {
+struct Widget<T> {
     static void record(DrawList& dl, const Field<T>& field, const WidgetNode& node);
     static void handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node);
 };
 ```
 
-A user-defined sentinel that satisfies `SliderRenderable` automatically gets the slider delegate:
+A user-defined sentinel that satisfies `SliderRenderable` automatically gets the slider widget:
 
 ```cpp
 struct TemperatureKnob {
@@ -206,7 +206,7 @@ struct TemperatureKnob {
     float max = 85.0f;
     float step = 0.5f;
 };
-// Satisfies SliderRenderable → picks up slider delegate automatically
+// Satisfies SliderRenderable → picks up slider widget automatically
 // Unless explicitly specialized for custom rendering
 ```
 
@@ -214,7 +214,7 @@ Explicit specialization overrides concept-based resolution:
 
 ```cpp
 template <>
-struct Delegate<TemperatureKnob> {
+struct Widget<TemperatureKnob> {
     static void record(DrawList& dl, const Field<TemperatureKnob>& field, const WidgetNode& node) {
         // custom circular knob rendering with hover/press feedback
     }
@@ -224,11 +224,11 @@ struct Delegate<TemperatureKnob> {
 };
 ```
 
-## Default Type-to-Delegate Mapping
+## Default Type-to-Widget Mapping
 
-When no sentinel is used, `Field<T>` uses the default delegate for `T`:
+When no sentinel is used, `Field<T>` uses the default widget for `T`:
 
-| `Field<T>` type | Concept matched | Default delegate | Status |
+| `Field<T>` type | Concept matched | Default widget | Status |
 |---|---|---|---|
 | `Field<bool>` | `Toggleable` | Checkbox | **Implemented** |
 | `Field<std::string>` | `StringLike` | Read-only text display | **Implemented** |
@@ -237,7 +237,7 @@ When no sentinel is used, `Field<T>` uses the default delegate for `T`:
 
 Sentinels override these defaults:
 
-| `Field<Sentinel>` type | Delegate | Status |
+| `Field<Sentinel>` type | Widget | Status |
 |---|---|---|
 | `Field<Label<T>>` | Read-only text label | **Implemented** |
 | `Field<TextField<T>>` | Single-line editable text field (cursor, scroll, placeholder, max_length) | **Implemented** |
@@ -255,8 +255,8 @@ During widget tree construction, P2996 reflection walks the model struct:
 ```
 for each member M of Model:
     if M is Field<T>:
-        resolve Delegate<T>
-        create widget node with delegate
+        resolve Widget<T>
+        create widget node with widget
         connect Field<T>::on_change() → mark widget dirty
     if M is State<T>:
         skip (no widget)
@@ -266,7 +266,7 @@ for each member M of Model:
 
 ## Shared Implementation Helpers
 
-TextField and Password share their implementation via parameterized `detail::` helpers in `widget_tree.hpp`:
+TextField and Password widgets share their implementation via parameterized `detail::` helpers in `widget_tree.hpp`:
 
 - `detail::text_field_record<Sentinel, DisplayFn>()` — rendering parameterized by a display transform (identity for TextField, masking for Password)
 - `detail::text_field_handle_input<Sentinel>()` — input handling shared identically
@@ -279,11 +279,11 @@ TextArea uses its own `detail::` helpers: `text_area_record()`, `text_area_handl
 
 ## Strong Coordinate Types
 
-All delegate rendering and input handling uses strong types from `types.hpp`. Widget constants use proper dimensional types (`Width`, `Height`, `X`, `Y`). `char_width()` returns `Width`. `TextEditState.scroll_offset` is `DX`, `TextAreaEditState.scroll_y` is `DY`. Delegates draw using `clip_push(Point, Size)` which establishes a local coordinate system — `{0,0}` inside a clip means "top-left of the clipped region." See [draw-list.md](draw-list.md) for the full type system and local coordinate semantics.
+All widget rendering and input handling uses strong types from `types.hpp`. Widget constants use proper dimensional types (`Width`, `Height`, `X`, `Y`). `char_width()` returns `Width`. `TextEditState.scroll_offset` is `DX`, `TextAreaEditState.scroll_y` is `DY`. Widgets draw using `clip_push(Point, Size)` which establishes a local coordinate system — `{0,0}` inside a clip means "top-left of the clipped region." See [draw-list.md](draw-list.md) for the full type system and local coordinate semantics.
 
 ## Focus Policy
 
-Each delegate declares a compile-time `FocusPolicy`:
+Each widget declares a compile-time `FocusPolicy`:
 
 ```cpp
 enum class FocusPolicy : uint8_t { none, tab_and_click };
@@ -306,14 +306,14 @@ Dropdown popups render via the overlay system:
 
 ## Design Principles
 
-- **Delegates are the View layer** — in MVB terms, delegates handle widget-level input mechanics (e.g. translating a click into a toggle). They are PRISM-internal, not user-written.
-- **Concepts over concrete types** — delegates match traits, not specific types. Custom string/numeric types work if they satisfy the concept.
+- **Widgets are the View layer** — in MVB terms, widgets handle widget-level input mechanics (e.g. translating a click into a toggle). They are PRISM-internal, not user-written.
+- **Concepts over concrete types** — widgets match traits, not specific types. Custom string/numeric types work if they satisfy the concept.
 - **Type = specification** — the sentinel type carries both the value and its rendering semantics. No runtime metadata, no string annotations.
 - **Templated with defaults** — sentinels are generic (`Label<T = std::string>`) so users can plug in their own types.
-- **Explicit override** — template specialization of `Delegate<T>` overrides concept-based resolution for custom rendering.
+- **Explicit override** — template specialization of `Widget<T>` overrides concept-based resolution for custom rendering.
 - **Observable core shared** — `Field<T>` and `State<T>` share the same observer machinery. The only difference is UI visibility.
 
 ## Open Questions
 
-- Should `Delegate` carry layout hints (preferred size, stretch policy) in addition to rendering?
-- Animated transitions between delegate states (e.g., text field gaining focus) — delegate concern or separate animation layer?
+- Should `Widget` carry layout hints (preferred size, stretch policy) in addition to rendering?
+- Animated transitions between widget states (e.g., text field gaining focus) — widget concern or separate animation layer?

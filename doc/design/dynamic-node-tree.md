@@ -34,7 +34,7 @@ struct Node {
     LayoutKind layout_kind = LayoutKind::Default;
     std::vector<Node> children;
 
-    // Type-erased — captures Delegate<T> calls
+    // Type-erased — captures Widget<T> calls
     std::function<void(WidgetNode&)> build_widget;
 
     // Type-erased — captures Field<T>::on_change()
@@ -49,7 +49,7 @@ struct Node {
 
 Defined in `widget_tree.hpp` (after `WidgetNode` definition, since lambdas need the complete type):
 
-- **`node_leaf<T>(Field<T>&)`** — creates a leaf Node that type-erases a `Field<T>` and its `Delegate<T>`. The `build_widget` lambda captures delegate `record()` and `handle_input()` calls.
+- **`node_leaf<T>(Field<T>&)`** — creates a leaf Node that type-erases a `Field<T>` and its `Widget<T>`. The `build_widget` lambda captures widget `record()` and `handle_input()` calls.
 
 - **`node_canvas<T>(T&)`** — creates a canvas Node for models with a `canvas()` method. The `build_widget` lambda wires the model's `canvas()` to the WidgetNode's draw callback.
 
@@ -118,7 +118,7 @@ Populates the `WidgetId → WidgetNode*` lookup map for hit testing and input ro
 | `include/prism/core/node.hpp` | `Node` struct definition |
 | `include/prism/core/traits.hpp` | `is_field_v`, `is_state_v` (SFINAE, no reflection) |
 | `include/prism/core/widget_tree.hpp` | `node_leaf`, `node_canvas`, `ViewBuilder`, `build_node_tree`, `build_widget_node`, `connect_dirty` |
-| `include/prism/core/delegate.hpp` | `LayoutKind` enum, conditional enum helpers |
+| `include/prism/core/widget.hpp` | `LayoutKind` enum, conditional enum helpers |
 | `include/prism/core/reflect.hpp` | Reflection utilities, guarded behind `#if __cpp_impl_reflection` |
 | `meson.build` | Conditional `-freflection` flag |
 | `src/meson.build` | Conditional magic_enum dependency |

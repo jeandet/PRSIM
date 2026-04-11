@@ -10,7 +10,7 @@ A proxy widget composites content from a foreign renderer (another process, libr
 Foreign Renderer          PRISM
 +-----------------+       +-------------------+
 | CEF / VTK / mpv |       | ProxyWidget       |
-| renders to      |------>| Delegate:          |
+| renders to      |------>| Widget:            |
 | shared surface  |       |   record() -> blit |
 +-----------------+       |   handle_input()   |
        ^                  |     -> forward     |
@@ -70,7 +70,7 @@ All proxies share `Field<T>` state (e.g. a time range). Scrub one, all update vi
 ## What PRISM Needs
 
 1. A **"blit surface" DrawList command** -- references a shared texture/surface by handle
-2. A **`Delegate<ProxyWidget>`** -- records the blit command, forwards input events
+2. A **`Widget<ProxyWidget>`** -- records the blit command, forwards input events
 3. A **`SharedSurface` abstraction** -- thin wrapper over platform-specific texture sharing, with a shared-memory fallback
 
 The `ProxyWidget` sentinel would look like:

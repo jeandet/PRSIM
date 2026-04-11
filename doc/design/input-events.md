@@ -4,7 +4,7 @@
 
 Input events flow in the opposite direction of draw commands: from the OS/presenter into the application. The render thread never interprets or dispatches input — it only forwards raw events into a queue. All hit testing, dispatch, and callback execution happen on the application side.
 
-In MVB terms, input events are the bridge between the OS and the **View** layer (delegates). Delegates translate raw input into field mutations; the **Behavior** layer (user-written observers) reacts to those mutations.
+In MVB terms, input events are the bridge between the OS and the **View** layer (widgets). Widgets translate raw input into field mutations; the **Behavior** layer (user-written observers) reacts to those mutations.
 
 ## Event Types
 
@@ -29,7 +29,7 @@ using InputEvent = std::variant<
 
 **Implementation notes:**
 - `MouseButton` uses raw `uint8_t button` + `bool pressed`. Core headers define their own key/modifier constants (matching SDL values) to stay SDL-free.
-- `TextInput` carries UTF-8 character input from the OS (SDL_EVENT_TEXT_INPUT). Used by TextField/Password delegates for text editing.
+- `TextInput` carries UTF-8 character input from the OS (SDL_EVENT_TEXT_INPUT). Used by TextField/Password widgets for text editing.
 - `KeyPress`/`KeyRelease` use `int32_t key` + `uint16_t mods`. Key constants defined in `prism/core/keys.hpp` (not SDL headers).
 
 Synthetic events can be pushed for testing.
@@ -52,7 +52,7 @@ Application thread (run_loop scheduler)
     ├→ hit_test() — overlay geometry first, then normal z-order
     ├→ update_hover() / set_pressed() / advance_focus()
     ├→ localize_mouse(ev, widget_rect) — convert to widget-local coords
-    ├→ Delegate<T>::handle_input() — View mechanics (click → toggle, key → edit)
+    ├→ Widget<T>::handle_input() — View mechanics (click → toggle, key → edit)
     ├→ Field<T>::set() triggers on_change() — Behavior reactions
     ├→ rebuild SceneSnapshot (dirty widgets only)
     ├→ publish snapshot via atomic_cell
@@ -153,7 +153,7 @@ When a widget is removed from the tree, all connections scoped to it are cleaned
 
 ## Focus Management — **Implemented**
 
-Focus is managed by the `WidgetTree` itself, not a separate `FocusManager` struct. Each `Delegate<T>` declares a compile-time `FocusPolicy`:
+Focus is managed by the `WidgetTree` itself, not a separate `FocusManager` struct. Each `Widget<T>` declares a compile-time `FocusPolicy`:
 
 ```cpp
 enum class FocusPolicy : uint8_t { none, tab_and_click };
@@ -166,7 +166,7 @@ The WidgetTree builds a focus chain from all widgets whose delegate has `focus_p
 - **Space / Enter** on a focused widget dispatches to the delegate's `handle_input()`
 - Focused widgets render a blue focus ring (`RectOutline`, Color::rgba(80,160,240), 2px)
 
-Keyboard events (KeyPress, TextInput) are dispatched to the focused widget's delegate. Delegates that need text editing (TextField, Password) consume TextInput events for character insertion and KeyPress for navigation (arrows, Home/End, Backspace, Delete).
+Keyboard events (KeyPress, TextInput) are dispatched to the focused widget's `Widget<T>`. Widgets that need text editing (TextField, Password) consume TextInput events for character insertion and KeyPress for navigation (arrows, Home/End, Backspace, Delete).
 
 ## Testing
 

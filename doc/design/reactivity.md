@@ -4,7 +4,7 @@
 
 ## Overview (Historical)
 
-This document originally described an MVU (Model-View-Update) approach. PRISM now uses **MVB** — Model (`Field<T>` structs), View (`Delegate<T>` rendering, automatic via reflection), Behavior (user-written `on_change()` / `observe()` chains). The observer/sender pattern described below evolved into `SenderHub` + `prism::then` / `prism::on` pipe composition with stdexec schedulers.
+This document originally described an MVU (Model-View-Update) approach. PRISM now uses **MVB** — Model (`Field<T>` structs), View (`Widget<T>` rendering, automatic via reflection), Behavior (user-written `on_change()` / `observe()` chains). The observer/sender pattern described below evolved into `SenderHub` + `prism::then` / `prism::on` pipe composition with stdexec schedulers.
 
 ## User-Facing API: .on_X() Handlers
 
