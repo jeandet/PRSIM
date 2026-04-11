@@ -21,14 +21,7 @@ struct ObservableValue {
     void set(T new_value) {
         if (value == new_value) return;
         value = std::move(new_value);
-        if (transaction_active()) {
-            current_transaction().queue.push_back({
-                static_cast<void*>(&changed_),
-                [this] { changed_.emit(value); }
-            });
-        } else {
-            changed_.emit(value);
-        }
+        emit_or_defer(static_cast<void*>(&changed_), [this] { changed_.emit(value); });
     }
 
     void observe(std::function<void(const T&)> cb) {

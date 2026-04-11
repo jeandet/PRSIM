@@ -38,14 +38,7 @@ private:
         T new_value = compute_();
         if (value_ == new_value) return;
         value_ = std::move(new_value);
-        if (transaction_active()) {
-            current_transaction().queue.push_back({
-                static_cast<void*>(&changed_),
-                [this] { changed_.emit(value_); }
-            });
-        } else {
-            changed_.emit(value_);
-        }
+        emit_or_defer(static_cast<void*>(&changed_), [this] { changed_.emit(value_); });
     }
 
     template <typename Source>

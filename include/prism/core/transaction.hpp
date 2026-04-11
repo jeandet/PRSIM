@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <functional>
 #include <unordered_set>
 #include <vector>
@@ -25,6 +26,18 @@ inline bool transaction_active() {
     return current_transaction().depth > 0;
 }
 
+template <typename Fn>
+void emit_or_defer(void* sender_key, Fn&& emit_fn) {
+    if (transaction_active()) {
+        current_transaction().queue.push_back({
+            sender_key,
+            std::forward<Fn>(emit_fn)
+        });
+    } else {
+        emit_fn();
+    }
+}
+
 } // namespace prism::core
 
 namespace prism {
@@ -48,7 +61,10 @@ private:
         // cascading recomputes (e.g. Derived<T> in a diamond graph) push new
         // entries back into the queue rather than firing immediately.  Repeat
         // until no new entries are produced.
+        constexpr int max_waves = 64;
+        int wave = 0;
         while (!tx.queue.empty()) {
+            assert(wave++ < max_waves && "transaction flush: dependency cycle detected");
             std::vector<core::DeferredEmit> coalesced;
             std::unordered_set<void*> seen;
             for (auto it = tx.queue.rbegin(); it != tx.queue.rend(); ++it) {

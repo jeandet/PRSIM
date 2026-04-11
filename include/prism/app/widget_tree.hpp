@@ -43,44 +43,26 @@ public:
         }
 
     public:
-        struct TableBuilder {
+        template <typename Self>
+        struct DependsOnMixin {
             Node& node_ref;
             std::set<const void*>& placed_ref;
 
-            template <typename U>
-            TableBuilder& depends_on(Field<U>& field) {
-                placed_ref.insert(&field);
+            template <typename Observable>
+            Self& depends_on(Observable& obs) {
+                if constexpr (is_field_v<Observable>)
+                    placed_ref.insert(&obs);
                 node_ref.dependencies.push_back(
-                    [&field](std::function<void()> cb) -> Connection {
-                        return field.on_change().connect(
-                            [cb = std::move(cb)](const U&) { cb(); });
+                    [&obs](std::function<void()> cb) -> Connection {
+                        return obs.on_change().connect(
+                            [cb = std::move(cb)](const auto&) { cb(); });
                     }
                 );
-                return *this;
+                return static_cast<Self&>(*this);
             }
+        };
 
-            template <typename U>
-            TableBuilder& depends_on(Derived<U>& derived) {
-                node_ref.dependencies.push_back(
-                    [&derived](std::function<void()> cb) -> Connection {
-                        return derived.on_change().connect(
-                            [cb = std::move(cb)](const U&) { cb(); });
-                    }
-                );
-                return *this;
-            }
-
-            template <typename U>
-            TableBuilder& depends_on(Shared<U>& shared) {
-                node_ref.dependencies.push_back(
-                    [&shared](std::function<void()> cb) -> Connection {
-                        return shared.on_change().connect(
-                            [cb = std::move(cb)](const U&) { cb(); });
-                    }
-                );
-                return *this;
-            }
-
+        struct TableBuilder : DependsOnMixin<TableBuilder> {
             TableBuilder& headers(std::vector<std::string> hdrs) {
                 if (node_ref.table_state)
                     node_ref.table_state->header_overrides = std::move(hdrs);
@@ -88,43 +70,7 @@ public:
             }
         };
 
-        struct CanvasHandle {
-            Node& node_ref;
-            std::set<const void*>& placed_ref;
-
-            template <typename U>
-            CanvasHandle& depends_on(Field<U>& field) {
-                placed_ref.insert(&field);
-                node_ref.dependencies.push_back(
-                    [&field](std::function<void()> cb) -> Connection {
-                        return field.on_change().connect(
-                            [cb = std::move(cb)](const U&) { cb(); });
-                    }
-                );
-                return *this;
-            }
-
-            template <typename U>
-            CanvasHandle& depends_on(Derived<U>& derived) {
-                node_ref.dependencies.push_back(
-                    [&derived](std::function<void()> cb) -> Connection {
-                        return derived.on_change().connect(
-                            [cb = std::move(cb)](const U&) { cb(); });
-                    }
-                );
-                return *this;
-            }
-
-            template <typename U>
-            CanvasHandle& depends_on(Shared<U>& shared) {
-                node_ref.dependencies.push_back(
-                    [&shared](std::function<void()> cb) -> Connection {
-                        return shared.on_change().connect(
-                            [cb = std::move(cb)](const U&) { cb(); });
-                    }
-                );
-                return *this;
-            }
+        struct CanvasHandle : DependsOnMixin<CanvasHandle> {
         };
 
     public:
