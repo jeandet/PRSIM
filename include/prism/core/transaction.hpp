@@ -43,15 +43,25 @@ struct TransactionGuard {
 
 private:
     static void flush(core::TransactionState& tx) {
-        std::vector<core::DeferredEmit> coalesced;
-        std::unordered_set<void*> seen;
-        for (auto it = tx.queue.rbegin(); it != tx.queue.rend(); ++it) {
-            if (seen.insert(it->sender).second)
-                coalesced.push_back(std::move(*it));
+        // Process the queue in waves.  Each wave coalesces the current queue
+        // by sender, then fires callbacks while holding depth=1 so that
+        // cascading recomputes (e.g. Derived<T> in a diamond graph) push new
+        // entries back into the queue rather than firing immediately.  Repeat
+        // until no new entries are produced.
+        while (!tx.queue.empty()) {
+            std::vector<core::DeferredEmit> coalesced;
+            std::unordered_set<void*> seen;
+            for (auto it = tx.queue.rbegin(); it != tx.queue.rend(); ++it) {
+                if (seen.insert(it->sender).second)
+                    coalesced.push_back(std::move(*it));
+            }
+            tx.queue.clear();
+            // Keep depth=1 while firing so cascades queue, not fire.
+            tx.depth = 1;
+            for (auto it = coalesced.rbegin(); it != coalesced.rend(); ++it)
+                it->emit_fn();
+            tx.depth = 0;
         }
-        tx.queue.clear();
-        for (auto it = coalesced.rbegin(); it != coalesced.rend(); ++it)
-            it->emit_fn();
     }
 };
 

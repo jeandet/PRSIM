@@ -104,3 +104,45 @@ TEST_CASE("Derived chain: derived from derived") {
     CHECK(doubled.get() == 10);
     CHECK(quadrupled.get() == 20);
 }
+
+#include <prism/core/transaction.hpp>
+
+TEST_CASE("Derived defers recomputation during transaction") {
+    prism::Field<int> a{1};
+    prism::Field<int> b{2};
+    prism::core::Derived<int> sum{[&] { return a.get() + b.get(); }, a, b};
+
+    int calls = 0;
+    auto conn = sum.on_change().connect([&](const int&) { ++calls; });
+
+    prism::transaction([&] {
+        a.set(10);
+        b.set(20);
+        // During transaction, derived has not recomputed yet
+        CHECK(calls == 0);
+    });
+
+    // After commit: derived recomputes once, fires once
+    CHECK(calls == 1);
+    CHECK(sum.get() == 30);
+}
+
+TEST_CASE("Derived diamond dependency fires once in transaction") {
+    prism::Field<int> x{1};
+    prism::core::Derived<int> a{[&] { return x.get() + 1; }, x};
+    prism::core::Derived<int> b{[&] { return x.get() * 2; }, x};
+    prism::core::Derived<int> c{[&] { return a.get() + b.get(); }, a, b};
+
+    int c_calls = 0;
+    auto conn = c.on_change().connect([&](const int&) { ++c_calls; });
+
+    prism::transaction([&] {
+        x.set(5);
+    });
+
+    CHECK(a.get() == 6);
+    CHECK(b.get() == 10);
+    CHECK(c.get() == 16);
+    // c should fire at most once (coalesced)
+    CHECK(c_calls == 1);
+}
