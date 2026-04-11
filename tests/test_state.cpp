@@ -54,3 +54,22 @@ TEST_CASE("State implicit conversion to const T&") {
     const int& ref = s;
     CHECK(ref == 10);
 }
+
+#include <prism/core/traits.hpp>
+
+namespace prism::core {
+template <typename T> struct Derived;
+template <typename T> struct Shared;
+}
+
+TEST_CASE("is_derived_v identifies Derived<T>") {
+    CHECK(prism::core::is_derived_v<prism::core::Derived<int>>);
+    CHECK_FALSE(prism::core::is_derived_v<prism::core::Field<int>>);
+    CHECK_FALSE(prism::core::is_derived_v<int>);
+}
+
+TEST_CASE("is_shared_v identifies Shared<T>") {
+    CHECK(prism::core::is_shared_v<prism::core::Shared<float>>);
+    CHECK_FALSE(prism::core::is_shared_v<prism::core::Field<float>>);
+    CHECK_FALSE(prism::core::is_shared_v<int>);
+}

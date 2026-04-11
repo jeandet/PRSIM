@@ -45,4 +45,26 @@ struct is_list<List<T>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_list_v = is_list<T>::value;
 
+template <typename> struct Derived;
+
+template <typename T>
+struct is_derived : std::false_type {};
+
+template <typename T>
+struct is_derived<Derived<T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_derived_v = is_derived<T>::value;
+
+template <typename> struct Shared;
+
+template <typename T>
+struct is_shared : std::false_type {};
+
+template <typename T>
+struct is_shared<Shared<T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_shared_v = is_shared<T>::value;
+
 } // namespace prism::core
