@@ -317,6 +317,76 @@ TEST_CASE("model_app routes click to Slider and updates value") {
     CHECK(model.volume.get().value > 0.8);
 }
 
+struct SliderReleaseModel {
+    prism::Field<prism::Slider<>> slider{{.value = 0.5}};
+    prism::Field<prism::Label<>> label{{"spacer"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack(slider, label);
+    }
+};
+
+TEST_CASE("slider stops dragging after mouse released outside") {
+    std::shared_ptr<const prism::SceneSnapshot> latest_snap;
+    std::atomic<size_t> snap_count{0};
+
+    struct DragBackend final : public prism::BackendBase {
+        std::shared_ptr<const prism::SceneSnapshot>& latest;
+        std::atomic<size_t>& count;
+        prism::HeadlessWindow window_{0, {}};
+        DragBackend(std::shared_ptr<const prism::SceneSnapshot>& l, std::atomic<size_t>& c)
+            : latest(l), count(c) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            count.wait(0, std::memory_order_acquire);
+            auto geo = latest;
+            REQUIRE(geo->geometry.size() >= 2);
+
+            auto [slider_id, slider_rect] = geo->geometry[0];
+            auto [label_id, label_rect] = geo->geometry[1];
+            auto slider_center = slider_rect.center();
+            auto label_center = label_rect.center();
+
+            // 1. Press on slider
+            cb(prism::WindowEvent{window_.id(), prism::MouseButton{slider_center, 1, true}});
+            // 2. Release on the label (different widget)
+            cb(prism::WindowEvent{window_.id(), prism::MouseButton{label_center, 1, false}});
+
+            auto before = count.load(std::memory_order_acquire);
+            count.wait(before, std::memory_order_acquire);
+
+            // 3. Move mouse back over slider — must NOT change value
+            cb(prism::WindowEvent{window_.id(), prism::MouseMove{
+                prism::Point{prism::X{slider_rect.origin.x.raw() + slider_rect.extent.w.raw() * 0.1f},
+                             prism::Y{slider_center.y}}}});
+
+            auto before2 = count.load(std::memory_order_acquire);
+            count.wait(before2, std::memory_order_acquire);
+
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
+            latest = std::move(s);
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    SliderReleaseModel model;
+    auto backend = prism::Backend{std::make_unique<DragBackend>(latest_snap, snap_count)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
+
+    // The slider was clicked at center (≈0.5) then released.
+    // Moving back to 10% of the track must NOT have changed the value.
+    CHECK(model.slider.get().value == doctest::Approx(0.5).epsilon(0.05));
+}
+
 struct SharedModel {
     prism::core::Shared<int> value{0};
 

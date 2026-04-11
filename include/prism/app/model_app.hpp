@@ -69,7 +69,12 @@ inline void route_mouse_button(WidgetTree& tree, const SceneSnapshot& snap,
         }
     }
     auto id = hit_test(snap, mb.position);
-    if (id) {
+    if (!mb.pressed && tree.captured_id() != 0) {
+        auto cid = tree.captured_id();
+        tree.set_pressed(cid, false);
+        auto rect = find_widget_rect(snap, cid);
+        tree.dispatch(cid, rect ? localize_mouse(ev, *rect) : ev);
+    } else if (id) {
         tree.set_pressed(*id, mb.pressed);
         if (mb.pressed) {
             if (*id != tree.focused_id())
@@ -78,12 +83,6 @@ inline void route_mouse_button(WidgetTree& tree, const SceneSnapshot& snap,
         }
         auto rect = find_widget_rect(snap, *id);
         tree.dispatch(*id, rect ? localize_mouse(ev, *rect) : ev);
-    } else if (!mb.pressed && tree.captured_id() != 0) {
-        // Mouse released outside all widgets — release the captured widget
-        auto cid = tree.captured_id();
-        tree.set_pressed(cid, false);
-        auto rect = find_widget_rect(snap, cid);
-        tree.dispatch(cid, rect ? localize_mouse(ev, *rect) : ev);
     } else if (mb.pressed) {
         tree.close_overlays();
         tree.clear_focus();
