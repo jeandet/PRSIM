@@ -149,11 +149,11 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
 
 } // namespace detail
 
-// --- Delegate<ScopedEnum T> method bodies ---
+// --- Widget<ScopedEnum T> method bodies ---
 
 template <ScopedEnum T>
     requires (!TextEditable<T>)
-void Delegate<T>::record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
+void Widget<T>::record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
     size_t idx = enum_index(field.get());
     std::string label = enum_label<T>(idx);
     detail::DropdownLabelResolver resolver{
@@ -165,17 +165,17 @@ void Delegate<T>::record(DrawList& dl, const Field<T>& field, WidgetNode& node) 
 
 template <ScopedEnum T>
     requires (!TextEditable<T>)
-void Delegate<T>::handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node) {
+void Widget<T>::handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node) {
     size_t current = enum_index(field.get());
     constexpr size_t count = enum_count<T>();
     detail::dropdown_handle_input(ev, node, current, count,
         [&](size_t idx) { field.set(enum_from_index<T>(idx)); });
 }
 
-// --- Delegate<Dropdown<T>> method bodies ---
+// --- Widget<Dropdown<T>> method bodies ---
 
 template <ScopedEnum T>
-void Delegate<Dropdown<T>>::record(DrawList& dl, const Field<Dropdown<T>>& field,
+void Widget<Dropdown<T>>::record(DrawList& dl, const Field<Dropdown<T>>& field,
                                     WidgetNode& node) {
     auto& dd = field.get();
     size_t idx = enum_index(dd.value);
@@ -191,7 +191,7 @@ void Delegate<Dropdown<T>>::record(DrawList& dl, const Field<Dropdown<T>>& field
 }
 
 template <ScopedEnum T>
-void Delegate<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputEvent& ev,
+void Widget<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputEvent& ev,
                                           WidgetNode& node) {
     auto dd = field.get();
     size_t current = enum_index(dd.value);

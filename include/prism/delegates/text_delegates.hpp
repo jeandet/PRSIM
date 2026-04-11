@@ -377,76 +377,76 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
 
 } // namespace detail
 
-// --- Delegate<TextField<T>> method bodies ---
+// --- Widget<TextField<T>> method bodies ---
 
 template <StringLike T>
-const TextEditState& Delegate<TextField<T>>::get_edit_state(const WidgetNode& node) {
+const TextEditState& Widget<TextField<T>>::get_edit_state(const WidgetNode& node) {
     return detail::get_text_edit_state(node);
 }
 
 template <StringLike T>
-TextEditState& Delegate<TextField<T>>::ensure_edit_state(WidgetNode& node) {
+TextEditState& Widget<TextField<T>>::ensure_edit_state(WidgetNode& node) {
     return detail::ensure_text_edit_state(node);
 }
 
 template <StringLike T>
-void Delegate<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
+void Widget<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
                                     WidgetNode& node) {
     detail::text_field_record(dl, field, node,
         [](const std::string& v) { return v; });
 }
 
 template <StringLike T>
-void Delegate<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputEvent& ev,
+void Widget<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputEvent& ev,
                                           WidgetNode& node) {
     detail::text_field_handle_input(field, ev, node);
 }
 
-// --- Delegate<Password<T>> method bodies ---
+// --- Widget<Password<T>> method bodies ---
 
 template <StringLike T>
-const TextEditState& Delegate<Password<T>>::get_edit_state(const WidgetNode& node) {
+const TextEditState& Widget<Password<T>>::get_edit_state(const WidgetNode& node) {
     return detail::get_text_edit_state(node);
 }
 
 template <StringLike T>
-TextEditState& Delegate<Password<T>>::ensure_edit_state(WidgetNode& node) {
+TextEditState& Widget<Password<T>>::ensure_edit_state(WidgetNode& node) {
     return detail::ensure_text_edit_state(node);
 }
 
 template <StringLike T>
-void Delegate<Password<T>>::record(DrawList& dl, const Field<Password<T>>& field,
+void Widget<Password<T>>::record(DrawList& dl, const Field<Password<T>>& field,
                                     WidgetNode& node) {
     detail::text_field_record(dl, field, node,
         [](const std::string& v) { return detail::mask_string(v.size()); });
 }
 
 template <StringLike T>
-void Delegate<Password<T>>::handle_input(Field<Password<T>>& field, const InputEvent& ev,
+void Widget<Password<T>>::handle_input(Field<Password<T>>& field, const InputEvent& ev,
                                           WidgetNode& node) {
     detail::text_field_handle_input(field, ev, node);
 }
 
-// --- Delegate<TextArea<T>> method bodies ---
+// --- Widget<TextArea<T>> method bodies ---
 
 template <StringLike T>
-const TextAreaEditState& Delegate<TextArea<T>>::get_edit_state(const WidgetNode& node) {
+const TextAreaEditState& Widget<TextArea<T>>::get_edit_state(const WidgetNode& node) {
     return detail::get_text_area_edit_state(node);
 }
 
 template <StringLike T>
-TextAreaEditState& Delegate<TextArea<T>>::ensure_edit_state(WidgetNode& node) {
+TextAreaEditState& Widget<TextArea<T>>::ensure_edit_state(WidgetNode& node) {
     return detail::ensure_text_area_edit_state(node);
 }
 
 template <StringLike T>
-void Delegate<TextArea<T>>::record(DrawList& dl, const Field<TextArea<T>>& field,
+void Widget<TextArea<T>>::record(DrawList& dl, const Field<TextArea<T>>& field,
                                    WidgetNode& node) {
     detail::text_area_record(dl, field, node);
 }
 
 template <StringLike T>
-void Delegate<TextArea<T>>::handle_input(Field<TextArea<T>>& field, const InputEvent& ev,
+void Widget<TextArea<T>>::handle_input(Field<TextArea<T>>& field, const InputEvent& ev,
                                          WidgetNode& node) {
     detail::text_area_handle_input(field, ev, node);
 }

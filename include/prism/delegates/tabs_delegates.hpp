@@ -106,13 +106,13 @@ inline bool tabs_handle_input(const InputEvent& ev, WidgetNode& node,
 
 } // namespace detail
 
-inline void Delegate<TabBar<>>::record(DrawList& dl, const Field<TabBar<>>& field,
+inline void Widget<TabBar<>>::record(DrawList& dl, const Field<TabBar<>>& field,
                                        WidgetNode& node) {
     if (node.tab_names && !node.tab_names->empty())
         detail::tabs_record(dl, node, field.get().selected, *node.tab_names);
 }
 
-inline void Delegate<TabBar<>>::handle_input(Field<TabBar<>>& field, const InputEvent& ev,
+inline void Widget<TabBar<>>::handle_input(Field<TabBar<>>& field, const InputEvent& ev,
                                               WidgetNode& node) {
     size_t count = node.tab_names ? node.tab_names->size() : 0;
     if (count == 0) return;
