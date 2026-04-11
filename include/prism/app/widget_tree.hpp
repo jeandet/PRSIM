@@ -93,6 +93,20 @@ public:
             current_parent().children.push_back(node_leaf(field, tree_.next_id_));
         }
 
+        template <typename T>
+        void widget(Derived<T>& derived) {
+            placed_.insert(&derived);
+            current_parent().children.push_back(
+                node_readonly_leaf<T>(derived, tree_.next_id_));
+        }
+
+        template <typename T>
+        void widget(Shared<T>& shared) {
+            placed_.insert(&shared);
+            current_parent().children.push_back(
+                node_readonly_leaf<T>(shared, tree_.next_id_));
+        }
+
         [[nodiscard]] const std::set<const void*>& placed() const { return placed_; }
 
         template <typename C>
@@ -108,6 +122,10 @@ public:
 
     private:
         void item(field_type auto& field) { widget(field); }
+        template <typename T>
+        void item(Derived<T>& d) { widget(d); }
+        template <typename T>
+        void item(Shared<T>& s) { widget(s); }
         void item(component_type auto& comp) { component(comp); }
         Node& push_container(LayoutKind kind, std::invocable auto&& fn) {
             Node container;
@@ -906,6 +924,12 @@ private:
                     // invisible observable — no widget
                 } else if constexpr (is_field_v<M>) {
                     root.children.push_back(node_leaf(member, next_id_));
+                } else if constexpr (is_derived_v<M>) {
+                    using Inner = std::remove_cvref_t<decltype(member.get())>;
+                    root.children.push_back(node_readonly_leaf<Inner>(member, next_id_));
+                } else if constexpr (is_shared_v<M>) {
+                    using Inner = std::remove_cvref_t<decltype(member.get())>;
+                    root.children.push_back(node_readonly_leaf<Inner>(member, next_id_));
                 } else if constexpr (is_component_v<M>) {
                     root.children.push_back(build_node_tree(member));
                 }
@@ -927,7 +951,7 @@ private:
         template for (constexpr auto m : members) {
             auto& member = model.[:m:];
             using M = std::remove_cvref_t<decltype(member)>;
-            if constexpr (is_field_v<M>) {
+            if constexpr (is_field_v<M> || is_derived_v<M> || is_shared_v<M>) {
                 if (!placed.contains(&member)) {
                     std::fprintf(stderr, "[prism] warning: Field '%.*s' in %.*s not placed by view()\n",
                         static_cast<int>(std::meta::identifier_of(m).size()),

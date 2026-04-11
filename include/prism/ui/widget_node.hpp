@@ -5,6 +5,8 @@
 #include <prism/ui/delegate.hpp>
 #include <prism/render/draw_list.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/derived.hpp>
+#include <prism/core/shared.hpp>
 #include <prism/input/input_event.hpp>
 #include <prism/ui/node.hpp>
 
@@ -125,6 +127,31 @@ Node node_leaf(Field<T>& field, WidgetId& next_id) {
 
     n.on_change = [&field](std::function<void()> cb) -> Connection {
         return field.on_change().connect([cb = std::move(cb)](const T&) { cb(); });
+    };
+
+    return n;
+}
+
+template <typename T, typename Observable>
+Node node_readonly_leaf(Observable& obs, WidgetId& next_id) {
+    Node n;
+    n.id = next_id++;
+    n.is_leaf = true;
+
+    n.build_widget = [&obs](WidgetNode& wn) {
+        wn.focus_policy = FocusPolicy::none;
+        wn.record = [&obs](WidgetNode& node) {
+            node.draws.clear();
+            node.overlay_draws.clear();
+            Field<T> tmp{obs.get()};
+            Delegate<T>::record(node.draws, tmp, node);
+        };
+        wn.record(wn);
+        // No input wiring — read-only
+    };
+
+    n.on_change = [&obs](std::function<void()> cb) -> Connection {
+        return obs.on_change().connect([cb = std::move(cb)](const T&) { cb(); });
     };
 
     return n;

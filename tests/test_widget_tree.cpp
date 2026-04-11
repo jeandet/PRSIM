@@ -459,3 +459,46 @@ TEST_CASE("Enter dispatched to focused Button increments click_count") {
     tree.dispatch(tree.focused_id(), prism::KeyPress{prism::keys::enter, 0});
     CHECK(model.btn.get().click_count == 1);
 }
+
+#include <prism/core/derived.hpp>
+#include <prism/core/shared.hpp>
+
+struct DerivedModel {
+    prism::Field<int> x{5};
+    prism::core::Derived<int> doubled{[this] { return x.get() * 2; }, x};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(x);
+        vb.widget(doubled);
+    }
+};
+
+struct SharedModel {
+    prism::core::Shared<float> temp{22.5f};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(temp);
+    }
+};
+
+TEST_CASE("Derived<T> creates a read-only widget node") {
+    DerivedModel m;
+    prism::WidgetTree tree(m);
+    CHECK(tree.leaf_count() == 2);
+}
+
+TEST_CASE("Shared<T> creates a read-only widget node") {
+    SharedModel m;
+    prism::WidgetTree tree(m);
+    CHECK(tree.leaf_count() == 1);
+}
+
+TEST_CASE("Derived<T> widget re-renders when source changes") {
+    DerivedModel m;
+    prism::WidgetTree tree(m);
+    tree.clear_dirty();
+    CHECK_FALSE(tree.any_dirty());
+
+    m.x.set(10);
+    CHECK(tree.any_dirty());
+}
