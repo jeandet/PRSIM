@@ -526,6 +526,7 @@ public:
             it->second->dirty = true;
         }
         hovered_id_ = new_id;
+        if (hovered_id_ == 0) return; // 0 means "no widget under cursor"
         if (auto it = index_.find(hovered_id_); it != index_.end()) {
             it->second->visual_state.hovered = true;
             it->second->dirty = true;
@@ -1298,12 +1299,14 @@ private:
                 }
             }
 
-            parent_map_[wn.id] = node.id;
+            // id=0 is shared by every row (hit-test transparent, see above);
+            // registering it in index_/parent_map_ would alias to whichever
+            // row was inserted last, so it's deliberately skipped here.
             node.children.push_back(std::move(wn));
         }
 
         for (auto& c : node.children)
-            index_[c.id] = &c;
+            if (c.id != 0) index_[c.id] = &c;
 
         ts->visible_start = new_start;
         ts->visible_end = new_end;

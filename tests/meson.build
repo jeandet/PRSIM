@@ -37,6 +37,7 @@ headless_tests = {
   'transaction' : files('test_transaction.cpp'),
   'transaction_cycle_guard' : files('test_transaction_cycle_guard.cpp'),
   'nested_scroll_bubble' : files('test_nested_scroll_bubble.cpp'),
+  'table_hover_alias' : files('test_table_hover_alias.cpp'),
   'derived' : files('test_derived.cpp'),
   'shared' : files('test_shared.cpp'),
 }
