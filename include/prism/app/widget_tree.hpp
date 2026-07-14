@@ -571,12 +571,13 @@ public:
     void update_scrollbar_drag(Y mouse_y) {
         if (scrollbar_drag_.scroll_id == 0) return;
         auto& d = scrollbar_drag_;
-        float track_range = d.viewport_h.raw() - d.thumb_h.raw();
-        if (track_range <= 0) return;
-        float max_scroll = d.content_h.raw() - d.viewport_h.raw();
-        float dy_pixels = mouse_y.raw() - d.anchor_y.raw();
+        Height track_range = d.viewport_h - d.thumb_h;
+        if (track_range.raw() <= 0) return;
+        DY max_scroll{d.content_h.raw() - d.viewport_h.raw()};
+        DY dy_pixels = mouse_y - d.anchor_y;
         float new_offset = std::clamp(
-            d.anchor_offset.raw() + dy_pixels * max_scroll / track_range, 0.f, max_scroll);
+            d.anchor_offset.raw() + dy_pixels.raw() * max_scroll.raw() / track_range.raw(),
+            0.f, max_scroll.raw());
         scroll_to(d.scroll_id, DY{new_offset});
     }
 
@@ -1247,9 +1248,9 @@ private:
         }
         node.children.clear();
 
-        float col_w = ts->column_count > 0
-            ? std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))
-            : 120.f;
+        Width col_w = ts->column_count > 0
+            ? Width{std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))}
+            : Width{120.f};
 
         size_t range_size = new_end.raw() - new_start.raw();
         node.children.reserve(range_size);
@@ -1274,18 +1275,18 @@ private:
             if (selected)
                 bg = wn.theme->table_selected;
 
-            float total_w = col_w * static_cast<float>(ts->column_count);
+            Width total_w = col_w * static_cast<float>(ts->column_count);
             wn.draws.filled_rect(
                 Rect{Point{X{0}, Y{0}},
-                     Size{Width{total_w}, ts->row_height}},
+                     Size{total_w, ts->row_height}},
                 bg);
 
             for (size_t c = 0; c < ts->column_count; ++c) {
                 std::string txt = ts->source.cell_text(row_idx, c);
-                float cx = static_cast<float>(c) * col_w;
+                X cx{static_cast<float>(c) * col_w.raw()};
                 wn.draws.clip_push(
-                    Point{X{cx}, Y{0}},
-                    Size{Width{col_w}, ts->row_height});
+                    Point{cx, Y{0}},
+                    Size{col_w, ts->row_height});
                 wn.draws.text(std::move(txt),
                     Point{X{4.f}, Y{4.f}},
                     14.f, wn.theme->text);
@@ -1293,7 +1294,7 @@ private:
 
                 if (c > 0) {
                     wn.draws.filled_rect(
-                        Rect{Point{X{cx}, Y{0}},
+                        Rect{Point{cx, Y{0}},
                              Size{Width{1.f}, ts->row_height}},
                         wn.theme->table_divider);
                 }
@@ -1314,10 +1315,10 @@ private:
         // Render header text into overlay_draws (picked up by table flatten)
         node.overlay_draws.clear();
         for (size_t c = 0; c < ts->column_count; ++c) {
-            float cx = static_cast<float>(c) * col_w;
+            X cx{static_cast<float>(c) * col_w.raw()};
             auto hdr = ts->column_header(c);
             node.overlay_draws.text(std::string(hdr),
-                Point{X{cx + 4.f}, Y{4.f}},
+                Point{cx + DX{4.f}, Y{4.f}},
                 14.f, node.theme->table_header_text);
         }
 
@@ -1331,12 +1332,16 @@ private:
                 if (it == index_.end()) return;
                 auto& n = *it->second;
                 auto& t = *ts;
+                auto table_max_scroll = [&t] {
+                    return DY{std::max(0.f,
+                        t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw())};
+                };
                 if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed && mb->button == 1) {
-                    float header_h = t.row_height.raw();
-                    float local_y = mb->position.y.raw();
-                    if (local_y < header_h) return;
-                    float body_y = local_y - header_h + t.scroll_y.raw();
-                    size_t row = static_cast<size_t>(body_y / t.row_height.raw());
+                    Height header_h = t.row_height;
+                    Y local_y = mb->position.y;
+                    if (local_y.raw() < header_h.raw()) return;
+                    DY body_y{local_y.raw() - header_h.raw() + t.scroll_y.raw()};
+                    size_t row = static_cast<size_t>(body_y.raw() / t.row_height.raw());
                     if (row < t.row_count()) {
                         auto current = t.selected_row.get();
                         if (current.has_value() && current.value() == row)
@@ -1347,11 +1352,10 @@ private:
                     }
                 }
                 if (auto* ms = std::get_if<MouseScroll>(&ev)) {
-                    float max_scroll = std::max(0.f,
-                        t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
+                    DY max_scroll = table_max_scroll();
                     if (ms->dy.raw() != 0.f) {
-                        float scroll_amount = ms->dy.raw() * t.row_height.raw() * 3.f;
-                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() + scroll_amount, 0.f, max_scroll)};
+                        DY scroll_amount{ms->dy.raw() * t.row_height.raw() * 3.f};
+                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() + scroll_amount.raw(), 0.f, max_scroll.raw())};
                         n.dirty = true;
                     }
                 }
@@ -1369,28 +1373,25 @@ private:
                             n.dirty = true;
                         }
                     } else if (kp->key == keys::page_down) {
-                        float max_scroll = std::max(0.f,
-                            t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
-                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() + t.viewport_h.raw(), 0.f, max_scroll)};
+                        DY max_scroll = table_max_scroll();
+                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() + t.viewport_h.raw(), 0.f, max_scroll.raw())};
                         n.dirty = true;
                     } else if (kp->key == keys::page_up) {
-                        float max_scroll = std::max(0.f,
-                            t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
-                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() - t.viewport_h.raw(), 0.f, max_scroll)};
+                        DY max_scroll = table_max_scroll();
+                        t.scroll_y = DY{std::clamp(t.scroll_y.raw() - t.viewport_h.raw(), 0.f, max_scroll.raw())};
                         n.dirty = true;
                     }
                     // Scroll selected row into view
                     if (auto sel = t.selected_row.get(); sel.has_value()) {
-                        float row_top = static_cast<float>(sel.value()) * t.row_height.raw();
-                        float row_bottom = row_top + t.row_height.raw();
-                        float vp_top = t.scroll_y.raw();
-                        float vp_bottom = vp_top + t.viewport_h.raw();
-                        float max_scroll = std::max(0.f,
-                            t.row_height.raw() * static_cast<float>(t.row_count()) - t.viewport_h.raw());
+                        DY row_top{static_cast<float>(sel.value()) * t.row_height.raw()};
+                        DY row_bottom = row_top + DY{t.row_height.raw()};
+                        DY vp_top = t.scroll_y;
+                        DY vp_bottom = vp_top + DY{t.viewport_h.raw()};
+                        DY max_scroll = table_max_scroll();
                         if (row_bottom > vp_bottom)
-                            t.scroll_y = DY{std::clamp(row_bottom - t.viewport_h.raw(), 0.f, max_scroll)};
+                            t.scroll_y = DY{std::clamp(row_bottom.raw() - t.viewport_h.raw(), 0.f, max_scroll.raw())};
                         else if (row_top < vp_top)
-                            t.scroll_y = DY{std::clamp(row_top, 0.f, max_scroll)};
+                            t.scroll_y = DY{std::clamp(row_top.raw(), 0.f, max_scroll.raw())};
                     }
                 }
             })
