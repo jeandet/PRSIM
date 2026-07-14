@@ -1,7 +1,6 @@
 builddir/
 build/
-subprojects/packagecache/
-subprojects/*-*
+subprojects/*/
 .cache/
 compile_commands.json
 *.swp
