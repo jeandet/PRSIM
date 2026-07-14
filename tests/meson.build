@@ -40,6 +40,7 @@ headless_tests = {
   'table_hover_alias' : files('test_table_hover_alias.cpp'),
   'derived' : files('test_derived.cpp'),
   'shared' : files('test_shared.cpp'),
+  'field_mirror' : files('test_field_mirror.cpp'),
 }
 
 foreach name, src : headless_tests
