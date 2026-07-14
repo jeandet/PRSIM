@@ -19,6 +19,7 @@ struct DeviceState {
     std::string name;
 };
 
+#if __cpp_impl_reflection
 TEST_CASE("FieldMirror seeds leaf values and labels from sync_from") {
     prism::inspector::FieldMirror<DeviceState> mirror;
     DeviceState d{3.3f, 2, true, "dev0"};
@@ -55,3 +56,4 @@ TEST_CASE("FieldMirror::for_each_leaf visits every leaf exactly once") {
     mirror.for_each_leaf([&](auto&) { ++count; });
     CHECK(count == 4);
 }
+#endif // __cpp_impl_reflection
