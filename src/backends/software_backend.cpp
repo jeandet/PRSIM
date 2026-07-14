@@ -101,7 +101,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom)
-                    rh -= static_cast<int>(WindowChrome::title_bar_h);
+                    rh -= static_cast<int>(WindowChrome::title_bar_h.raw());
                 event_cb(WindowEvent{wid, WindowResize{ev.window.data1, rh}});
                 break;
             }
@@ -115,7 +115,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 float my = ev.motion.y;
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom)
-                    my -= WindowChrome::title_bar_h;
+                    my -= WindowChrome::title_bar_h.raw();
                 event_cb(WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}});
                 break;
             }
@@ -151,7 +151,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                         break;
                     }
                     // Client zone: offset Y by title bar height
-                    float offset_y = ev.button.y - WindowChrome::title_bar_h;
+                    float offset_y = ev.button.y - WindowChrome::title_bar_h.raw();
                     event_cb(WindowEvent{wid, MouseButton{
                         Point{X{ev.button.x}, Y{offset_y}}, ev.button.button, true}});
                 } else {
@@ -170,7 +170,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 }
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom) {
-                    float offset_y = ev.button.y - WindowChrome::title_bar_h;
+                    float offset_y = ev.button.y - WindowChrome::title_bar_h.raw();
                     event_cb(WindowEvent{wid, MouseButton{
                         Point{X{ev.button.x}, Y{offset_y}}, ev.button.button, false}});
                 } else {
@@ -184,7 +184,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom)
-                    wy -= WindowChrome::title_bar_h;
+                    wy -= WindowChrome::title_bar_h.raw();
                 event_cb(WindowEvent{wid, MouseScroll{
                     Point{X{ev.wheel.mouse_x}, Y{wy}}, DX{ev.wheel.x}, DY{ev.wheel.y}}});
                 break;

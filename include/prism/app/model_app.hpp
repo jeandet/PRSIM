@@ -134,7 +134,7 @@ void model_app(Backend& backend, Window& window, Model& model,
     bool tick_scheduled = false;
     auto [w, h] = window.size();
     if (window.decoration_mode() == DecorationMode::Custom)
-        h -= static_cast<int>(WindowChrome::title_bar_h);
+        h -= static_cast<int>(WindowChrome::title_bar_h.raw());
     uint64_t version = 0;
 
     std::shared_ptr<const SceneSnapshot> current_snap;

@@ -175,7 +175,7 @@ void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const
         // Offset content below the title bar via viewport
         int w, h;
         SDL_GetWindowSize(sdl_window_, &w, &h);
-        int offset = static_cast<int>(WindowChrome::title_bar_h);
+        int offset = static_cast<int>(WindowChrome::title_bar_h.raw());
         SDL_Rect viewport = {0, offset, w, h - offset};
         SDL_SetRenderViewport(renderer_, &viewport);
     }

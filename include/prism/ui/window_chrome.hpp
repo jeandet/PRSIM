@@ -10,9 +10,9 @@ using namespace prism::render;
 
 
 struct WindowChrome {
-    static constexpr float title_bar_h = 32.f;
-    static constexpr float resize_edge = 6.f;
-    static constexpr float button_w = 46.f;
+    static constexpr Height title_bar_h{32.f};
+    static constexpr float resize_edge = 6.f; // hit_test() is a raw-int SDL boundary function
+    static constexpr Width button_w{46.f};
 
     enum class HitZone {
         Client,
@@ -38,12 +38,12 @@ struct WindowChrome {
         if (x >= w - e) return HitZone::ResizeE;
 
         // Title bar region
-        if (y < static_cast<int>(title_bar_h)) {
+        if (y < static_cast<int>(title_bar_h.raw())) {
             float bx = static_cast<float>(w);
             // Buttons are right-aligned: Close | Maximize | Minimize
-            if (x >= bx - button_w)              return HitZone::Close;
-            if (x >= bx - 2.f * button_w)        return HitZone::Maximize;
-            if (x >= bx - 3.f * button_w)        return HitZone::Minimize;
+            if (x >= bx - button_w.raw())              return HitZone::Close;
+            if (x >= bx - 2.f * button_w.raw())        return HitZone::Maximize;
+            if (x >= bx - 3.f * button_w.raw())        return HitZone::Minimize;
             return HitZone::TitleBar;
         }
 
@@ -51,16 +51,16 @@ struct WindowChrome {
     }
 
     static void render(DrawList& dl, int w, std::string_view title, const Theme& t) {
-        auto fw = static_cast<float>(w);
+        Width fw{static_cast<float>(w)};
 
         // Title bar background
         dl.filled_rect(
-            Rect{Point{X{0}, Y{0}}, Size{Width{fw}, Height{title_bar_h}}},
+            Rect{Point{X{0}, Y{0}}, Size{fw, title_bar_h}},
             t.chrome_bg);
 
         // Bottom border
         dl.filled_rect(
-            Rect{Point{X{0}, Y{title_bar_h - 1.f}}, Size{Width{fw}, Height{1}}},
+            Rect{Point{X{0}, Y{title_bar_h.raw() - 1.f}}, Size{fw, Height{1}}},
             t.chrome_border);
 
         // Title text (left-aligned with padding)
@@ -70,29 +70,29 @@ struct WindowChrome {
         }
 
         // Buttons (right-aligned): Minimize | Maximize | Close
-        float bx = fw - 3.f * button_w;
-        auto button_bg = [&](float x, Color c) {
+        X bx{fw.raw() - 3.f * button_w.raw()};
+        auto button_bg = [&](X x, Color c) {
             dl.filled_rect(
-                Rect{Point{X{x}, Y{0}}, Size{Width{button_w}, Height{title_bar_h - 1.f}}},
+                Rect{Point{x, Y{0}}, Size{button_w, Height{title_bar_h.raw() - 1.f}}},
                 c);
         };
 
         // Minimize: "—"
         button_bg(bx, Color::rgba(t.chrome_bg.r, t.chrome_bg.g, t.chrome_bg.b, 0));
-        dl.text("\xe2\x80\x94", Point{X{bx + 17.f}, Y{7.f}}, 13.f,
+        dl.text("\xe2\x80\x94", Point{bx + DX{17.f}, Y{7.f}}, 13.f,
                 t.chrome_icon);
 
         // Maximize: "□"
-        bx += button_w;
+        bx += DX{button_w.raw()};
         button_bg(bx, Color::rgba(t.chrome_bg.r, t.chrome_bg.g, t.chrome_bg.b, 0));
         dl.rect_outline(
-            Rect{Point{X{bx + 16.f}, Y{9.f}}, Size{Width{13.f}, Height{13.f}}},
+            Rect{Point{bx + DX{16.f}, Y{9.f}}, Size{Width{13.f}, Height{13.f}}},
             t.chrome_icon);
 
         // Close: "×"
-        bx += button_w;
+        bx += DX{button_w.raw()};
         button_bg(bx, t.chrome_close);
-        dl.text("\xc3\x97", Point{X{bx + 17.f}, Y{5.f}}, 17.f,
+        dl.text("\xc3\x97", Point{bx + DX{17.f}, Y{5.f}}, 17.f,
                 t.text_on_primary);
     }
 };
