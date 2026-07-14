@@ -125,6 +125,7 @@ struct TableState {
     ItemIndex visible_end{0};
     ItemCount overscan{2};
 
+    ScrollEventPolicy event_policy{ScrollEventPolicy::BubbleAtBounds};
     uint8_t show_ticks = 0;
 
     DX scroll_x{0};

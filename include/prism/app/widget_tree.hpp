@@ -477,8 +477,7 @@ public:
                     DY new_off{std::clamp(sv->offset.raw() + delta.raw(), 0.f, max_off.raw())};
 
                     if (std::abs(new_off.raw() - sv->offset.raw()) < 0.001f) {
-                        auto* ss = std::any_cast<ScrollState>(&it->second->edit_state);
-                        if (ss && ss->event_policy == ScrollEventPolicy::BubbleAtBounds) {
+                        if (sv->event_policy == ScrollEventPolicy::BubbleAtBounds) {
                             auto pit = parent_map_.find(current);
                             current = (pit != parent_map_.end()) ? pit->second : 0;
                             continue;
@@ -730,18 +729,19 @@ private:
         Height viewport_h;
         Height content_h;
         uint8_t& show_ticks;
+        ScrollEventPolicy event_policy;
     };
 
     static std::optional<ScrollView> get_scroll_view(WidgetNode& node) {
         if (auto* ss = std::any_cast<ScrollState>(&node.edit_state))
-            return ScrollView{ss->offset_y, ss->viewport_h, ss->content_h, ss->show_ticks};
+            return ScrollView{ss->offset_y, ss->viewport_h, ss->content_h, ss->show_ticks, ss->event_policy};
         if (auto* vls = get_vlist_state(node)) {
             Height ch{static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
-            return ScrollView{vls->scroll_offset, vls->viewport_h, ch, vls->show_ticks};
+            return ScrollView{vls->scroll_offset, vls->viewport_h, ch, vls->show_ticks, vls->event_policy};
         }
         if (auto* ts = get_table_state(node)) {
             Height ch{static_cast<float>(ts->row_count()) * ts->row_height.raw()};
-            return ScrollView{ts->scroll_y, ts->viewport_h, ch, ts->show_ticks};
+            return ScrollView{ts->scroll_y, ts->viewport_h, ch, ts->show_ticks, ts->event_policy};
         }
         return std::nullopt;
     }
@@ -769,10 +769,12 @@ private:
             } else if (node.layout_kind == LayoutKind::VirtualList) {
                 auto vls = std::make_shared<VirtualListState>();
                 vls->item_count = ItemCount{node.vlist_item_count};
+                vls->event_policy = node.scroll_event_policy;
                 if (node.vlist_bind_row) vls->bind_row = node.vlist_bind_row;
                 if (node.vlist_unbind_row) vls->unbind_row = node.vlist_unbind_row;
                 wn.edit_state = vls;
             } else if (node.layout_kind == LayoutKind::Table && node.table_state) {
+                node.table_state->event_policy = node.scroll_event_policy;
                 wn.edit_state = node.table_state;
                 wn.focus_policy = FocusPolicy::tab_and_click;
             } else if (node.layout_kind == LayoutKind::Tabs && node.tabs_state) {
