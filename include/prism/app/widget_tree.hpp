@@ -1458,7 +1458,7 @@ private:
                 container.scroll_content_h = Height{
                     static_cast<float>(vls->item_count.raw()) * vls->item_height.raw()};
                 container.vlist_visible_start = vls->visible_start.raw();
-                container.vlist_item_height = vls->item_height.raw();
+                container.vlist_item_height = vls->item_height;
             }
             for (auto& c : node.children)
                 build_layout(c, container);
@@ -1473,9 +1473,9 @@ private:
                 container.scroll_content_h = Height{
                     static_cast<float>(ts->row_count()) * ts->row_height.raw()};
                 container.vlist_visible_start = ts->visible_start.raw();
-                container.vlist_item_height = ts->row_height.raw();
+                container.vlist_item_height = ts->row_height;
                 container.table_column_count = ts->column_count;
-                container.table_header_h = ts->row_height.raw();
+                container.table_header_h = ts->row_height;
                 container.table_scroll_x = ts->scroll_x;
             }
             container.overlay_draws = node.overlay_draws;

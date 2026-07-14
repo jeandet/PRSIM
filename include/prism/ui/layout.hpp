@@ -50,10 +50,10 @@ struct LayoutNode {
     DY scroll_offset{0};        // only for Kind::Scroll and VirtualList
     Height scroll_content_h{0}; // total content height, for scrollbar rendering
     size_t vlist_visible_start = 0;  // first materialized item index (VirtualList only)
-    float vlist_item_height = 0;     // uniform item height (VirtualList only)
+    Height vlist_item_height{0};     // uniform item height (VirtualList only)
     DX table_scroll_x{0};
     size_t table_column_count = 0;
-    float table_header_h = 0;
+    Height table_header_h{0};
     const Theme* theme = &detail::layout_default_theme;
 };
 
@@ -137,65 +137,65 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
     node.allocated = available;
 
     if (node.kind == LayoutNode::Kind::Table) {
-        float item_h = node.vlist_item_height;
-        if (item_h <= 0) item_h = 24.f;
-        float header_h = node.table_header_h > 0 ? node.table_header_h : item_h;
-        float body_top = available.origin.y.raw() + header_h;
-        float start_y = body_top + static_cast<float>(node.vlist_visible_start) * item_h;
+        Height item_h = node.vlist_item_height;
+        if (item_h.raw() <= 0) item_h = Height{24.f};
+        Height header_h = node.table_header_h.raw() > 0 ? node.table_header_h : item_h;
+        Y body_top{available.origin.y.raw() + header_h.raw()};
+        Y start_y{body_top.raw() + static_cast<float>(node.vlist_visible_start) * item_h.raw()};
         for (auto& child : node.children) {
             layout_arrange(child, {
-                Point{available.origin.x, Y{start_y}},
-                Size{available.extent.w, Height{item_h}}
+                Point{available.origin.x, start_y},
+                Size{available.extent.w, item_h}
             });
-            start_y += item_h;
+            start_y += DY{item_h.raw()};
         }
         return;
     }
 
     if (node.kind == LayoutNode::Kind::VirtualList) {
-        float item_h = node.vlist_item_height;
-        if (item_h <= 0 && !node.children.empty())
-            item_h = node.children[0].hint.preferred;
-        float start_y = available.origin.y.raw()
-            + static_cast<float>(node.vlist_visible_start) * item_h;
+        Height item_h = node.vlist_item_height;
+        if (item_h.raw() <= 0 && !node.children.empty())
+            item_h = Height{node.children[0].hint.preferred};
+        Y start_y{available.origin.y.raw()
+            + static_cast<float>(node.vlist_visible_start) * item_h.raw()};
         for (auto& child : node.children) {
             layout_arrange(child, {
-                Point{available.origin.x, Y{start_y}},
-                Size{available.extent.w, Height{item_h}}
+                Point{available.origin.x, start_y},
+                Size{available.extent.w, item_h}
             });
-            start_y += item_h;
+            start_y += DY{item_h.raw()};
         }
         return;
     }
 
     if (node.kind == LayoutNode::Kind::Scroll) {
-        float viewport_h = available.extent.h.raw();
-        float offset = 0;
+        Height viewport_h = available.extent.h;
+        DY offset{0};
         for (auto& child : node.children) {
-            float main_size = child.hint.expand
-                ? std::max(child.hint.preferred, viewport_h) : child.hint.preferred;
+            Height main_size = child.hint.expand
+                ? Height{std::max(child.hint.preferred, viewport_h.raw())} : Height{child.hint.preferred};
             layout_arrange(child, {
-                Point{available.origin.x, Y{available.origin.y.raw() + offset}},
-                Size{available.extent.w, Height{main_size}}
+                Point{available.origin.x, available.origin.y + offset},
+                Size{available.extent.w, main_size}
             });
-            offset += main_size;
+            offset += DY{main_size.raw()};
         }
-        node.scroll_content_h = Height{offset};
+        node.scroll_content_h = Height{offset.raw()};
         return;
     }
 
     if (node.kind == LayoutNode::Kind::Tabs) {
-        float bar_h = node.children.size() >= 1 ? node.children[0].hint.cross : 0;
+        Height bar_h{node.children.size() >= 1 ? node.children[0].hint.cross : 0.f};
         if (node.children.size() >= 1) {
             layout_arrange(node.children[0], {
                 available.origin,
-                Size{available.extent.w, Height{bar_h}}
+                Size{available.extent.w, bar_h}
             });
         }
         if (node.children.size() >= 2) {
             layout_arrange(node.children[1], {
-                Point{available.origin.x, available.origin.y + DY{bar_h}},
-                Size{available.extent.w, Height{available.extent.h.raw() - bar_h}}
+                Point{available.origin.x, available.origin.y + DY{bar_h.raw()}},
+                Size{available.extent.w, Height{available.extent.h.raw() - bar_h.raw()}}
             });
         }
         return;
@@ -269,19 +269,19 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
 
     if (node.kind == LayoutNode::Kind::Table) {
         auto vp = node.allocated;
-        float item_h = node.vlist_item_height > 0 ? node.vlist_item_height : 24.f;
-        float header_h = node.table_header_h > 0 ? node.table_header_h : item_h;
+        Height item_h = node.vlist_item_height.raw() > 0 ? node.vlist_item_height : Height{24.f};
+        Height header_h = node.table_header_h.raw() > 0 ? node.table_header_h : item_h;
 
         snap.geometry.push_back({node.id, vp});
 
         // Header background (fixed at top, doesn't scroll vertically)
         DrawList header_dl;
-        header_dl.clip_push(vp.origin, Size{vp.extent.w, Height{header_h}});
+        header_dl.clip_push(vp.origin, Size{vp.extent.w, header_h});
         header_dl.filled_rect(
-            Rect{vp.origin, Size{vp.extent.w, Height{header_h}}},
+            Rect{vp.origin, Size{vp.extent.w, header_h}},
             node.theme->table_header);
         header_dl.filled_rect(
-            Rect{Point{vp.origin.x, vp.origin.y + DY{header_h - 2.f}},
+            Rect{Point{vp.origin.x, vp.origin.y + DY{header_h.raw() - 2.f}},
                  Size{vp.extent.w, Height{2.f}}},
             node.theme->table_header_divider);
         // Header cell text
@@ -306,8 +306,8 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
 
         // Body region (clipped, scrollable)
         Rect body_rect{
-            Point{vp.origin.x, vp.origin.y + DY{header_h}},
-            Size{vp.extent.w, Height{vp.extent.h.raw() - header_h}}};
+            Point{vp.origin.x, vp.origin.y + DY{header_h.raw()}},
+            Size{vp.extent.w, vp.extent.h - header_h}};
 
         DrawList body_clip;
         body_clip.clip_push(body_rect.origin, body_rect.extent);
@@ -364,10 +364,10 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         DY scroll_dy = node.scroll_offset;
         DY neg_scroll{-scroll_dy.raw()};
         for (auto& child : node.children) {
-            float child_top = child.allocated.origin.y.raw() - scroll_dy.raw();
-            float child_bottom = child_top + child.allocated.extent.h.raw();
-            float vp_top = node.allocated.origin.y.raw();
-            float vp_bottom = vp_top + node.allocated.extent.h.raw();
+            Y child_top = child.allocated.origin.y - scroll_dy;
+            Y child_bottom = child_top + DY{child.allocated.extent.h.raw()};
+            Y vp_top = node.allocated.origin.y;
+            Y vp_bottom = vp_top + DY{node.allocated.extent.h.raw()};
 
             if (child_bottom <= vp_top || child_top >= vp_bottom)
                 continue;
