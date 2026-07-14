@@ -45,8 +45,8 @@ TEST_CASE("TextEditable concept matches TextField") {
 }
 
 TEST_CASE("char_width returns positive value") {
-    CHECK(prism::char_width(14.f) > 0.f);
-    CHECK(prism::char_width(14.f) == doctest::Approx(0.6f * 14.f));
+    CHECK(prism::char_width(14.f).raw() > 0.f);
+    CHECK(prism::char_width(14.f).raw() == doctest::Approx(0.6f * 14.f));
 }
 
 TEST_CASE("Widget<TextField<>> has tab_and_click focus policy") {
@@ -347,8 +347,8 @@ TEST_CASE("TextField click positions cursor") {
     auto node = make_node({.focused = true});
     prism::Widget<prism::TextField<>>::ensure_edit_state(node);
 
-    float cw = prism::char_width(14.f);
-    float click_x = 4.f + 2.5f * cw;
+    prism::Width cw = prism::char_width(14.f);
+    float click_x = 4.f + 2.5f * cw.raw();
     prism::Widget<prism::TextField<>>::handle_input(
         field, prism::MouseButton{P(click_x, 15), 1, true}, node);
     auto cursor = std::any_cast<prism::TextEditState>(node.edit_state).cursor;
@@ -364,11 +364,11 @@ TEST_CASE("TextField scroll_offset adjusts when cursor moves past right edge") {
     prism::Widget<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::end, 0}, node);
 
-    float cw = prism::char_width(14.f);
+    prism::Width cw = prism::char_width(14.f);
     float text_area_w = 200.f - 2 * 4.f;
-    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset > 0.f);
-    float cursor_px = 36 * cw; // end key moves cursor to len=36
-    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset ==
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset.raw() > 0.f);
+    float cursor_px = 36 * cw.raw(); // end key moves cursor to len=36
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset.raw() ==
           doctest::Approx(cursor_px - text_area_w));
 }
 
@@ -377,12 +377,12 @@ TEST_CASE("TextField scroll_offset resets when cursor moves to beginning") {
     auto node = make_node({.focused = true});
     auto& es = prism::Widget<prism::TextField<>>::ensure_edit_state(node);
     es.cursor = 35;
-    es.scroll_offset = 100.f;
+    es.scroll_offset = prism::DX{100.f};
 
     prism::Widget<prism::TextField<>>::handle_input(
         field, prism::KeyPress{prism::keys::home, 0}, node);
 
-    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset == 0.f);
+    CHECK(std::any_cast<prism::TextEditState>(node.edit_state).scroll_offset.raw() == 0.f);
 }
 
 TEST_CASE("TextField operations on empty string are safe") {

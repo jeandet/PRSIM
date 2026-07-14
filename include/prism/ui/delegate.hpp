@@ -85,18 +85,18 @@ struct TextArea {
 };
 
 // Monospace text measurement -- single replacement point for future TextMetrics
-inline float char_width(float font_size) { return 0.6f * font_size; }
+inline Width char_width(float font_size) { return Width{0.6f * font_size}; }
 
 // Ephemeral cursor state for text editing delegates
 struct TextEditState {
     size_t cursor = 0;
-    float scroll_offset = 0.f;
+    DX scroll_offset{0};
 };
 
 // Ephemeral cursor state for multiline text editing
 struct TextAreaEditState {
     size_t cursor = 0;
-    float scroll_y = 0.f;
+    DY scroll_y{0};
 };
 
 // Ephemeral scroll state (stored in WidgetNode::edit_state)
@@ -232,7 +232,7 @@ struct TabBar<S> {
 // Ephemeral state for tab bar hover tracking and header hit regions
 struct TabBarEditState {
     std::optional<size_t> hovered_tab;
-    std::vector<std::pair<float, float>> header_x_ranges;
+    std::vector<std::pair<X, X>> header_x_ranges;
 };
 
 // Type-erased ephemeral widget state stored in WidgetNode::edit_state.
@@ -252,21 +252,21 @@ Size node_allocated(const WidgetNode& n);
 const Theme& node_theme(const WidgetNode& n);
 
 namespace detail {
-inline Rect make_rect(float x, float y, float w, float h) {
-    return {Point{X{x}, Y{y}}, Size{Width{w}, Height{h}}};
+inline Rect make_rect(X x, Y y, Width w, Height h) {
+    return {Point{x, y}, Size{w, h}};
 }
-inline Point make_point(float x, float y) {
-    return {X{x}, Y{y}};
+inline Point make_point(X x, Y y) {
+    return {x, y};
 }
 } // namespace detail
 
 namespace detail {
-inline constexpr float default_widget_h = 30.f;
-inline constexpr float default_widget_w = 200.f;
+inline constexpr Height default_widget_h{30.f};
+inline constexpr Width default_widget_w{200.f};
 
-inline float widget_w(const WidgetNode& node) {
+inline Width widget_w(const WidgetNode& node) {
     auto sz = node_allocated(node);
-    return sz.w.raw() > 0 ? sz.w.raw() : default_widget_w;
+    return sz.w.raw() > 0 ? sz.w : default_widget_w;
 }
 } // namespace detail
 
@@ -279,9 +279,9 @@ struct Widget {
     static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        float w = detail::widget_w(node);
+        Width w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, w, detail::default_widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -303,11 +303,11 @@ struct Widget<T> {
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        float w = detail::widget_w(node);
+        Width w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, w, detail::default_widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
         dl.text(std::to_string(field.get()),
-                detail::make_point(4, 4), 14, t.text);
+                detail::make_point(X{4}, Y{4}), 14, t.text);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -321,11 +321,11 @@ struct Widget<T> {
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        float w = detail::widget_w(node);
+        Width w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, w, detail::default_widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
         dl.text(std::string(field.get().data(), field.get().size()),
-                detail::make_point(4, 4), 14, t.text);
+                detail::make_point(X{4}, Y{4}), 14, t.text);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -339,24 +339,25 @@ struct Checkbox {
 };
 
 // Shared checkbox box rendering for Widget<bool> and Widget<Checkbox>
-inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
+inline void draw_check_box(DrawList& dl, X x, Y y, bool checked,
                            const WidgetVisualState& vs, const Theme& t) {
-    constexpr float box_size = 16.f;
+    constexpr Width box_w{16.f};
+    constexpr Height box_h{16.f};
     constexpr float border = 1.5f;
 
     if (checked) {
         auto fill = vs.pressed  ? t.accent_active
                   : vs.hovered  ? t.accent_hover
                   :               t.accent;
-        dl.filled_rect(detail::make_rect(x, y, box_size, box_size), fill);
-        dl.text("\xe2\x9c\x93", detail::make_point(x + 2, y + 1), 13, t.text_on_primary);
+        dl.filled_rect(detail::make_rect(x, y, box_w, box_h), fill);
+        dl.text("\xe2\x9c\x93", detail::make_point(x + DX{2.f}, y + DY{1.f}), 13, t.text_on_primary);
     } else {
         auto fill = vs.pressed  ? t.surface_active
                   : vs.hovered  ? t.surface_hover
                   :               t.surface;
-        dl.filled_rect(detail::make_rect(x, y, box_size, box_size), fill);
+        dl.filled_rect(detail::make_rect(x, y, box_w, box_h), fill);
     }
-    dl.rect_outline(detail::make_rect(x, y, box_size, box_size),
+    dl.rect_outline(detail::make_rect(x, y, box_w, box_h),
                     vs.hovered ? t.border_hover : t.border,
                     border);
 }
@@ -364,26 +365,26 @@ inline void draw_check_box(DrawList& dl, float x, float y, bool checked,
 template <>
 struct Widget<Checkbox> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_h = 30.f;
-    static constexpr float box_size = 16.f;
+    static constexpr Height widget_h{30.f};
+    static constexpr Height box_size{16.f};
 
     static void record(DrawList& dl, const Field<Checkbox>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
         auto& cb = field.get();
-        float w = detail::widget_w(node);
+        Width w = detail::widget_w(node);
 
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, w, widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
 
-        float box_y = (widget_h - box_size) / 2.f;
-        draw_check_box(dl, 8, box_y, cb.checked, vs, t);
+        Y box_y{(widget_h.raw() - box_size.raw()) / 2.f};
+        draw_check_box(dl, X{8}, box_y, cb.checked, vs, t);
 
         if (!cb.label.empty())
-            dl.text(cb.label, detail::make_point(32, 7), 14, t.text);
+            dl.text(cb.label, detail::make_point(X{32}, Y{7}), 14, t.text);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-1, -1, w + 2, widget_h + 2),
+            dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, w + Width{2.f}, widget_h + Height{2.f}),
                             t.focus_ring, 2.0f);
     }
 
@@ -410,18 +411,18 @@ struct Widget<bool> {
     static void record(DrawList& dl, const Field<bool>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        constexpr float widget_h = 30.f;
-        constexpr float box_size = 16.f;
-        float w = detail::widget_w(node);
+        constexpr Height widget_h{30.f};
+        constexpr Height box_size{16.f};
+        Width w = detail::widget_w(node);
 
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(0, 0, w, widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
 
-        float box_y = (widget_h - box_size) / 2.f;
-        draw_check_box(dl, 8, box_y, field.get(), vs, t);
+        Y box_y{(widget_h.raw() - box_size.raw()) / 2.f};
+        draw_check_box(dl, X{8}, box_y, field.get(), vs, t);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-1, -1, w + 2, widget_h + 2),
+            dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, w + Width{2.f}, widget_h + Height{2.f}),
                             t.focus_ring, 2.0f);
     }
 
@@ -441,10 +442,10 @@ struct Widget<Label<T>> {
 
     static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode& node) {
         auto& t = node_theme(node);
-        float w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(0, 0, w, 24), t.surface);
+        Width w = detail::widget_w(node);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, Height{24}), t.surface);
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
-                detail::make_point(4, 4), 14, t.text_muted);
+                detail::make_point(X{4}, Y{4}), 14, t.text_muted);
     }
 
     static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetNode&) {}
@@ -497,20 +498,20 @@ struct Widget<Slider<T, O>> {
                          : t.accent;
 
         if constexpr (vertical) {
-            float track_x = (widget_extent - track_thick) / 2.f;
-            dl.filled_rect(detail::make_rect(track_x, 0, track_thick, tl), track_bg);
-            float thumb_y = (1.f - r) * (tl - thumb_len);
-            dl.filled_rect(detail::make_rect(0, thumb_y, widget_extent, thumb_len), thumb_color);
+            X track_x{(widget_extent - track_thick) / 2.f};
+            dl.filled_rect(detail::make_rect(track_x, Y{0}, Width{track_thick}, Height{tl}), track_bg);
+            Y thumb_y{(1.f - r) * (tl - thumb_len)};
+            dl.filled_rect(detail::make_rect(X{0}, thumb_y, Width{widget_extent}, Height{thumb_len}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(-1, -1, widget_extent + 2, tl + 2),
+                dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, Width{widget_extent + 2}, Height{tl + 2}),
                                 t.focus_ring, 2.0f);
         } else {
-            float track_y = (widget_extent - track_thick) / 2.f;
-            dl.filled_rect(detail::make_rect(0, track_y, tl, track_thick), track_bg);
-            float thumb_x = r * (tl - thumb_len);
-            dl.filled_rect(detail::make_rect(thumb_x, 0, thumb_len, widget_extent), thumb_color);
+            Y track_y{(widget_extent - track_thick) / 2.f};
+            dl.filled_rect(detail::make_rect(X{0}, track_y, Width{tl}, Height{track_thick}), track_bg);
+            X thumb_x{r * (tl - thumb_len)};
+            dl.filled_rect(detail::make_rect(thumb_x, Y{0}, Width{thumb_len}, Height{widget_extent}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(-1, -1, tl + 2, widget_extent + 2),
+                dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, Width{tl + 2}, Height{widget_extent + 2}),
                                 t.focus_ring, 2.0f);
         }
     }
@@ -554,15 +555,15 @@ struct Widget<Button> {
     static void record(DrawList& dl, const Field<Button>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        float w = detail::widget_w(node);
+        Width w = detail::widget_w(node);
         Color bg = vs.pressed ? t.primary_active
                  : vs.hovered ? t.primary_hover
                  : t.primary;
-        dl.filled_rect(detail::make_rect(0, 0, w, 32), bg);
-        dl.rect_outline(detail::make_rect(0, 0, w, 32), t.primary_outline, 1.0f);
-        dl.text(field.get().text, detail::make_point(8, 7), 14, t.text_on_primary);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, Height{32}), bg);
+        dl.rect_outline(detail::make_rect(X{0}, Y{0}, w, Height{32}), t.primary_outline, 1.0f);
+        dl.text(field.get().text, detail::make_point(X{8}, Y{7}), 14, t.text_on_primary);
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(-2, -2, w + 4, 36), t.focus_ring, 2.0f);
+            dl.rect_outline(detail::make_rect(X{-2}, Y{-2}, w + Width{4.f}, Height{36}), t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {
@@ -583,10 +584,14 @@ struct Widget<Button> {
 template <StringLike T>
 struct Widget<TextField<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_h = 30.f;
-    static constexpr float padding = 4.f;
+    static constexpr Height widget_h{30.f};
+    // padding is used in both a horizontal (inset from left edge) and
+    // vertical (inset from top edge) role in text_delegates.hpp — split
+    // rather than force one Scalar<Tag> to serve both axes.
+    static constexpr Width padding_x{4.f};
+    static constexpr Height padding_y{4.f};
     static constexpr float font_size = 14.f;
-    static constexpr float cursor_w = 2.f;
+    static constexpr Width cursor_w{2.f};
 
     // Defined in widget_tree.hpp (after WidgetNode is complete).
     static const TextEditState& get_edit_state(const WidgetNode& node);
@@ -598,10 +603,11 @@ struct Widget<TextField<T>> {
 template <StringLike T>
 struct Widget<Password<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float widget_h = 30.f;
-    static constexpr float padding = 4.f;
+    static constexpr Height widget_h{30.f};
+    static constexpr Width padding_x{4.f};
+    static constexpr Height padding_y{4.f};
     static constexpr float font_size = 14.f;
-    static constexpr float cursor_w = 2.f;
+    static constexpr Width cursor_w{2.f};
 
     static const TextEditState& get_edit_state(const WidgetNode& node);
     static TextEditState& ensure_edit_state(WidgetNode& node);
@@ -612,10 +618,11 @@ struct Widget<Password<T>> {
 template <StringLike T>
 struct Widget<TextArea<T>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::tab_and_click;
-    static constexpr float padding = 4.f;
+    static constexpr Width padding_x{4.f};
+    static constexpr Height padding_y{4.f};
     static constexpr float font_size = 14.f;
-    static constexpr float line_height = font_size * 1.4f;
-    static constexpr float cursor_w = 2.f;
+    static constexpr Height line_height{font_size * 1.4f};
+    static constexpr Width cursor_w{2.f};
 
     static const TextAreaEditState& get_edit_state(const WidgetNode& node);
     static TextAreaEditState& ensure_edit_state(WidgetNode& node);

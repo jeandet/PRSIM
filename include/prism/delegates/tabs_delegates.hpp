@@ -19,11 +19,11 @@ inline TabBarEditState& ensure_tabs_state(WidgetNode& node) {
     return node.get_or_create<TabBarEditState>();
 }
 
-constexpr float tab_h = 32.f;
-constexpr float tab_padding = 16.f;
+constexpr Height tab_h{32.f};
+constexpr Width tab_padding{16.f};
 constexpr float tab_font_size = 14.f;
-constexpr float tab_accent_h = 2.f;
-constexpr float tab_char_width = 8.f;
+constexpr Height tab_accent_h{2.f};
+constexpr Width tab_char_width{8.f};
 
 inline void tabs_record(DrawList& dl, WidgetNode& node,
                         size_t selected, const std::vector<std::string>& names) {
@@ -31,18 +31,18 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
     auto& es = ensure_tabs_state(node);
     auto& t = *node.theme;
 
-    float total_w = 0;
+    Width total_w{0};
     for (auto& name : names)
-        total_w += tab_padding * 2 + static_cast<float>(name.size()) * tab_char_width;
+        total_w += tab_padding * 2.f + tab_char_width * static_cast<float>(name.size());
 
-    dl.filled_rect(make_rect(0, 0, total_w, tab_h), t.tab_bar_bg);
+    dl.filled_rect(make_rect(X{0}, Y{0}, total_w, tab_h), t.tab_bar_bg);
 
     es.header_x_ranges.clear();
     es.header_x_ranges.reserve(names.size());
-    float x = 0;
+    X x{0};
     for (size_t i = 0; i < names.size(); ++i) {
-        float w = tab_padding * 2 + static_cast<float>(names[i].size()) * tab_char_width;
-        es.header_x_ranges.push_back({x, x + w});
+        Width w = tab_padding * 2.f + tab_char_width * static_cast<float>(names[i].size());
+        es.header_x_ranges.push_back({x, x + DX{w.raw()}});
 
         bool is_selected = (i == selected);
         bool is_hovered = es.hovered_tab.has_value() && es.hovered_tab.value() == i;
@@ -50,20 +50,20 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
         auto bg = is_selected ? t.tab_active_bg
                 : is_hovered  ? t.surface_hover
                 :               t.tab_bar_bg;
-        dl.filled_rect(make_rect(x, 0, w, tab_h), bg);
+        dl.filled_rect(make_rect(x, Y{0}, w, tab_h), bg);
 
         auto text_color = is_selected ? t.tab_text_active
                                       : t.tab_text;
-        dl.text(names[i], make_point(x + tab_padding, 8), tab_font_size, text_color);
+        dl.text(names[i], make_point(x + DX{tab_padding.raw()}, Y{8}), tab_font_size, text_color);
 
         if (is_selected)
-            dl.filled_rect(make_rect(x, tab_h - tab_accent_h, w, tab_accent_h),
+            dl.filled_rect(make_rect(x, Y{(tab_h - tab_accent_h).raw()}, w, tab_accent_h),
                            t.tab_accent);
-        x += w;
+        x += DX{w.raw()};
     }
 
     if (vs.focused)
-        dl.rect_outline(make_rect(-1, -1, total_w + 2, tab_h + 2),
+        dl.rect_outline(make_rect(X{-1}, Y{-1}, total_w + Width{2.f}, tab_h + Height{2.f}),
                         t.focus_ring, 2.0f);
 }
 
@@ -73,7 +73,7 @@ inline bool tabs_handle_input(const InputEvent& ev, WidgetNode& node,
     auto& es = ensure_tabs_state(node);
 
     if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-        float mx = mb->position.x.raw();
+        X mx = mb->position.x;
         for (size_t i = 0; i < es.header_x_ranges.size(); ++i) {
             auto [x0, x1] = es.header_x_ranges[i];
             if (mx >= x0 && mx < x1 && i != selected) {
@@ -83,7 +83,7 @@ inline bool tabs_handle_input(const InputEvent& ev, WidgetNode& node,
         }
     } else if (auto* mm = std::get_if<MouseMove>(&ev)) {
         std::optional<size_t> hover;
-        float mx = mm->position.x.raw();
+        X mx = mm->position.x;
         for (size_t i = 0; i < es.header_x_ranges.size(); ++i) {
             auto [x0, x1] = es.header_x_ranges[i];
             if (mx >= x0 && mx < x1) { hover = i; break; }

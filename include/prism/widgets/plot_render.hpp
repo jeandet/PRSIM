@@ -172,7 +172,7 @@ inline void draw_grid_lines(DrawList& dl, const PlotMapping& map,
 inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
                              const TickArrays& ticks, const Theme& t)
 {
-    float cw = char_width(tick_font_size);
+    float cw = char_width(tick_font_size).raw(); // TODO(strong-types): retrofit this whole file (see project-strong-types memory)
 
     for (double tx : ticks.x) {
         float x = map.to_pixel(tx, 0.0).x.raw();

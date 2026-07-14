@@ -30,10 +30,13 @@ inline std::string mask_string(size_t len) {
     return result;
 }
 
-constexpr float tf_widget_h = 30.f;
-constexpr float tf_padding = 4.f;
+constexpr Height tf_widget_h{30.f};
+// tf_padding is used in both a horizontal (inset from left edge) and vertical
+// (inset from top edge) role below — split rather than force one tag.
+constexpr Width tf_padding_x{4.f};
+constexpr Height tf_padding_y{4.f};
 constexpr float tf_font_size = 14.f;
-constexpr float tf_cursor_w = 2.f;
+constexpr Width tf_cursor_w{2.f};
 
 template <typename Sentinel, typename DisplayFn>
 void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNode& node,
@@ -41,35 +44,36 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     auto& vs = node_vs(node);
     auto& sf = field.get();
     auto& es = get_text_edit_state(node);
-    float cw = char_width(tf_font_size);
-    float w = detail::widget_w(node);
+    Width cw = char_width(tf_font_size);
+    Width w = detail::widget_w(node);
 
     auto& t = *node.theme;
     auto bg = vs.focused ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(0, 0, w, tf_widget_h), bg);
+    dl.filled_rect(make_rect(X{0}, Y{0}, w, tf_widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(-1, -1, w + 2, tf_widget_h + 2),
+        dl.rect_outline(make_rect(X{-1}, Y{-1}, w + Width{2.f}, tf_widget_h + Height{2.f}),
                         t.focus_ring, 2.0f);
 
-    float text_area_w = w - 2 * tf_padding;
-    dl.clip_push(make_point(tf_padding, 0), Size{Width{text_area_w}, Height{tf_widget_h}});
+    Width text_area_w = w - tf_padding_x * 2.f;
+    dl.clip_push(make_point(X{tf_padding_x.raw()}, Y{0}), Size{text_area_w, tf_widget_h});
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, make_point(0, tf_padding + 2), tf_font_size,
+        dl.text(sf.placeholder, make_point(X{0}, Y{tf_padding_y.raw() + 2.f}), tf_font_size,
                 t.text_placeholder);
     } else {
-        float text_x = -es.scroll_offset;
+        X text_x{-es.scroll_offset.raw()};
         std::string display_text = display_fn(std::string(sf.value.data(), sf.value.size()));
-        dl.text(display_text, make_point(text_x, tf_padding + 2), tf_font_size,
+        dl.text(display_text, make_point(text_x, Y{tf_padding_y.raw() + 2.f}), tf_font_size,
                 t.text);
     }
 
     if (vs.focused) {
-        float cursor_x = static_cast<float>(es.cursor) * cw - es.scroll_offset;
-        dl.filled_rect(make_rect(cursor_x, tf_padding, tf_cursor_w, tf_widget_h - 2 * tf_padding),
+        X cursor_x{static_cast<float>(es.cursor) * cw.raw() - es.scroll_offset.raw()};
+        dl.filled_rect(make_rect(cursor_x, Y{tf_padding_y.raw()}, tf_cursor_w,
+                                 tf_widget_h - tf_padding_y * 2.f),
                        t.cursor);
     }
 
@@ -121,24 +125,24 @@ void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widge
             node.dirty = true;
         }
     } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-        float cw = char_width(tf_font_size);
-        float rel_x = mb->position.x.raw() - tf_padding + es.scroll_offset;
+        Width cw = char_width(tf_font_size);
+        float rel_x = mb->position.x.raw() - tf_padding_x.raw() + es.scroll_offset.raw();
         size_t pos = static_cast<size_t>(
-            std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(len)));
+            std::clamp(rel_x / cw.raw() + 0.5f, 0.f, static_cast<float>(len)));
         if (pos != es.cursor) {
             es.cursor = pos;
             node.dirty = true;
         }
     }
 
-    float cw = char_width(tf_font_size);
-    float w = detail::widget_w(node);
-    float text_area_w = w - 2 * tf_padding;
-    float cursor_px = static_cast<float>(es.cursor) * cw;
-    if (cursor_px - es.scroll_offset > text_area_w)
-        es.scroll_offset = cursor_px - text_area_w;
-    if (cursor_px < es.scroll_offset)
-        es.scroll_offset = cursor_px;
+    Width cw = char_width(tf_font_size);
+    Width w = detail::widget_w(node);
+    Width text_area_w = w - tf_padding_x * 2.f;
+    Width cursor_px{static_cast<float>(es.cursor) * cw.raw()};
+    if (cursor_px.raw() - es.scroll_offset.raw() > text_area_w.raw())
+        es.scroll_offset = DX{cursor_px.raw() - text_area_w.raw()};
+    if (cursor_px.raw() < es.scroll_offset.raw())
+        es.scroll_offset = DX{cursor_px.raw()};
 }
 
 // --- TextArea helpers ---
@@ -153,9 +157,9 @@ struct LineCol {
     size_t col;
 };
 
-inline std::vector<LineSpan> wrap_lines(std::string_view text, float text_area_w, float char_w) {
+inline std::vector<LineSpan> wrap_lines(std::string_view text, Width text_area_w, Width char_w) {
     std::vector<LineSpan> result;
-    size_t max_chars = static_cast<size_t>(text_area_w / char_w);
+    size_t max_chars = static_cast<size_t>(text_area_w.raw() / char_w.raw());
     if (max_chars == 0) max_chars = 1;
 
     size_t pos = 0;
@@ -214,55 +218,58 @@ inline TextAreaEditState& ensure_text_area_edit_state(WidgetNode& node) {
     return node.get_or_create<TextAreaEditState>();
 }
 
-constexpr float ta_padding = 4.f;
+// ta_padding is used in both a horizontal and vertical role below — split
+// rather than force one tag, same reasoning as tf_padding_x/y above.
+constexpr Width ta_padding_x{4.f};
+constexpr Height ta_padding_y{4.f};
 constexpr float ta_font_size = 14.f;
-constexpr float ta_line_height = ta_font_size * 1.4f;
-constexpr float ta_cursor_w = 2.f;
+constexpr Height ta_line_height{ta_font_size * 1.4f};
+constexpr Width ta_cursor_w{2.f};
 
 template <typename Sentinel>
 void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNode& node) {
     auto& vs = node_vs(node);
     auto& sf = field.get();
     auto& es = get_text_area_edit_state(node);
-    float cw = char_width(ta_font_size);
-    float w = detail::widget_w(node);
-    float text_area_w = w - 2 * ta_padding;
-    float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
-    float widget_h = ta_padding * 2 + text_area_h;
+    Width cw = char_width(ta_font_size);
+    Width w = detail::widget_w(node);
+    Width text_area_w = w - ta_padding_x * 2.f;
+    Height text_area_h{static_cast<float>(sf.rows) * ta_line_height.raw()};
+    Height widget_h = ta_padding_y * 2.f + text_area_h;
 
     auto& t = *node.theme;
     auto bg = vs.focused ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(0, 0, w, widget_h), bg);
+    dl.filled_rect(make_rect(X{0}, Y{0}, w, widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(-1, -1, w + 2, widget_h + 2),
+        dl.rect_outline(make_rect(X{-1}, Y{-1}, w + Width{2.f}, widget_h + Height{2.f}),
                         t.focus_ring, 2.0f);
 
-    dl.clip_push(make_point(ta_padding, ta_padding), Size{Width{text_area_w}, Height{text_area_h}});
+    dl.clip_push(make_point(X{ta_padding_x.raw()}, Y{ta_padding_y.raw()}), Size{text_area_w, text_area_h});
 
     auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
                               text_area_w, cw);
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, make_point(0, 2), ta_font_size, t.text_placeholder);
+        dl.text(sf.placeholder, make_point(X{0}, Y{2}), ta_font_size, t.text_placeholder);
     } else {
         for (size_t i = 0; i < wrapped.size(); ++i) {
-            float y = static_cast<float>(i) * ta_line_height - es.scroll_y;
-            if (y + ta_line_height < 0) continue;
-            if (y > text_area_h) break;
+            Y y{static_cast<float>(i) * ta_line_height.raw() - es.scroll_y.raw()};
+            if (y.raw() + ta_line_height.raw() < 0) continue;
+            if (y.raw() > text_area_h.raw()) break;
             if (wrapped[i].length > 0) {
                 std::string line_text(sf.value.data() + wrapped[i].start, wrapped[i].length);
-                dl.text(line_text, make_point(0, y + 2), ta_font_size, t.text);
+                dl.text(line_text, make_point(X{0}, y + DY{2.f}), ta_font_size, t.text);
             }
         }
     }
 
     if (vs.focused) {
         auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
-        float cx = static_cast<float>(col) * cw;
-        float cy = static_cast<float>(line) * ta_line_height - es.scroll_y;
+        X cx{static_cast<float>(col) * cw.raw()};
+        Y cy{static_cast<float>(line) * ta_line_height.raw() - es.scroll_y.raw()};
         dl.filled_rect(make_rect(cx, cy, ta_cursor_w, ta_line_height), t.cursor);
     }
 
@@ -275,10 +282,10 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
     auto sf = field.get();
     auto len = sf.value.size();
     es.cursor = std::min(es.cursor, len);
-    float cw = char_width(ta_font_size);
-    float w = detail::widget_w(node);
-    float text_area_w = w - 2 * ta_padding;
-    float text_area_h = static_cast<float>(sf.rows) * ta_line_height;
+    Width cw = char_width(ta_font_size);
+    Width w = detail::widget_w(node);
+    Width text_area_w = w - ta_padding_x * 2.f;
+    Height text_area_h{static_cast<float>(sf.rows) * ta_line_height.raw()};
 
     auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
                               text_area_w, cw);
@@ -350,12 +357,12 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
             }
         }
     } else if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
-        float rel_y = mb->position.y.raw() - ta_padding + es.scroll_y;
+        float rel_y = mb->position.y.raw() - ta_padding_y.raw() + es.scroll_y.raw();
         size_t click_line = static_cast<size_t>(
-            std::clamp(rel_y / ta_line_height, 0.f, static_cast<float>(wrapped.size() - 1)));
-        float rel_x = mb->position.x.raw() - ta_padding;
+            std::clamp(rel_y / ta_line_height.raw(), 0.f, static_cast<float>(wrapped.size() - 1)));
+        float rel_x = mb->position.x.raw() - ta_padding_x.raw();
         size_t click_col = static_cast<size_t>(
-            std::clamp(rel_x / cw + 0.5f, 0.f, static_cast<float>(wrapped[click_line].length)));
+            std::clamp(rel_x / cw.raw() + 0.5f, 0.f, static_cast<float>(wrapped[click_line].length)));
         size_t new_cursor = line_col_to_cursor(click_line, click_col, wrapped);
         if (new_cursor != es.cursor) {
             es.cursor = new_cursor;
@@ -367,12 +374,12 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
         std::string_view(field.get().value.data(), field.get().value.size()),
         text_area_w, cw);
     auto [cur_line, cur_col] = cursor_to_line_col(es.cursor, new_wrapped);
-    float cursor_y = static_cast<float>(cur_line) * ta_line_height;
+    Y cursor_y{static_cast<float>(cur_line) * ta_line_height.raw()};
 
-    if (cursor_y - es.scroll_y > text_area_h - ta_line_height)
-        es.scroll_y = cursor_y - text_area_h + ta_line_height;
-    if (cursor_y < es.scroll_y)
-        es.scroll_y = cursor_y;
+    if (cursor_y.raw() - es.scroll_y.raw() > text_area_h.raw() - ta_line_height.raw())
+        es.scroll_y = DY{cursor_y.raw() - text_area_h.raw() + ta_line_height.raw()};
+    if (cursor_y.raw() < es.scroll_y.raw())
+        es.scroll_y = DY{cursor_y.raw()};
 }
 
 } // namespace detail
