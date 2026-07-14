@@ -91,10 +91,10 @@ inline PlotMapping compute_mapping(Rect bounds,
     eff_y = PlotMapping::apply_view(eff_y, v.offset_y, v.scale_y);
 
     Rect plot_area{
-        Point{X{bounds.origin.x.raw() + margin_left},
-              Y{bounds.origin.y.raw() + margin_top}},
-        Size{Width{bounds.extent.w.raw() - margin_left - margin_right},
-             Height{bounds.extent.h.raw() - margin_top - margin_bottom}},
+        Point{bounds.origin.x + DX{margin_left.raw()},
+              bounds.origin.y + DY{margin_top.raw()}},
+        Size{bounds.extent.w - margin_left - margin_right,
+             bounds.extent.h - margin_top - margin_bottom},
     };
 
     return PlotMapping{eff_x, eff_y, plot_area};
@@ -238,22 +238,22 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*n
         }
 
     } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
-        float px = ms->position.x.raw();
-        float py = ms->position.y.raw();
+        X px = ms->position.x;
+        Y py = ms->position.y;
 
         bool in_plot = map.plot_area.contains(ms->position);
         bool in_x_axis = (px >= map.left() && px <= map.right()
-                          && py > map.bottom() && py <= map.bottom() + margin_bottom);
+                          && py > map.bottom() && py <= map.bottom() + DY{margin_bottom.raw()});
         bool in_y_axis = (py >= map.top() && py <= map.bottom()
-                          && px >= map.left() - margin_left && px < map.left());
+                          && px >= map.left() - DX{margin_left.raw()} && px < map.left());
 
         if (!in_plot && !in_x_axis && !in_y_axis) return;
 
         freeze_auto_fit();
 
         double factor = std::pow(zoom_base, ms->dy.raw());
-        Point clamp_pt{X{std::clamp(px, map.left(), map.right())},
-                       Y{std::clamp(py, map.top(), map.bottom())}};
+        Point clamp_pt{std::clamp(px, map.left(), map.right()),
+                       std::clamp(py, map.top(), map.bottom())};
         auto [data_x, data_y] = map.to_data(clamp_pt);
 
         auto zoom_axis = [factor](double& scale, double& offset,

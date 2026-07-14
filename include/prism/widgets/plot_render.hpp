@@ -30,13 +30,13 @@ struct PlotMapping {
 
     Point to_pixel(double data_x, double data_y) const
     {
-        float px = plot_area.origin.x.raw()
-                   + static_cast<float>((data_x - x_range.min) / (x_range.max - x_range.min))
-                     * plot_area.extent.w.raw();
-        float py = plot_area.origin.y.raw()
-                   + static_cast<float>(1.0 - (data_y - y_range.min) / (y_range.max - y_range.min))
-                     * plot_area.extent.h.raw();
-        return Point{X{px}, Y{py}};
+        X px = plot_area.origin.x + DX{
+            static_cast<float>((data_x - x_range.min) / (x_range.max - x_range.min))
+            * plot_area.extent.w.raw()};
+        Y py = plot_area.origin.y + DY{
+            static_cast<float>(1.0 - (data_y - y_range.min) / (y_range.max - y_range.min))
+            * plot_area.extent.h.raw()};
+        return Point{px, py};
     }
 
     std::pair<double, double> to_data(Point pixel) const
@@ -52,10 +52,10 @@ struct PlotMapping {
         return {dx, dy};
     }
 
-    float left() const { return plot_area.origin.x.raw(); }
-    float right() const { return left() + plot_area.extent.w.raw(); }
-    float top() const { return plot_area.origin.y.raw(); }
-    float bottom() const { return top() + plot_area.extent.h.raw(); }
+    X left() const { return plot_area.origin.x; }
+    X right() const { return left() + DX{plot_area.extent.w.raw()}; }
+    Y top() const { return plot_area.origin.y; }
+    Y bottom() const { return top() + DY{plot_area.extent.h.raw()}; }
 
     static AxisRange apply_view(AxisRange base, double offset, double scale)
     {
@@ -118,11 +118,11 @@ AxisRange auto_fit_range(const Range& series, Axis axis)
     return {lo - pad, hi + pad, true};
 }
 
-constexpr float margin_left = 60.f;
-constexpr float margin_bottom = 45.f;
-constexpr float margin_top = 10.f;
-constexpr float margin_right = 10.f;
-constexpr float tick_len = 5.f;
+constexpr Width margin_left{60.f};
+constexpr Height margin_bottom{45.f};
+constexpr Height margin_top{10.f};
+constexpr Width margin_right{10.f};
+constexpr float tick_len = 5.f; // axis-polymorphic: used as both a horizontal and vertical tick length
 constexpr float tick_font_size = 11.f;
 constexpr float label_font_size = 12.f;
 
@@ -154,45 +154,45 @@ inline void draw_grid_lines(DrawList& dl, const PlotMapping& map,
                             const TickArrays& ticks, const Theme& t)
 {
     for (double tx : ticks.x) {
-        float x = map.to_pixel(tx, 0.0).x.raw();
+        X x = map.to_pixel(tx, 0.0).x;
         if (x < map.left() || x > map.right()) continue;
-        dl.line(Point{X{x}, Y{map.top()}}, Point{X{x}, Y{map.bottom()}}, t.track, 1.f);
+        dl.line(Point{x, map.top()}, Point{x, map.bottom()}, t.track, 1.f);
     }
 
     for (double ty : ticks.y) {
-        float y = map.to_pixel(0.0, ty).y.raw();
+        Y y = map.to_pixel(0.0, ty).y;
         if (y < map.top() || y > map.bottom()) continue;
-        dl.line(Point{X{map.left()}, Y{y}}, Point{X{map.right()}, Y{y}}, t.track, 1.f);
+        dl.line(Point{map.left(), y}, Point{map.right(), y}, t.track, 1.f);
     }
 
-    dl.line(Point{X{map.left()}, Y{map.top()}}, Point{X{map.left()}, Y{map.bottom()}}, t.border, 1.f);
-    dl.line(Point{X{map.left()}, Y{map.bottom()}}, Point{X{map.right()}, Y{map.bottom()}}, t.border, 1.f);
+    dl.line(Point{map.left(), map.top()}, Point{map.left(), map.bottom()}, t.border, 1.f);
+    dl.line(Point{map.left(), map.bottom()}, Point{map.right(), map.bottom()}, t.border, 1.f);
 }
 
 inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
                              const TickArrays& ticks, const Theme& t)
 {
-    float cw = char_width(tick_font_size).raw(); // TODO(strong-types): retrofit this whole file (see project-strong-types memory)
+    Width cw = char_width(tick_font_size);
 
     for (double tx : ticks.x) {
-        float x = map.to_pixel(tx, 0.0).x.raw();
+        X x = map.to_pixel(tx, 0.0).x;
         if (x < map.left() || x > map.right()) continue;
-        dl.line(Point{X{x}, Y{map.bottom()}},
-                Point{X{x}, Y{map.bottom() + tick_len}}, t.border, 1.f);
+        dl.line(Point{x, map.bottom()},
+                Point{x, map.bottom() + DY{tick_len}}, t.border, 1.f);
         dl.text(fmt::format("{:.6g}", tx),
-                Point{X{x - 15.f}, Y{map.bottom() + tick_len + 2.f}},
+                Point{x - DX{15.f}, map.bottom() + DY{tick_len + 2.f}},
                 tick_font_size, t.text_muted);
     }
 
     for (double ty : ticks.y) {
-        float y = map.to_pixel(0.0, ty).y.raw();
+        Y y = map.to_pixel(0.0, ty).y;
         if (y < map.top() || y > map.bottom()) continue;
-        dl.line(Point{X{map.left() - tick_len}, Y{y}},
-                Point{X{map.left()}, Y{y}}, t.border, 1.f);
+        dl.line(Point{map.left() - DX{tick_len}, y},
+                Point{map.left(), y}, t.border, 1.f);
         auto label = fmt::format("{:.6g}", ty);
-        float label_w = static_cast<float>(label.size()) * cw;
+        Width label_w = cw * static_cast<float>(label.size());
         dl.text(std::move(label),
-                Point{X{map.left() - tick_len - 2.f - label_w}, Y{y - 6.f}},
+                Point{map.left() - DX{tick_len + 2.f + label_w.raw()}, y - DY{6.f}},
                 tick_font_size, t.text_muted);
     }
 }
@@ -218,34 +218,36 @@ inline void draw_cursor(DrawList& dl, const PlotMapping& map,
     auto px = map.to_pixel(cursor.data_x, cursor.data_y);
     Color crosshair_color = Color::rgba(t.text_muted.r, t.text_muted.g, t.text_muted.b, 80);
 
-    dl.line(Point{X{px.x.raw()}, Y{map.top()}},
-            Point{X{px.x.raw()}, Y{map.bottom()}}, crosshair_color, 1.f);
-    dl.line(Point{X{map.left()}, Y{px.y.raw()}},
-            Point{X{map.right()}, Y{px.y.raw()}}, crosshair_color, 1.f);
+    dl.line(Point{px.x, map.top()},
+            Point{px.x, map.bottom()}, crosshair_color, 1.f);
+    dl.line(Point{map.left(), px.y},
+            Point{map.right(), px.y}, crosshair_color, 1.f);
 
     auto label = fmt::format("({:.4g}, {:.4g})", cursor.data_x, cursor.data_y);
-    float tx = px.x.raw() + 10.f;
-    float ty = px.y.raw() - 20.f;
-    if (tx + 120.f > map.right()) tx = px.x.raw() - 130.f;
-    if (ty < map.top()) ty = px.y.raw() + 10.f;
+    X tx = px.x + DX{10.f};
+    Y ty = px.y - DY{20.f};
+    if (tx + DX{120.f} > map.right()) tx = px.x - DX{130.f};
+    if (ty < map.top()) ty = px.y + DY{10.f};
 
-    dl.filled_rect(Rect{Point{X{tx - 2.f}, Y{ty - 2.f}}, Size{Width{120.f}, Height{18.f}}}, t.surface);
-    dl.text(std::move(label), Point{X{tx}, Y{ty}}, label_font_size, t.text);
+    dl.filled_rect(Rect{Point{tx - DX{2.f}, ty - DY{2.f}}, Size{Width{120.f}, Height{18.f}}}, t.surface);
+    dl.text(std::move(label), Point{tx, ty}, label_font_size, t.text);
 }
 
 inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,
                              const std::string& x_label, const std::string& y_label,
                              const Theme& t)
 {
-    float cx = (map.left() + map.right()) / 2.f;
+    // X+X has no defined result (adding two absolute positions is meaningless),
+    // so the midpoint is computed via the algebraically valid a + (b-a)/2 form.
+    X cx = map.left() + (map.right() - map.left()) / 2.f;
 
     if (!x_label.empty())
-        dl.text(x_label, Point{X{cx - 30.f}, Y{map.bottom() + 18.f}}, label_font_size, t.text);
+        dl.text(x_label, Point{cx - DX{30.f}, map.bottom() + DY{18.f}}, label_font_size, t.text);
 
     if (!y_label.empty()) {
-        float lx = map.left() - margin_left + 10.f;
-        float cy = (map.top() + map.bottom()) / 2.f;
-        dl.text(y_label, Point{X{lx}, Y{cy}}, label_font_size, t.text, 90.f, TextAnchor::Center);
+        X lx = map.left() - DX{margin_left.raw() - 10.f};
+        Y cy = map.top() + (map.bottom() - map.top()) / 2.f;
+        dl.text(y_label, Point{lx, cy}, label_font_size, t.text, 90.f, TextAnchor::Center);
     }
 }
 
