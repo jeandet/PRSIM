@@ -64,7 +64,10 @@ private:
         constexpr int max_waves = 64;
         int wave = 0;
         while (!tx.queue.empty()) {
-            assert(wave++ < max_waves && "transaction flush: dependency cycle detected");
+            if (wave++ >= max_waves) {
+                assert(false && "transaction flush: dependency cycle detected");
+                break;
+            }
             std::vector<core::DeferredEmit> coalesced;
             std::unordered_set<void*> seen;
             for (auto it = tx.queue.rbegin(); it != tx.queue.rend(); ++it) {

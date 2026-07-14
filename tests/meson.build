@@ -35,6 +35,7 @@ headless_tests = {
   'svg_export' : files('test_svg_export.cpp'),
   'plot' : files('test_plot.cpp'),
   'transaction' : files('test_transaction.cpp'),
+  'transaction_cycle_guard' : files('test_transaction_cycle_guard.cpp'),
   'derived' : files('test_derived.cpp'),
   'shared' : files('test_shared.cpp'),
 }
