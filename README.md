@@ -160,6 +160,30 @@ struct PlotShowcase {
 
 <p align="center"><img src="doc/screenshots/plot.svg" alt="Plot" width="600"/></p>
 
+**Live inspector** — point PRISM at any plain struct behind a `Shared<T>` and get a live,
+per-field editable panel, no mirror struct to hand-write. Built for cross-thread state:
+device drivers, background workers, plugin config living on another thread:
+
+```cpp
+struct DeviceState {
+    float voltage = 3.3f;
+    int mode = 2;
+    bool enabled = true;
+};
+
+prism::Shared<DeviceState> device_state{DeviceState{}};       // owned/updated elsewhere
+prism::inspector::Inspector<DeviceState> inspector(device_state);
+```
+
+`Inspector<T>` is an ordinary component — embed it in a larger UI via `vb.component()`, or
+run it standalone like any model:
+
+```cpp
+prism::model_app("Device Control", inspector);
+```
+
+<p align="center"><img src="doc/screenshots/inspector.svg" alt="Inspector" width="300"/></p>
+
 ## Core Abstractions: `Field<T>` and `State<T>`
 
 Two observable types share the same core (`.get()`, `.set()`, `.on_change()`):

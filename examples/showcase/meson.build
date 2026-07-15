@@ -4,6 +4,7 @@ showcases = {
   'layout':   'showcase_layout.cpp',
   'canvas':   'showcase_canvas.cpp',
   'plot':     'showcase_plot.cpp',
+  'inspector': 'showcase_inspector.cpp',
 }
 
 foreach name, src : showcases

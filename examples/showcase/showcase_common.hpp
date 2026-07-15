@@ -10,9 +10,10 @@
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
+namespace prism::inspector {}
 namespace prism {
 using namespace core; using namespace render; using namespace input;
-using namespace ui; using namespace app; using namespace plot;
+using namespace ui; using namespace app; using namespace plot; using namespace inspector;
 }
 
 // Run model_app headlessly, capture snapshot, write SVG to argv[1].
