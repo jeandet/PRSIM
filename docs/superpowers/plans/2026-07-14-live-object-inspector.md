@@ -419,9 +419,14 @@ using namespace prism::core;
 
 template <typename T>
 struct Inspector {
-    explicit Inspector(Shared<T>& source) : source_(source) {
-        mirror_.sync_from(source_.get());
-        source_.observe([this](const T& v) { mirror_.sync_from(v); });
+    // source_ is a pointer, not a reference: WidgetTree::check_unplaced_fields (debug builds)
+    // reflects over Model's own members to warn about unplaced Field/Derived/Shared fields.
+    // A `Shared<T>&` member matches that reflection walk and hits a GCC identifier_of()
+    // limitation on this template instantiation; a raw pointer member doesn't match
+    // is_shared_v<M>, so the walk skips it entirely. Verified with a minimal repro.
+    explicit Inspector(Shared<T>& source) : source_(&source) {
+        mirror_.sync_from(source_->get());
+        source_->observe([this](const T& v) { mirror_.sync_from(v); });
     }
 
     void view(prism::app::WidgetTree::ViewBuilder& vb) {
@@ -432,7 +437,7 @@ struct Inspector {
     [[nodiscard]] const FieldMirror<T>& mirror() const { return mirror_; }
 
 private:
-    Shared<T>& source_;
+    Shared<T>* source_;
     FieldMirror<T> mirror_;
 };
 
@@ -526,22 +531,22 @@ TEST_CASE("Local edit followed by remote drain settles without oscillating") {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `meson test -C builddir inspector -v`
-Expected: FAIL — local edits don't push back yet (`push_local` not wired), and `tree.drain_shared()` doesn't reach `source_.drain_notifications()` (no `drain_fn` wired for a `view()`-based component).
+Expected: FAIL — local edits don't push back yet (`push_local` not wired), and `tree.drain_shared()` doesn't reach `source_->drain_notifications()` (no `drain_fn` wired for a `view()`-based component).
 
 - [ ] **Step 3: Wire `push_local` and add `drain()` in `Inspector<T>`**
 
 In `include/prism/widgets/inspector.hpp`, update the constructor and add `drain()`:
 
 ```cpp
-    explicit Inspector(Shared<T>& source) : source_(source) {
-        mirror_.sync_from(source_.get());
+    explicit Inspector(Shared<T>& source) : source_(&source) {
+        mirror_.sync_from(source_->get());
         mirror_.for_each_leaf([this](auto& field) {
             field.observe([this](const auto&) { push_local(); });
         });
-        source_.observe([this](const T& v) { mirror_.sync_from(v); });
+        source_->observe([this](const T& v) { mirror_.sync_from(v); });
     }
 
-    void drain() { source_.drain_notifications(); }
+    void drain() { source_->drain_notifications(); }
 ```
 
 (a generic lambda converts fine to whatever `std::function<void(const M&)>` each `Field<M>::observe` needs — no change to `core/field.hpp` required)
@@ -550,10 +555,10 @@ Add the private `push_local` method to `Inspector<T>`:
 
 ```cpp
 private:
-    Shared<T>& source_;
+    Shared<T>* source_;
     FieldMirror<T> mirror_;
 
-    void push_local() { source_.set(mirror_.build()); }
+    void push_local() { source_->set(mirror_.build()); }
 ```
 
 - [ ] **Step 4: Add opt-in `drain()` detection to `build_node_tree`'s `view()` branch**
