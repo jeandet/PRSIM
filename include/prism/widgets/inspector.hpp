@@ -26,6 +26,9 @@ struct Inspector {
     // is_shared_v<M>, so the walk skips it entirely. Verified with a minimal repro.
     explicit Inspector(Shared<T>& source) : source_(&source) {
         mirror_.sync_from(source_->get());
+        mirror_.for_each_leaf([this](auto& field) {
+            field.observe([this](const auto&) { push_local(); });
+        });
         source_->observe([this](const T& v) { mirror_.sync_from(v); });
     }
 
@@ -36,12 +39,16 @@ struct Inspector {
         mirror_.view(vb);
     }
 
+    void drain() { source_->drain_notifications(); }
+
     [[nodiscard]] FieldMirror<T>& mirror() { return mirror_; }
     [[nodiscard]] const FieldMirror<T>& mirror() const { return mirror_; }
 
 private:
     Shared<T>* source_;
     FieldMirror<T> mirror_;
+
+    void push_local() { source_->set(mirror_.build()); }
 };
 
 } // namespace prism::inspector

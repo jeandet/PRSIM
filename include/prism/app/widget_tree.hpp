@@ -914,6 +914,8 @@ private:
             check_unplaced_fields(model, vb.placed());
 #endif
             vb.finalize();
+            if constexpr (requires(Model& m) { { m.drain() } -> std::same_as<void>; })
+                root.drain_fn = [&model] { model.drain(); };
         }
 #if __cpp_impl_reflection
         else {
