@@ -6,6 +6,7 @@
 
 #include <tuple>
 #include <type_traits>
+#include <vector>
 
 #if __cpp_impl_reflection
 #include <meta>

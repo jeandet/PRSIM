@@ -48,6 +48,10 @@ struct Inspector {
     [[nodiscard]] const FieldMirror<T>& mirror() const { return mirror_; }
 
 private:
+    // RAII flag set while mirror_.sync_from(v) is applying a remote update. A multi-field
+    // remote update sets one leaf Field at a time, and each leaf's on_change would otherwise
+    // fire push_local() mid-sync — pushing a torn, partially-updated T back to source_ once
+    // per changed leaf instead of once with the complete value.
     struct SyncGuard {
         bool& flag;
         explicit SyncGuard(bool& f) : flag(f) { flag = true; }
@@ -57,6 +61,8 @@ private:
     FieldMirror<T> mirror_;
     bool syncing_ = false;
 
+    // Guarded by SyncGuard above: while a remote sync is in progress, leaf on_change
+    // callbacks must not echo the (possibly still-partial) mirror state back to source_.
     void push_local() {
         if (syncing_) return;
         source_->set(mirror_.build());

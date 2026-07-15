@@ -155,3 +155,37 @@ pumped explicitly, decoupled from actual thread delivery):
   observation; `Inspector<T>` is specifically the editable case.
 - Embedding into a non-PRISM host application (foreign event loop, foreign renderer) —
   `Inspector<T>` is a PRISM component like any other; out of scope here.
+
+## Implementation notes (post-implementation)
+
+The shipped implementation deviates from this spec's sketches in a few places, none of which
+change the design's intent:
+
+- **`source_` shipped as `Shared<T>*`, not `Shared<T>&`.** A `Shared<T>&` reference member was
+  found during implementation to trigger a real GCC P2996 `identifier_of()` limitation inside
+  `WidgetTree::check_unplaced_fields`'s debug-mode reflection walk (that walk reflects over
+  `Inspector<T>`'s own members to warn about unplaced `Field`/`Derived`/`Shared` fields, and a
+  reference member matched its `is_shared_v<M>` check in a way that hit the limitation). A raw
+  pointer member doesn't match that check, so the walk skips it entirely. Verified with a
+  standalone repro before switching to a pointer.
+
+- **The mirror type shipped as `FieldMirror<T>`, not `FieldMirrorOf<T>`.** It holds per-leaf
+  `LeafSlot<M>` pairs (a `Field<Label<std::string>>` name plus the `Field<M>` value) rather than
+  bare `Field<M>` slots — the mechanism is unchanged, but the type was renamed and given the
+  `LeafSlot<M>` wrapper for clarity given the per-field labeling requirement added after this
+  spec was approved.
+
+- **A `syncing_` reentrancy guard (`SyncGuard`, RAII) was added beyond the original design.** The
+  originally-specified wiring — each mirror `Field<Mi>`'s change sender unconditionally calling
+  `push_local()` — caused multi-field remote updates to echo torn/partial values back to
+  `Shared<T>::set()`, since `sync_from` sets one leaf at a time. This was found and fixed during
+  Task 4's review, with its own regression test, and is now also covered for the nested-struct
+  case (a remote update to a `T` with a nested struct member, verifying both the synced value and
+  the absence of echo at nested depth).
+
+- **The testing plan's "remote set then local edit before draining" race test was not implemented
+  as literally described.** The shipped echo/settle tests (single-field and multi-field, plus the
+  new nested-struct case) cover the same last-write-wins concurrency model described in
+  "Concurrency model" above, but from the adjacent angle — local-edit-then-drain and
+  remote-update-then-drain — rather than that exact interleave. This is accepted as sufficient
+  coverage of the documented tradeoff, not tracked as an open gap.

@@ -57,8 +57,6 @@ TEST_CASE("FieldMirror::for_each_leaf visits every leaf exactly once") {
     CHECK(count == 4);
 }
 
-#include <prism/app/widget_tree.hpp>
-
 struct Inner {
     float scale;
     int count;

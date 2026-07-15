@@ -141,4 +141,39 @@ TEST_CASE("Multi-field remote update does not echo torn intermediate values") {
     tree.drain_shared();
     CHECK(change_calls == 1);
 }
+
+struct Inner {
+    float scale;
+    int count;
+};
+
+struct NestedDeviceState {
+    float voltage;
+    Inner inner;
+};
+
+TEST_CASE("Inspector handles nested struct remote updates without echo") {
+    prism::Shared<NestedDeviceState> source{NestedDeviceState{0.f, {0.f, 0}}};
+    prism::inspector::Inspector<NestedDeviceState> inspector(source);
+    prism::WidgetTree tree(inspector);
+    tree.drain_shared(); // clear any initial pending state
+
+    int change_calls = 0;
+    auto conn = source.on_change().connect([&](const NestedDeviceState&) { ++change_calls; });
+
+    source.set(NestedDeviceState{9.f, {1.5f, 7}});
+    tree.drain_shared();
+    CHECK(change_calls == 1);
+
+    // nested value actually synced
+    auto& top_slots = inspector.mirror().slots;
+    CHECK(std::get<0>(top_slots).value.get() == doctest::Approx(9.f));
+    auto& inner_mirror = std::get<1>(top_slots);
+    CHECK(std::get<0>(inner_mirror.slots).value.get() == doctest::Approx(1.5f));
+    CHECK(std::get<1>(inner_mirror.slots).value.get() == 7);
+
+    // second drain is a true no-op — no echo at any nesting depth
+    tree.drain_shared();
+    CHECK(change_calls == 1);
+}
 #endif // __cpp_impl_reflection
