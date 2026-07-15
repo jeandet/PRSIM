@@ -184,6 +184,22 @@ prism::model_app("Device Control", inspector);
 
 <p align="center"><img src="doc/screenshots/inspector.svg" alt="Inspector" width="300"/></p>
 
+**Inspector annotations** — customize how individual fields render in the inspector via
+C++26 attributes, without changing the field's declared type:
+
+```cpp
+struct Settings {
+    [[=prism::inspector::skip]]                  int internal_version;
+    [[=prism::inspector::readonly]]               std::string device_id;
+    [[=prism::inspector::label<"Sample Rate">]]   int sample_rate;
+    [[=prism::inspector::section<"Audio">]]       float volume;
+};
+```
+
+`skip` excludes a field entirely (still round-trips safely under the hood); `readonly` renders
+it without input wiring; `label` overrides the caption; `section` inserts a header row above
+the field.
+
 ## Core Abstractions: `Field<T>` and `State<T>`
 
 Two observable types share the same core (`.get()`, `.set()`, `.on_change()`):
@@ -373,10 +389,11 @@ graph LR
     P3["Phase 3<br/>Widgets + Rendering<br/><b>DONE</b>"]
     P35["Phase 3.5<br/>stdexec<br/><b>DONE</b>"]
     P36["Phase 3.6<br/>Node Tree<br/><b>DONE</b>"]
-    P4["Phase 4<br/>Advanced Features"]
+    P4["Phase 4<br/>Advanced Features<br/><b>DONE</b>"]
+    P45["Phase 4.5<br/>Strategic Priorities<br/><b>IN PROGRESS</b>"]
     P5["Phase 5<br/>GPU Backend"]
 
-    P1 --> P2 --> P3 --> P35 --> P36 --> P4 --> P5
+    P1 --> P2 --> P3 --> P35 --> P36 --> P4 --> P45 --> P5
 ```
 
 - **Phase 1** (done) — DrawList, SceneSnapshot, SDL3 backend, event-driven loop
@@ -384,7 +401,8 @@ graph LR
 - **Phase 3** (done) — Widget dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), custom `view()` override, `canvas()` escape hatch, strong coordinate types, `clip_push` local coordinate system
 - **Phase 3.5** (done) — stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, `AppContext`
 - **Phase 3.6** (done) — `Node` intermediate layer (type-erased `Field<T>` + children), pre-C++26 support via `view()` methods, magic_enum enum fallback, `#if __cpp_impl_reflection` guards (only 2 locations)
-- **Phase 4** — Animation, accessibility, scroll areas, data widgets (plot, table)
+- **Phase 4** (done) — Scroll areas, virtual lists, animation system (easing/spring, `Animation<T>`, `TransitionGuard<T>`), mouse capture & drag, table widget (virtual scroll, headers, row selection), plot widget (zoom/pan/crosshair, auto-fit), SVG export, window abstraction + custom chrome, theme palette (runtime-switchable), transaction API (deferred/coalesced callbacks), `Derived<T>`/`Shared<T>` state taxonomy, codebase reorganization into 8 modules
+- **Phase 4.5** (in progress) — Custom widget from type (`Widget<T>`, `is_widget_v`, `EditState`), live object inspector (`Inspector<T>`/`FieldMirror<T>` — edit a `Shared<T>` cross-thread with zero boilerplate), inspector field annotations (`skip`/`readonly`/`label`/`section` via C++26 `[[=...]]` attributes); debugging/profiling story (tree inspector, dirty-region viewer) next
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
 ## Design Documents
