@@ -133,5 +133,12 @@ TEST_CASE("Multi-field remote update does not echo torn intermediate values") {
     // so no additional calls. Without the fix, there would be N+1 calls
     // (1 initial + 3 echo writes from changing 3 fields).
     CHECK(change_calls == 1);
+
+    // A second drain must be a no-op (bounded, not oscillating forever).
+    // Without the syncing_ guard, the first drain's echo writes would have re-armed
+    // pending_, so the second drain would fire on_change again. With the guard,
+    // no echo was ever queued, so this second drain stays at 1.
+    tree.drain_shared();
+    CHECK(change_calls == 1);
 }
 #endif // __cpp_impl_reflection

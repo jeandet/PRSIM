@@ -30,9 +30,8 @@ struct Inspector {
             field.observe([this](const auto&) { push_local(); });
         });
         source_->observe([this](const T& v) {
-            syncing_ = true;
+            SyncGuard guard(syncing_);
             mirror_.sync_from(v);
-            syncing_ = false;
         });
     }
 
@@ -49,6 +48,11 @@ struct Inspector {
     [[nodiscard]] const FieldMirror<T>& mirror() const { return mirror_; }
 
 private:
+    struct SyncGuard {
+        bool& flag;
+        explicit SyncGuard(bool& f) : flag(f) { flag = true; }
+        ~SyncGuard() { flag = false; }
+    };
     Shared<T>* source_;
     FieldMirror<T> mirror_;
     bool syncing_ = false;
