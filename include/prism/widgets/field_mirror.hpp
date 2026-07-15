@@ -2,6 +2,7 @@
 
 #include <prism/app/widget_tree.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/fixed_string.hpp>
 #include <prism/ui/delegate.hpp>
 
 #include <tuple>
@@ -15,6 +16,50 @@
 namespace prism::inspector {
 using namespace prism::core;
 using namespace prism::ui;
+
+// --- Annotations ---------------------------------------------------------
+// Attach to a member of a plain struct passed to Inspector<T>/FieldMirror<T>:
+//
+//   struct Settings {
+//       [[=prism::inspector::skip]]                  int internal_version;
+//       [[=prism::inspector::readonly]]               std::string device_id;
+//       [[=prism::inspector::label<"Sample Rate">]]   int sample_rate;
+//       [[=prism::inspector::section<"Audio">]]       float volume;
+//   };
+
+constexpr inline struct {} skip{};
+constexpr inline struct {} readonly{};
+
+template <fixed_string S> struct label_t   { static constexpr auto value = S; };
+template <fixed_string S> struct section_t { static constexpr auto value = S; };
+template <fixed_string S> constexpr inline label_t<S>   label{};
+template <fixed_string S> constexpr inline section_t<S> section{};
+
+template <std::meta::info M, typename Tag>
+consteval bool has_annotation() {
+    static constexpr auto annots = std::define_static_array(std::meta::annotations_of(M));
+    for (auto a : annots) {
+        if (std::meta::type_of(a) == ^^Tag) return true;
+    }
+    return false;
+}
+
+template <template <fixed_string> class Templ>
+consteval bool is_specialization_of(std::meta::info t) {
+    return std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^Templ;
+}
+
+template <std::meta::info M, template <fixed_string> class Templ>
+consteval std::string_view extract_string_annotation() {
+    static constexpr auto annots = std::define_static_array(std::meta::annotations_of(M));
+    template for (constexpr auto a : annots) {
+        constexpr auto t = std::meta::type_of(a);
+        if constexpr (is_specialization_of<Templ>(t)) {
+            return [:t:]::value.view();
+        }
+    }
+    return {};
+}
 
 template <typename T>
 concept MirrorLeaf = Numeric<T> || StringLike<T> || ScopedEnum<T>;

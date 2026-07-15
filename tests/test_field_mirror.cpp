@@ -107,4 +107,28 @@ TEST_CASE("FieldMirror WidgetTree recurses into nested struct") {
     // voltage (2) + inner.scale (2) + inner.count (2) = 6
     CHECK(tree.leaf_count() == 6);
 }
+
+struct AnnotationProbe {
+    [[=prism::inspector::skip]] int a;
+    [[=prism::inspector::readonly]] int b;
+    [[=prism::inspector::label<"Custom Name">]] int c;
+    [[=prism::inspector::section<"Audio">]] int d;
+    int e;
+};
+
+TEST_CASE("annotation helpers detect skip/readonly and extract label/section text") {
+    static_assert(prism::inspector::has_annotation<^^AnnotationProbe::a, decltype(prism::inspector::skip)>());
+    static_assert(!prism::inspector::has_annotation<^^AnnotationProbe::e, decltype(prism::inspector::skip)>());
+
+    static_assert(prism::inspector::has_annotation<^^AnnotationProbe::b, decltype(prism::inspector::readonly)>());
+    static_assert(!prism::inspector::has_annotation<^^AnnotationProbe::e, decltype(prism::inspector::readonly)>());
+
+    static_assert(prism::inspector::extract_string_annotation<^^AnnotationProbe::c, prism::inspector::label_t>() == "Custom Name");
+    static_assert(prism::inspector::extract_string_annotation<^^AnnotationProbe::e, prism::inspector::label_t>().empty());
+
+    static_assert(prism::inspector::extract_string_annotation<^^AnnotationProbe::d, prism::inspector::section_t>() == "Audio");
+    static_assert(prism::inspector::extract_string_annotation<^^AnnotationProbe::e, prism::inspector::section_t>().empty());
+
+    CHECK(true); // presence of this TEST_CASE proves the file compiled with the static_asserts above
+}
 #endif // __cpp_impl_reflection
