@@ -1,5 +1,6 @@
 #pragma once
 
+#include <prism/app/widget_tree.hpp>
 #include <prism/core/field.hpp>
 #include <prism/ui/delegate.hpp>
 
@@ -96,6 +97,10 @@ struct FieldMirror {
                 fn(slot.value);
             }
         }
+    }
+
+    void view(prism::app::WidgetTree::ViewBuilder& vb) {
+        std::apply([&](auto&... s) { vb.vstack(s...); }, slots);
     }
 };
 
