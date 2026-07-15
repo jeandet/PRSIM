@@ -127,7 +127,12 @@ struct FieldMirror {
             } else if constexpr (is_hidden_slot_v<SlotT>) {
                 slot.value.set(v.[:m:]);
             } else {
-                slot.name.set(Label<std::string>{std::string(std::meta::identifier_of(m))});
+                constexpr auto override_label = extract_string_annotation<m, label_t>();
+                if constexpr (!override_label.empty()) {
+                    slot.name.set(Label<std::string>{std::string(override_label)});
+                } else {
+                    slot.name.set(Label<std::string>{std::string(std::meta::identifier_of(m))});
+                }
                 slot.value.set(v.[:m:]);
             }
         }

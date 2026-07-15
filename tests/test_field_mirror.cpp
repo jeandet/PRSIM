@@ -163,4 +163,17 @@ TEST_CASE("skip removes the member's widgets from the generated tree") {
     // voltage (2: name+value) + enabled (2: name+value) = 4. internal_version: 0.
     CHECK(tree.leaf_count() == 4);
 }
+
+struct DeviceStateWithLabel {
+    [[=prism::inspector::label<"Sample Rate (Hz)">]] int sample_rate;
+    bool enabled;
+};
+
+TEST_CASE("label overrides the name caption instead of using identifier_of") {
+    prism::inspector::FieldMirror<DeviceStateWithLabel> mirror;
+    mirror.sync_from(DeviceStateWithLabel{44100, true});
+
+    CHECK(std::get<0>(mirror.slots).name.get().value == "Sample Rate (Hz)");
+    CHECK(std::get<1>(mirror.slots).name.get().value == "enabled"); // unannotated: falls back to identifier_of
+}
 #endif // __cpp_impl_reflection
