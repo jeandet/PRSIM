@@ -131,4 +131,36 @@ TEST_CASE("annotation helpers detect skip/readonly and extract label/section tex
 
     CHECK(true); // presence of this TEST_CASE proves the file compiled with the static_asserts above
 }
+
+struct DeviceStateWithSkip {
+    float voltage;
+    [[=prism::inspector::skip]] int internal_version;
+    bool enabled;
+};
+
+TEST_CASE("skip excludes a member from for_each_leaf but preserves it through build()") {
+    prism::inspector::FieldMirror<DeviceStateWithSkip> mirror;
+    DeviceStateWithSkip d{3.3f, 42, true};
+    mirror.sync_from(d);
+
+    // for_each_leaf must not visit the skipped member.
+    int count = 0;
+    mirror.for_each_leaf([&](auto&) { ++count; });
+    CHECK(count == 2); // voltage, enabled -- not internal_version
+
+    // Editing an unrelated field and rebuilding must not reset internal_version.
+    std::get<0>(mirror.slots).value.set(9.9f);
+    DeviceStateWithSkip rebuilt = mirror.build();
+    CHECK(rebuilt.voltage == doctest::Approx(9.9f));
+    CHECK(rebuilt.internal_version == 42); // preserved, not reset to 0
+    CHECK(rebuilt.enabled == true);
+}
+
+TEST_CASE("skip removes the member's widgets from the generated tree") {
+    prism::inspector::FieldMirror<DeviceStateWithSkip> mirror;
+    mirror.sync_from(DeviceStateWithSkip{1.f, 7, false});
+    prism::WidgetTree tree(mirror);
+    // voltage (2: name+value) + enabled (2: name+value) = 4. internal_version: 0.
+    CHECK(tree.leaf_count() == 4);
+}
 #endif // __cpp_impl_reflection

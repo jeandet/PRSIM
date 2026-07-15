@@ -61,6 +61,8 @@ consteval std::string_view extract_string_annotation() {
     return {};
 }
 
+// --- Slot shapes -----------------------------------------------------------
+
 template <typename T>
 concept MirrorLeaf = Numeric<T> || StringLike<T> || ScopedEnum<T>;
 
@@ -71,21 +73,37 @@ struct LeafSlot {
     Field<M> value{};
 };
 
+// A member excluded from rendering ([[=prism::inspector::skip]]). Still
+// round-trips through sync_from/build so unrelated edits don't reset it.
+template <typename M>
+struct HiddenSlot {
+    Field<M> value{};
+};
+
+template <typename T> struct is_hidden_slot : std::false_type {};
+template <typename M> struct is_hidden_slot<HiddenSlot<M>> : std::true_type {};
+template <typename T> inline constexpr bool is_hidden_slot_v = is_hidden_slot<T>::value;
+
 template <typename T>
 concept NestedMirrorSlot = requires(T& t) { t.slots; };
 
 template <typename T> struct FieldMirror;
 
-template <typename M>
-using MirrorSlot = std::conditional_t<MirrorLeaf<M>, LeafSlot<M>, FieldMirror<M>>;
-
 template <typename T>
 consteval std::meta::info field_mirror_tuple_info() {
     std::vector<std::meta::info> slot_types;
-    for (auto m : std::meta::nonstatic_data_members_of(
-             ^^T, std::meta::access_context::unchecked())) {
-        auto mtype = std::meta::type_of(m);
-        slot_types.push_back(std::meta::substitute(^^MirrorSlot, {mtype}));
+    static constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
+    template for (constexpr auto m : members) {
+        constexpr auto mtype = std::meta::type_of(m);
+        using M = typename [:mtype:];
+        if constexpr (has_annotation<m, decltype(skip)>()) {
+            slot_types.push_back(std::meta::substitute(^^HiddenSlot, {mtype}));
+        } else if constexpr (MirrorLeaf<M>) {
+            slot_types.push_back(std::meta::substitute(^^LeafSlot, {mtype}));
+        } else {
+            slot_types.push_back(std::meta::substitute(^^FieldMirror, {mtype}));
+        }
     }
     return std::meta::substitute(^^std::tuple, slot_types);
 }
@@ -106,6 +124,8 @@ struct FieldMirror {
             using SlotT = std::remove_cvref_t<decltype(slot)>;
             if constexpr (NestedMirrorSlot<SlotT>) {
                 slot.sync_from(v.[:m:]);
+            } else if constexpr (is_hidden_slot_v<SlotT>) {
+                slot.value.set(v.[:m:]);
             } else {
                 slot.name.set(Label<std::string>{std::string(std::meta::identifier_of(m))});
                 slot.value.set(v.[:m:]);
@@ -139,6 +159,8 @@ struct FieldMirror {
             using SlotT = std::remove_cvref_t<decltype(slot)>;
             if constexpr (NestedMirrorSlot<SlotT>) {
                 slot.for_each_leaf(fn);
+            } else if constexpr (is_hidden_slot_v<SlotT>) {
+                // invisible -- no widget exists for it, so it can never receive a local edit.
             } else {
                 fn(slot.value);
             }
@@ -146,7 +168,14 @@ struct FieldMirror {
     }
 
     void view(prism::app::WidgetTree::ViewBuilder& vb) {
-        std::apply([&](auto&... s) { vb.vstack(s...); }, slots);
+        static constexpr auto members = std::define_static_array(
+            std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
+        template for (constexpr auto i : std::views::iota(std::size_t{0}, members.size())) {
+            using SlotT = std::remove_cvref_t<decltype(std::get<i>(slots))>;
+            if constexpr (!is_hidden_slot_v<SlotT>) {
+                vb.component(std::get<i>(slots));
+            }
+        }
     }
 };
 
