@@ -83,6 +83,14 @@ public:
             current_parent().children.push_back(node_leaf(field, tree_.next_id_));
         }
 
+        // Renders like widget(Field<T>&) but without focus/input wiring --
+        // for prism::inspector's [[=prism::inspector::readonly]] annotation.
+        template <typename T>
+        void widget_readonly(Field<T>& field) {
+            placed_.insert(&field);
+            current_parent().children.push_back(node_readonly_leaf<T>(field, tree_.next_id_));
+        }
+
         template <typename T>
         void widget(Derived<T>& derived) {
             placed_.insert(&derived);
@@ -957,6 +965,14 @@ private:
         static constexpr auto members = std::define_static_array(
             std::meta::nonstatic_data_members_of(
                 ^^Model, std::meta::access_context::unchecked()));
+        // Model can be a class-template specialization reached through a deduced function-
+        // template parameter (e.g. LeafSlot<M, ReadOnly>) -- on this reflection implementation
+        // such a ^^Model reports has_identifier() == false, and identifier_of() would throw as
+        // a consteval call. Fall back to a placeholder rather than crash the build; this is a
+        // debug-only diagnostic string, not something callers parse. See the analogous
+        // Shared<T>& -> Shared<T>* workaround in inspector.hpp for the same underlying bug.
+        static constexpr std::string_view model_name = std::meta::has_identifier(^^Model)
+            ? std::meta::identifier_of(^^Model) : std::string_view{"<anonymous>"};
         template for (constexpr auto m : members) {
             auto& member = model.[:m:];
             using M = std::remove_cvref_t<decltype(member)>;
@@ -965,8 +981,8 @@ private:
                     std::fprintf(stderr, "[prism] warning: Field '%.*s' in %.*s not placed by view()\n",
                         static_cast<int>(std::meta::identifier_of(m).size()),
                         std::meta::identifier_of(m).data(),
-                        static_cast<int>(std::meta::identifier_of(^^Model).size()),
-                        std::meta::identifier_of(^^Model).data());
+                        static_cast<int>(model_name.size()),
+                        model_name.data());
                 }
             }
         }

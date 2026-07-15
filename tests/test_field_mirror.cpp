@@ -199,4 +199,31 @@ TEST_CASE("section inserts one extra header widget into the generated tree") {
     // voltage(2) + [header(1) + volume(2)] + enabled(2) = 7
     CHECK(tree.leaf_count() == 7);
 }
+
+struct DeviceStateWithReadonly {
+    [[=prism::inspector::readonly]] std::string device_id;
+    float voltage;
+};
+
+TEST_CASE("readonly routes the member to LeafSlot<M, true>") {
+    using Tup = prism::inspector::FieldMirrorTuple<DeviceStateWithReadonly>;
+    static_assert(std::is_same_v<std::tuple_element_t<0, Tup>,
+                                  prism::inspector::LeafSlot<std::string, true>>);
+    static_assert(std::is_same_v<std::tuple_element_t<1, Tup>,
+                                  prism::inspector::LeafSlot<float, false>>);
+
+    // Data still flows through a readonly slot exactly like any other leaf --
+    // "readonly" only changes how it renders, not whether it holds a value.
+    prism::inspector::FieldMirror<DeviceStateWithReadonly> mirror;
+    mirror.sync_from(DeviceStateWithReadonly{"dev-42", 3.3f});
+    CHECK(std::get<0>(mirror.slots).value.get() == "dev-42");
+}
+
+TEST_CASE("readonly still produces the same leaf count as an editable member") {
+    prism::inspector::FieldMirror<DeviceStateWithReadonly> mirror;
+    mirror.sync_from(DeviceStateWithReadonly{"dev-42", 3.3f});
+    prism::WidgetTree tree(mirror);
+    // device_id (name+value=2) + voltage (name+value=2) = 4
+    CHECK(tree.leaf_count() == 4);
+}
 #endif // __cpp_impl_reflection

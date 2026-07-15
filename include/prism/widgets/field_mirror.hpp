@@ -67,11 +67,18 @@ consteval std::string_view extract_string_annotation() {
 template <typename T>
 concept MirrorLeaf = Numeric<T> || StringLike<T> || ScopedEnum<T>;
 
-// One labeled row: a static name caption + the live editable value.
-template <typename M>
+// One labeled row: a static name caption + the live value. ReadOnly=true
+// renders the value without focus/input wiring ([[=prism::inspector::readonly]]).
+template <typename M, bool ReadOnly = false>
 struct LeafSlot {
     Field<Label<std::string>> name{};
     Field<M> value{};
+
+    void view(prism::app::WidgetTree::ViewBuilder& vb) {
+        vb.widget(name);
+        if constexpr (ReadOnly) vb.widget_readonly(value);
+        else vb.widget(value);
+    }
 };
 
 // A member excluded from rendering ([[=prism::inspector::skip]]). Still
@@ -106,8 +113,13 @@ consteval std::meta::info field_mirror_tuple_info() {
         if constexpr (has_annotation<m, decltype(skip)>()) {
             slot_types.push_back(std::meta::substitute(^^HiddenSlot, {mtype}));
         } else if constexpr (MirrorLeaf<M>) {
-            slot_types.push_back(std::meta::substitute(^^LeafSlot, {mtype}));
+            constexpr bool ro = has_annotation<m, decltype(readonly)>();
+            slot_types.push_back(std::meta::substitute(
+                ^^LeafSlot, {mtype, std::meta::reflect_constant(ro)}));
         } else {
+            static_assert(!has_annotation<m, decltype(readonly)>(),
+                "[[=prism::inspector::readonly]] is only supported on leaf members "
+                "(numeric, string-like, or scoped enum) -- not on nested structs");
             slot_types.push_back(std::meta::substitute(^^FieldMirror, {mtype}));
         }
     }
