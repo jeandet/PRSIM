@@ -93,4 +93,45 @@ TEST_CASE("Local edit followed by remote drain settles without oscillating") {
     tree.drain_shared();
     CHECK(calls == 0);
 }
+
+TEST_CASE("Multi-field remote update does not echo torn intermediate values") {
+    prism::Shared<DeviceState> source{DeviceState{1.f, 1, false}};
+    prism::inspector::Inspector<DeviceState> inspector(source);
+    prism::WidgetTree tree(inspector);
+    tree.drain_shared(); // clear any initial pending state
+
+    // Track calls to source's on_change to verify no echo writes occur during sync
+    int change_calls = 0;
+    auto conn = source.on_change().connect([&](const DeviceState&) { ++change_calls; });
+
+    // Remote update: set all three fields at once
+    DeviceState new_state{5.5f, 42, true};
+    source.set(new_state);
+
+    // Before drain, mirror not yet synced
+    CHECK(std::get<0>(inspector.mirror().slots).value.get() == doctest::Approx(1.f));
+    CHECK(std::get<1>(inspector.mirror().slots).value.get() == 1);
+    CHECK(std::get<2>(inspector.mirror().slots).value.get() == false);
+
+    // Drain: sync_from sets each field one at a time, but syncing_ guard prevents
+    // any push_local() calls, so no echo writes occur
+    tree.drain_shared();
+
+    // Mirror is now synced to the exact remote value
+    CHECK(std::get<0>(inspector.mirror().slots).value.get() == doctest::Approx(5.5f));
+    CHECK(std::get<1>(inspector.mirror().slots).value.get() == 42);
+    CHECK(std::get<2>(inspector.mirror().slots).value.get() == true);
+
+    // Source still holds the exact value (no torn intermediate updates)
+    DeviceState final = source.get();
+    CHECK(final.voltage == doctest::Approx(5.5f));
+    CHECK(final.mode == 42);
+    CHECK(final.enabled == true);
+
+    // Should be exactly one on_change call: the initial remote update.
+    // With the syncing_ guard, no echo writes occurred during the sync,
+    // so no additional calls. Without the fix, there would be N+1 calls
+    // (1 initial + 3 echo writes from changing 3 fields).
+    CHECK(change_calls == 1);
+}
 #endif // __cpp_impl_reflection

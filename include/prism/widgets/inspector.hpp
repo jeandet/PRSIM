@@ -29,7 +29,11 @@ struct Inspector {
         mirror_.for_each_leaf([this](auto& field) {
             field.observe([this](const auto&) { push_local(); });
         });
-        source_->observe([this](const T& v) { mirror_.sync_from(v); });
+        source_->observe([this](const T& v) {
+            syncing_ = true;
+            mirror_.sync_from(v);
+            syncing_ = false;
+        });
     }
 
     Inspector(const Inspector&) = delete;
@@ -47,8 +51,12 @@ struct Inspector {
 private:
     Shared<T>* source_;
     FieldMirror<T> mirror_;
+    bool syncing_ = false;
 
-    void push_local() { source_->set(mirror_.build()); }
+    void push_local() {
+        if (syncing_) return;
+        source_->set(mirror_.build());
+    }
 };
 
 } // namespace prism::inspector
