@@ -5,6 +5,7 @@
 #include <prism/core/fixed_string.hpp>
 #include <prism/ui/delegate.hpp>
 
+#include <array>
 #include <tuple>
 #include <type_traits>
 #include <vector>
@@ -90,6 +91,11 @@ concept NestedMirrorSlot = requires(T& t) { t.slots; };
 template <typename T> struct FieldMirror;
 
 template <typename T>
+consteval std::size_t field_mirror_member_count() {
+    return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
+}
+
+template <typename T>
 consteval std::meta::info field_mirror_tuple_info() {
     std::vector<std::meta::info> slot_types;
     static constexpr auto members = std::define_static_array(
@@ -114,6 +120,20 @@ using FieldMirrorTuple = [: field_mirror_tuple_info<T>() :];
 template <typename T>
 struct FieldMirror {
     FieldMirrorTuple<T> slots;
+    std::array<Field<Label<std::string>>, field_mirror_member_count<T>()> section_headers{};
+
+    FieldMirror() {
+        static constexpr auto members = std::define_static_array(
+            std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
+        std::size_t idx = 0;
+        template for (constexpr auto m : members) {
+            constexpr auto title = extract_string_annotation<m, section_t>();
+            if constexpr (!title.empty()) {
+                section_headers[idx].set(Label<std::string>{std::string(title)});
+            }
+            ++idx;
+        }
+    }
 
     void sync_from(const T& v) {
         static constexpr auto members = std::define_static_array(
@@ -176,8 +196,13 @@ struct FieldMirror {
         static constexpr auto members = std::define_static_array(
             std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
         template for (constexpr auto i : std::views::iota(std::size_t{0}, members.size())) {
+            constexpr auto m = members[i];
             using SlotT = std::remove_cvref_t<decltype(std::get<i>(slots))>;
             if constexpr (!is_hidden_slot_v<SlotT>) {
+                constexpr auto title = extract_string_annotation<m, section_t>();
+                if constexpr (!title.empty()) {
+                    vb.widget(section_headers[i]);
+                }
                 vb.component(std::get<i>(slots));
             }
         }

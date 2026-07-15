@@ -176,4 +176,27 @@ TEST_CASE("label overrides the name caption instead of using identifier_of") {
     CHECK(std::get<0>(mirror.slots).name.get().value == "Sample Rate (Hz)");
     CHECK(std::get<1>(mirror.slots).name.get().value == "enabled"); // unannotated: falls back to identifier_of
 }
+
+struct DeviceStateWithSection {
+    float voltage;
+    [[=prism::inspector::section<"Audio">]] float volume;
+    bool enabled;
+};
+
+TEST_CASE("section stores a header title at the annotated member's index") {
+    prism::inspector::FieldMirror<DeviceStateWithSection> mirror;
+    mirror.sync_from(DeviceStateWithSection{1.f, 2.f, true});
+
+    CHECK(mirror.section_headers[0].get().value.empty());
+    CHECK(mirror.section_headers[1].get().value == "Audio");
+    CHECK(mirror.section_headers[2].get().value.empty());
+}
+
+TEST_CASE("section inserts one extra header widget into the generated tree") {
+    prism::inspector::FieldMirror<DeviceStateWithSection> mirror;
+    mirror.sync_from(DeviceStateWithSection{1.f, 2.f, true});
+    prism::WidgetTree tree(mirror);
+    // voltage(2) + [header(1) + volume(2)] + enabled(2) = 7
+    CHECK(tree.leaf_count() == 7);
+}
 #endif // __cpp_impl_reflection
