@@ -226,4 +226,26 @@ TEST_CASE("readonly still produces the same leaf count as an editable member") {
     // device_id (name+value=2) + voltage (name+value=2) = 4
     CHECK(tree.leaf_count() == 4);
 }
+
+struct DeviceStateReadonlyFocus {
+    // bool, not std::string/float: Widget<bool>::focus_policy is tab_and_click by default
+    // (delegate.hpp), so forcing it through node_readonly_leaf's focus_policy::none is the
+    // only thing standing between "focusable" and "not" -- this is what makes the test below
+    // discriminate. (std::string/float are Widget<T>::focus_policy == none even when NOT
+    // readonly, so a readonly member of those types can't tell node_readonly_leaf and
+    // node_leaf apart via focus_order.)
+    [[=prism::inspector::readonly]] bool locked;
+    bool armed;
+};
+
+TEST_CASE("readonly excludes the member from focus order, editable member stays focusable") {
+    prism::inspector::FieldMirror<DeviceStateReadonlyFocus> mirror;
+    mirror.sync_from(DeviceStateReadonlyFocus{true, true});
+    prism::WidgetTree tree(mirror);
+    // locked is readonly (node_readonly_leaf forces focus_policy::none) and its name
+    // caption is a Label (also none). armed is a plain editable bool, which IS focusable
+    // (Widget<bool>::focus_policy == tab_and_click). Only armed's value widget should be
+    // focusable.
+    CHECK(tree.focus_order().size() == 1);
+}
 #endif // __cpp_impl_reflection

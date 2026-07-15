@@ -155,6 +155,8 @@ struct FieldMirror {
             auto& slot = std::get<i>(slots);
             using SlotT = std::remove_cvref_t<decltype(slot)>;
             if constexpr (NestedMirrorSlot<SlotT>) {
+                // label/readonly are no-ops here: a nested FieldMirror<M> has no caption
+                // field of its own to override and no single leaf widget to make read-only.
                 slot.sync_from(v.[:m:]);
             } else if constexpr (is_hidden_slot_v<SlotT>) {
                 slot.value.set(v.[:m:]);
