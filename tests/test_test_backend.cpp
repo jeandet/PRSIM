@@ -66,3 +66,21 @@ TEST_CASE("TestBackend works through Backend wrapper") {
     CHECK(std::holds_alternative<prism::MouseMove>(received[0]));
     CHECK(std::holds_alternative<prism::WindowClose>(received[1]));
 }
+
+TEST_CASE("TestBackend::request_window returns a distinct window from create_window") {
+    prism::TestBackend tb{{}};
+    auto& primary = tb.create_window({});
+    auto* second = tb.request_window({});
+
+    REQUIRE(second != nullptr);
+    CHECK(second->id() != primary.id());
+}
+
+TEST_CASE("TestBackend::request_window can be called before create_window") {
+    prism::TestBackend tb{{}};
+    auto* a = tb.request_window({});
+    auto* b = tb.request_window({});
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+    CHECK(a->id() != b->id());
+}
