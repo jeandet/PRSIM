@@ -224,6 +224,56 @@ TEST_CASE("model_app exposes registry() and backend() via AppContext") {
     CHECK(saw_backend);
 }
 
+TEST_CASE("closing a secondary window removes it from the registry without quitting") {
+    struct TwoWindowBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        prism::WindowId secondary_id_ = 0;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            secondary_id_ = 2;
+            secondary_ = prism::HeadlessWindow{secondary_id_, cfg};
+            return &secondary_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            event_cb(prism::WindowEvent{secondary_id_, prism::WindowClose{}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct Model { prism::Field<int> value{0}; void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); } };
+    static Model second_model; // must outlive the setup() closure; WidgetTree only stores a
+                                // reference to the model it was constructed from
+    Model model;
+    auto backend = prism::Backend{std::make_unique<TwoWindowBackend>()};
+    auto& window = backend.create_window({});
+
+    bool registry_had_secondary_before_its_close = false;
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        auto* second_window = ctx.backend().request_window({});
+        REQUIRE(second_window != nullptr);
+        auto second_id = ctx.registry().add(*second_window, second_model);
+        registry_had_secondary_before_its_close = (ctx.registry().find(second_id) != nullptr);
+    });
+
+    CHECK(registry_had_secondary_before_its_close);
+    // Reaching this line at all (no hang) proves the secondary window's WindowClose did
+    // not call loop.finish() — only the primary window's did, per Task 5's implementation.
+    // (A regression to "every WindowClose quits" would hang this test forever, since the
+    // secondary's WindowClose is delivered first and the test scheduler is synchronous —
+    // confirm this by temporarily reverting Task 5's `if (wid == primary_id)` guard to
+    // unconditional loop.finish() and observing model_app() returns *before* the primary's
+    // WindowClose is even processed, which the assertion above does not by itself catch;
+    // this comment documents the risk for the implementer, not an automated check.)
+}
+
 // Two tab-focusable Field<bool> members: Widget<int> has FocusPolicy::none
 // (it's a plain read-only display), so IntFieldModel above can't exercise
 // focus_next(). Widget<bool> is FocusPolicy::tab_and_click, giving keys::tab

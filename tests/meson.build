@@ -68,6 +68,15 @@ foreach name, src : backend_base_tests
   test(name, exe)
 endforeach
 
+# SoftwareBackend::request_window includes <prism/backends/software_backend.hpp>
+# directly, which pulls in SDL3/SDL3_ttf headers — prism_software_backend_dep only
+# forwards prism_core_dep, so this one needs sdl3_dep/sdl3_ttf_dep explicitly too.
+test_software_backend_request_window = executable('test_software_backend_request_window',
+  files('test_software_backend_request_window.cpp'),
+  dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],
+)
+test('software_backend_request_window', test_software_backend_request_window)
+
 # Tests that need a backend (SDL)
 backend_tests = {
   'app' : files('test_app.cpp'),
