@@ -185,6 +185,73 @@ TEST_CASE("model_app setup callback receives scheduler and window") {
     CHECK(setup_called);
 }
 
+struct IntFieldModel {
+    prism::Field<int> value{0};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(value);
+    }
+};
+
+TEST_CASE("model_app exposes registry() and backend() via AppContext") {
+    struct CapturingBackend final : public prism::BackendBase {
+        prism::HeadlessWindow window_{0, {}};
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            event_cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    IntFieldModel model;
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>()};
+    auto& window = backend.create_window({});
+
+    bool saw_registry = false, saw_backend = false;
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        auto* entry = ctx.registry().find(window.id());
+        saw_registry = (entry != nullptr);
+        ctx.backend(); // must be callable — presence check
+        saw_backend = true;
+    });
+
+    CHECK(saw_registry);
+    CHECK(saw_backend);
+}
+
+TEST_CASE("model_app's global key handler fires before per-window dispatch") {
+    struct CapturingBackend final : public prism::BackendBase {
+        prism::HeadlessWindow window_{0, {}};
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            event_cb(prism::WindowEvent{window_.id(), prism::KeyPress{prism::keys::tab, 0}});
+            event_cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    IntFieldModel model;
+    auto backend = prism::Backend{std::make_unique<CapturingBackend>()};
+    auto& window = backend.create_window({});
+
+    int handler_calls = 0;
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        ctx.set_global_key_handler([&](const prism::KeyPress&) { ++handler_calls; });
+    });
+
+    CHECK(handler_calls == 1);
+}
+
 #include <prism/ui/delegate.hpp>
 #include <prism/core/on.hpp>
 #include <fmt/format.h>

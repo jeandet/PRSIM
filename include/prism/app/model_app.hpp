@@ -24,16 +24,27 @@ class AppContext {
 public:
     using scheduler_type = decltype(std::declval<stdexec::run_loop>().get_scheduler());
 
-    explicit AppContext(scheduler_type s, AnimationClock& c, Window& w)
-        : sched_(s), clock_(&c), window_(&w) {}
+    explicit AppContext(scheduler_type s, AnimationClock& c, Window& w, Backend& b,
+                         WindowRegistry& r, std::function<void(const KeyPress&)>& key_handler)
+        : sched_(s), clock_(&c), window_(&w), backend_(&b), registry_(&r),
+          key_handler_(&key_handler) {}
+
     scheduler_type scheduler() const { return sched_; }
     AnimationClock& clock() { return *clock_; }
     Window& window() { return *window_; }
+    Backend& backend() { return *backend_; }
+    WindowRegistry& registry() { return *registry_; }
+    void set_global_key_handler(std::function<void(const KeyPress&)> fn) {
+        *key_handler_ = std::move(fn);
+    }
 
 private:
     scheduler_type sched_;
     AnimationClock* clock_;
     Window* window_;
+    Backend* backend_;
+    WindowRegistry* registry_;
+    std::function<void(const KeyPress&)>* key_handler_;
 };
 
 template <typename Model>
@@ -46,6 +57,7 @@ void model_app(Backend& backend, Window& window, Model& model,
     WindowId primary_id = registry.add(window, model);
 
     AnimationClock anim_clock;
+    std::function<void(const KeyPress&)> global_key_handler;
     bool tick_scheduled = false;
 
     auto publish_entry = [&](WindowRegistry::Entry& entry, WindowId id) {
@@ -113,8 +125,10 @@ void model_app(Backend& backend, Window& window, Model& model,
                         if (auto* ms = std::get_if<MouseScroll>(&ev))
                             detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
                     }
-                    if (auto* kp = std::get_if<KeyPress>(&ev))
+                    if (auto* kp = std::get_if<KeyPress>(&ev)) {
+                        if (global_key_handler) global_key_handler(*kp);
                         detail::route_key_press(*entry->tree, ev, *kp);
+                    }
                     if (std::get_if<TextInput>(&ev))
                         detail::route_text_input(*entry->tree, ev);
 
@@ -132,7 +146,7 @@ void model_app(Backend& backend, Window& window, Model& model,
         publish_entry(entry, id);
     });
 
-    auto ctx = AppContext(sched, anim_clock, window);
+    auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler);
     if (setup) {
         setup(ctx);
         schedule_tick();
