@@ -314,6 +314,39 @@ TEST_CASE("clicking a VirtualList row invokes on_row_click with the index and va
     CHECK(clicks[1] == std::make_pair(size_t{1}, 200));
 }
 
+TEST_CASE("a stale row closure does not crash if the list shrinks before the next event") {
+    CheckboxListModel model;
+    model.items.push_back({.checked = false, .label = "row 0"});
+    model.items.push_back({.checked = false, .label = "row 1"});
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    // geometry.front() is the VirtualList container's own full-viewport rect,
+    // not a row (see the write-back and on_row_click tests above). The row
+    // leaves are the entries with a small positive height, bound/pushed in
+    // ascending index order.
+    std::vector<prism::WidgetId> row_ids;
+    for (auto& [id, rect] : snap->geometry) {
+        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            row_ids.push_back(id);
+            if (row_ids.size() == 2) break;
+        }
+    }
+    REQUIRE(row_ids.size() == 2);
+    auto row1_id = row_ids[1];
+
+    // Shrink the list out from under the already-bound row 1 closure.
+    model.items.erase(1);
+
+    // Must not crash — the guard inside the write-back closure checks
+    // index < items.size() before writing.
+    tree.dispatch(row1_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+
+    CHECK(model.items.size() == 1);
+}
+
 TEST_CASE("existing .list() calls without on_row_click still compile and work") {
     prism::List<std::string> items;
     items.push_back("unchanged");
