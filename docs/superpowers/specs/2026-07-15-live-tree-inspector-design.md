@@ -10,6 +10,8 @@
 
 Both get their own specs and plans, built and shipped before this one. This spec's "debug → main click highlight" direction (Data flow step 2) depends on fix #2; "main → debug hover highlight" (step 3) does not.
 
+**Further revision (2026-07-16, during sub-project 1's plan-writing):** sub-project 1's spec originally had `model_app()` itself install the Ctrl+Shift+I hotkey and call `attach_secondary_window(..., Model&)` — but that function needs a model to build the second tree from, and sub-project 1 has (by design) no knowledge of `TreeInspectorModel`. Resolution: sub-project 1 now exposes only generic primitives (`AppContext::registry()`, `AppContext::backend()`, `AppContext::set_global_key_handler(fn)`); **this spec now owns the hotkey, the build flag, and the `attach_secondary_window` call**, using those primitives. See the updated "Activation" section below.
+
 ## Problem
 
 PRISM has no way to look inside a running app's widget tree. Diagnosing "why isn't this
@@ -38,25 +40,36 @@ same thread:
 
 - **Main window** — the app's existing `model_app()` pipeline, unchanged except for the two small
   hooks described below.
-- **Debug window** — a second OS window opened via `Backend::create_window()` (already supports
-  multiple windows: `SoftwareBackend` keeps a `std::unordered_map<WindowId, ...>`), running its own
-  `model_app`-style loop over a `prism::debug::TreeInspectorModel`.
+- **Debug window** — a second OS window opened via `ctx.backend().request_window(cfg)` (sub-project
+  1's `BackendBase::request_window`, the cross-thread-safe way to add a window after the loop has
+  started) and registered via `ctx.registry().add(window, tree_inspector_model)` (sub-project 1's
+  `WindowRegistry`, which then automatically routes events to it — see that spec's Data flow).
 - **Correlation glue** — `prism::debug::TreeInspectorController` holds a raw pointer to the main
   `WidgetTree` (both live on the app thread; no ownership transfer) plus the selected/hovered
   `WidgetId`s, and drives the per-tick refresh described in Data flow.
 
 ### Activation
 
-Compiled in by default, dormant until triggered — no app code required:
+Compiled in by default, dormant until triggered — no app code required, using sub-project 1's
+`AppContext::set_global_key_handler` primitive:
 
 - A new meson option, `prism_debug_tools` (`auto` | `enabled` | `disabled`, default `auto` =
   enabled unless `buildtype` is `release`), gates a compile-time define
-  `PRISM_DEBUG_TOOLS_ENABLED`.
-- When defined, `model_app()` installs a hotkey listener (Ctrl+Shift+I) on the input event stream.
-  First press lazily constructs the `TreeInspectorController` (second window + second tree); a
-  second press hides it. When the define is absent, none of this code is compiled — a release build
-  with the option disabled carries zero footprint, not just a dormant hotkey.
-- `meson_options.txt` doesn't exist yet in this repo; this is the first option added to the project.
+  `PRISM_DEBUG_TOOLS_ENABLED`. `meson_options.txt` doesn't exist yet in this repo; this is the first
+  option added to the project.
+- New constants in `namespace prism::input`: `mods::ctrl` (`input_event.hpp` currently only has
+  `mods::shift`) and `keys::i` (no letter keys exist today).
+- When the define is present, `model_app()`'s setup path (guarded by `#ifdef
+  PRISM_DEBUG_TOOLS_ENABLED`, entirely inside `model_app.hpp`, not a separate app-code call) calls
+  `ctx.set_global_key_handler(...)` with a handler that checks for
+  `KeyPress{.key == keys::i, .mods == mods::ctrl | mods::shift}`. First press lazily constructs the
+  `TreeInspectorController` (via `ctx.backend().request_window` + `ctx.registry().add`); a second
+  press removes it (`ctx.registry().remove(id)` + `Window::close()`). When the define is absent,
+  none of this is compiled — a release build with the option disabled carries zero footprint, not
+  just a dormant hotkey. This preserves "zero app code" exactly as originally intended — the
+  difference from the original plan is *where* the wiring lives (inside an `#ifdef` block that's
+  still inside `model_app.hpp`, just calling sub-project 1's public primitives instead of reaching
+  into its internals directly).
 
 ### Components
 
