@@ -1,6 +1,7 @@
 #include <prism/backends/software_backend.hpp>
 #include <prism/ui/window_chrome.hpp>
 
+#include <chrono>
 #include <cmath>
 
 namespace prism::backends {
@@ -36,6 +37,39 @@ Window& SoftwareBackend::create_window(WindowConfig cfg) {
     windows_.emplace(id, std::move(window));
     snapshots_[id]; // default-construct snapshot slot
     return ref;
+}
+
+Window* SoftwareBackend::request_window(WindowConfig cfg) {
+    auto req = std::make_shared<PendingWindowRequest>();
+    req->cfg = cfg;
+    window_requests_.push(req);
+    wake();
+
+    std::unique_lock lock(req->m);
+    req->cv.wait_for(lock, std::chrono::seconds(2), [&] { return req->done; });
+    return req->done ? req->result : nullptr;
+}
+
+void SoftwareBackend::drain_window_requests() {
+    while (auto req_opt = window_requests_.pop()) {
+        auto req = *req_opt;
+        Window* result = nullptr;
+        if (running_.load(std::memory_order_relaxed)) {
+            auto id = ++next_id_;
+            auto win = std::make_unique<SdlWindow>(id, req->cfg);
+            win->ensure_created();
+            SDL_StartTextInput(win->sdl_window());
+            auto [it, _] = windows_.emplace(id, std::move(win));
+            snapshots_[id];
+            result = it->second.get();
+        }
+        {
+            std::lock_guard lock(req->m);
+            req->result = result;
+            req->done = true;
+        }
+        req->cv.notify_one();
+    }
 }
 
 WindowId SoftwareBackend::sdl_id_to_prism_id(uint32_t sdl_window_id) const {
@@ -199,6 +233,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 event_cb(WindowEvent{wid, TextInput{ev.text.text}});
                 break;
             case SDL_EVENT_USER:
+                drain_window_requests();
                 break;
             default:
                 break;
@@ -216,6 +251,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             }
         }
     }
+    drain_window_requests();
 }
 
 void SoftwareBackend::submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) {

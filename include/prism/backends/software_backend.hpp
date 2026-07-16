@@ -2,17 +2,27 @@
 
 #include <prism/app/backend.hpp>
 #include <prism/backends/sdl_window.hpp>
+#include <prism/core/mpsc_queue.hpp>
 
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 #include <unordered_map>
 #include <memory>
 
 namespace prism::backends {
 using namespace prism::app;
 
+struct PendingWindowRequest {
+    WindowConfig cfg;
+    Window* result = nullptr;
+    bool done = false;
+    std::mutex m;
+    std::condition_variable cv;
+};
 
 class SoftwareBackend final : public BackendBase {
 public:
@@ -23,6 +33,7 @@ public:
     SoftwareBackend& operator=(const SoftwareBackend&) = delete;
 
     Window& create_window(WindowConfig cfg) override;
+    Window* request_window(WindowConfig cfg) override;
     void run(std::function<void(const WindowEvent&)> event_cb) override;
     void submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) override;
     void wake() override;
@@ -43,6 +54,9 @@ private:
         std::atomic<std::shared_ptr<const SceneSnapshot>> snapshot;
     };
     std::unordered_map<WindowId, WindowSnapshot> snapshots_;
+
+    prism::core::mpsc_queue<std::shared_ptr<PendingWindowRequest>> window_requests_;
+    void drain_window_requests();
 
     WindowId sdl_id_to_prism_id(uint32_t sdl_window_id) const;
 
