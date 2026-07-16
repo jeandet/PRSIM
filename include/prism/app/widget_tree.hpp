@@ -618,6 +618,8 @@ public:
         return {};
     }
 
+    [[nodiscard]] WidgetId hovered_id() const { return hovered_id_; }
+
     [[nodiscard]] WidgetId focused_id() const { return focused_id_; }
 
     [[nodiscard]] const std::vector<WidgetId>& focus_order() const { return focus_order_; }
@@ -673,6 +675,11 @@ public:
 
     void mark_dirty_by_id(WidgetId id) { set_dirty(id); }
 
+    void set_debug_highlight(std::optional<WidgetId> id) {
+        highlight_id_ = id;
+        mark_dirty_by_id(root_.id);
+    }
+
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
         refresh_dirty(root_);
         materialize_all_virtual_lists(root_);
@@ -709,6 +716,14 @@ public:
         snap->version = version;
         layout_flatten(layout, *snap);
         resolve_clips(*snap);
+        if (highlight_id_) {
+            for (auto& [id, rect] : snap->geometry) {
+                if (id == *highlight_id_) {
+                    snap->overlay.rect_outline(rect, Color::rgba(255, 140, 0), 2.0f);
+                    break;
+                }
+            }
+        }
         return snap;
     }
 
@@ -719,6 +734,7 @@ private:
     WidgetId hovered_id_ = 0;
     WidgetId focused_id_ = 0;
     WidgetId captured_id_ = 0;
+    std::optional<WidgetId> highlight_id_;
     ScrollbarDrag scrollbar_drag_;
     std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;

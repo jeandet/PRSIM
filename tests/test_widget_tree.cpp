@@ -525,3 +525,79 @@ TEST_CASE("canvas depends_on accepts Derived<T>") {
     m.x.set(10);  // triggers doubled recomputation
     CHECK(tree.any_dirty());
 }
+
+TEST_CASE("hovered_id() reflects the currently hovered widget") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto ids = tree.leaf_ids();
+
+    tree.update_hover(ids[0]);
+    CHECK(tree.hovered_id() == ids[0]);
+}
+
+TEST_CASE("hovered_id() is 0 when nothing is hovered") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.hovered_id() == 0);
+}
+
+TEST_CASE("set_debug_highlight injects a RectOutline at the target's rect on the next build_snapshot") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    auto ids = tree.leaf_ids();
+    REQUIRE(!ids.empty());
+    prism::Rect target_rect;
+    for (auto& [id, rect] : snap1->geometry)
+        if (id == ids[0]) target_rect = rect;
+
+    tree.set_debug_highlight(ids[0]);
+    auto snap2 = tree.build_snapshot(400, 300, 2);
+
+    bool found = false;
+    for (auto& cmd : snap2->overlay.commands) {
+        if (auto* ro = std::get_if<prism::RectOutline>(&cmd)) {
+            if (ro->rect.origin.x.raw() == target_rect.origin.x.raw()
+                && ro->rect.origin.y.raw() == target_rect.origin.y.raw())
+                found = true;
+        }
+    }
+    CHECK(found);
+}
+
+TEST_CASE("set_debug_highlight(nullopt) clears the highlight") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+    auto ids = tree.leaf_ids();
+    REQUIRE(!ids.empty());
+
+    tree.set_debug_highlight(ids[0]);
+    auto snap_highlighted = tree.build_snapshot(400, 300, 2);
+    tree.clear_dirty();
+    bool found_when_set = false;
+    for (auto& cmd : snap_highlighted->overlay.commands)
+        if (std::holds_alternative<prism::RectOutline>(cmd)) found_when_set = true;
+    REQUIRE(found_when_set);
+
+    tree.set_debug_highlight(std::nullopt);
+    auto snap_cleared = tree.build_snapshot(400, 300, 3);
+    bool found_when_cleared = false;
+    for (auto& cmd : snap_cleared->overlay.commands)
+        if (std::holds_alternative<prism::RectOutline>(cmd)) found_when_cleared = true;
+    CHECK_FALSE(found_when_cleared);
+}
+
+TEST_CASE("set_debug_highlight with a nonexistent id injects nothing and does not crash") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    tree.set_debug_highlight(999999);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    bool found = false;
+    for (auto& cmd : snap->overlay.commands)
+        if (std::holds_alternative<prism::RectOutline>(cmd)) found = true;
+    CHECK_FALSE(found);
+}
