@@ -332,6 +332,85 @@ TEST_CASE("model_app's global key handler fires before per-window dispatch") {
     CHECK(focus_seen_by_handler == first_id);
 }
 
+TEST_CASE("post-dispatch hook fires once per processed event, regardless of which window") {
+    struct TwoEventBackend final : public prism::BackendBase {
+        prism::HeadlessWindow window_{0, {}};
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            event_cb(prism::WindowEvent{window_.id(), prism::KeyPress{prism::keys::tab, 0}});
+            event_cb(prism::WindowEvent{window_.id(), prism::MouseMove{prism::Point{prism::X{0}, prism::Y{0}}}});
+            event_cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct PostHookModel { prism::Field<int> value{0}; void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); } };
+    PostHookModel model;
+    auto backend = prism::Backend{std::make_unique<TwoEventBackend>()};
+    auto& window = backend.create_window({});
+
+    int hook_calls = 0;
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        ctx.set_post_dispatch_hook([&] { ++hook_calls; });
+    });
+
+    CHECK(hook_calls == 2); // KeyPress and MouseMove each trigger the continuation; WindowClose returns early
+}
+
+TEST_CASE("dirtying a non-event entry via the post-dispatch hook still gets it published") {
+    struct OneEventBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        prism::WindowId secondary_id_ = 0;
+        int submit_count_for_secondary_ = 0;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            secondary_id_ = 2;
+            secondary_ = prism::HeadlessWindow{secondary_id_, cfg};
+            return &secondary_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::tab, 0}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId id, std::shared_ptr<const prism::SceneSnapshot>) override {
+            if (id == secondary_id_) ++submit_count_for_secondary_;
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct DirtyHookModel { prism::Field<int> value{0}; void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); } };
+    static DirtyHookModel second_model;
+    DirtyHookModel model;
+    auto backend_ptr = std::make_unique<OneEventBackend>();
+    auto* raw_backend = backend_ptr.get();
+    auto backend = prism::Backend{std::move(backend_ptr)};
+    auto& window = backend.create_window({});
+
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        auto* second_window = ctx.backend().request_window({});
+        REQUIRE(second_window != nullptr);
+        auto second_id = ctx.registry().add(*second_window, second_model);
+        ctx.set_post_dispatch_hook([&ctx, second_id] {
+            // Simulate the tree inspector marking the debug tree dirty every time something happens.
+            auto* entry = ctx.registry().find(second_id);
+            if (entry) entry->tree->mark_dirty_by_id(entry->tree->root().id);
+        });
+    });
+
+    CHECK(raw_backend->submit_count_for_secondary_ >= 1);
+}
+
 #include <prism/ui/delegate.hpp>
 #include <prism/core/on.hpp>
 #include <fmt/format.h>

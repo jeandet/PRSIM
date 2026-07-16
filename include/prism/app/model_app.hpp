@@ -24,9 +24,10 @@ public:
     using scheduler_type = decltype(std::declval<stdexec::run_loop>().get_scheduler());
 
     explicit AppContext(scheduler_type s, AnimationClock& c, Window& w, Backend& b,
-                         WindowRegistry& r, std::function<void(const KeyPress&)>& key_handler)
+                         WindowRegistry& r, std::function<void(const KeyPress&)>& key_handler,
+                         std::function<void()>& post_dispatch_hook)
         : sched_(s), clock_(&c), window_(&w), backend_(&b), registry_(&r),
-          key_handler_(&key_handler) {}
+          key_handler_(&key_handler), post_dispatch_hook_(&post_dispatch_hook) {}
 
     scheduler_type scheduler() const { return sched_; }
     AnimationClock& clock() { return *clock_; }
@@ -36,6 +37,9 @@ public:
     void set_global_key_handler(std::function<void(const KeyPress&)> fn) {
         *key_handler_ = std::move(fn);
     }
+    void set_post_dispatch_hook(std::function<void()> fn) {
+        *post_dispatch_hook_ = std::move(fn);
+    }
 
 private:
     scheduler_type sched_;
@@ -44,6 +48,7 @@ private:
     Backend* backend_;
     WindowRegistry* registry_;
     std::function<void(const KeyPress&)>* key_handler_;
+    std::function<void()>* post_dispatch_hook_;
 };
 
 template <typename Model>
@@ -57,6 +62,7 @@ void model_app(Backend& backend, Window& window, Model& model,
 
     AnimationClock anim_clock;
     std::function<void(const KeyPress&)> global_key_handler;
+    std::function<void()> post_dispatch_hook;
     bool tick_scheduled = false;
 
     auto publish_entry = [&](WindowId id, WindowRegistry::Entry& entry) {
@@ -132,8 +138,11 @@ void model_app(Backend& backend, Window& window, Model& model,
                         detail::route_text_input(*entry->tree, ev);
 
                     entry->tree->drain_shared();
-                    if (entry->tree->any_dirty() || needs_publish)
-                        publish_entry(wid, *entry);
+                    if (post_dispatch_hook) post_dispatch_hook();
+                    if (needs_publish) publish_entry(wid, *entry);
+                    registry.for_each_dirty([&](WindowId id, WindowRegistry::Entry& e) {
+                        publish_entry(id, e);
+                    });
                     schedule_tick();
                 })
             );
@@ -146,7 +155,7 @@ void model_app(Backend& backend, Window& window, Model& model,
     });
 
     // AppContext must outlive setup — callbacks captured during setup use it.
-    auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler);
+    auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook);
     if (setup) {
         setup(ctx);
         schedule_tick();
