@@ -53,6 +53,21 @@ TEST_CASE("IntScalar arithmetic: ItemCount + ItemCount = ItemCount") {
 
 #include <prism/app/widget_tree.hpp>
 
+// Row leaves are the geometry entries with a small positive height (the
+// VirtualList container's own entry is a full-viewport rect); this is the
+// scan every row-dispatch test below relies on to resolve row ids safely
+// (positional geometry[N] indexing is unreliable — see prior tasks).
+std::vector<prism::WidgetId> row_ids(const prism::SceneSnapshot& snap, size_t count) {
+    std::vector<prism::WidgetId> ids;
+    for (auto& [id, rect] : snap.geometry) {
+        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            ids.push_back(id);
+            if (ids.size() == count) break;
+        }
+    }
+    return ids;
+}
+
 TEST_CASE("VirtualListState default construction") {
     prism::VirtualListState state;
     CHECK(state.item_count.raw() == 0);
@@ -234,18 +249,9 @@ TEST_CASE("clicking a VirtualList row writes the mutation back to the source Lis
     tree.clear_dirty();
 
     REQUIRE(!snap->geometry.empty());
-    // The VirtualList container itself is geometry.front() (full viewport rect);
-    // the actual row leaf is the child with a small, positive height — same
-    // pattern used by the other VirtualList tests above (e.g. "scroll_at works
-    // on VirtualList").
-    prism::WidgetId row_id = 0;
-    for (auto& [id, rect] : snap->geometry) {
-        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
-            row_id = id;
-            break;
-        }
-    }
-    REQUIRE(row_id != 0);
+    auto ids = row_ids(*snap, 1);
+    REQUIRE(!ids.empty());
+    auto row_id = ids[0];
 
     tree.dispatch(row_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
 
@@ -292,22 +298,13 @@ TEST_CASE("clicking a VirtualList row invokes on_row_click with the index and va
     auto snap = tree.build_snapshot(400, 300, 1);
     tree.clear_dirty();
 
-    // geometry.front() is the VirtualList container's own full-viewport rect
-    // (established by the write-back test above), not a row. The actual row
-    // leaves are the entries with a small positive height; layout_flatten
-    // binds/pushes rows in ascending index order, so the first two such
-    // entries correspond to items[0] and items[1] respectively.
-    std::vector<prism::WidgetId> row_ids;
-    for (auto& [id, rect] : snap->geometry) {
-        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
-            row_ids.push_back(id);
-            if (row_ids.size() == 2) break;
-        }
-    }
-    REQUIRE(row_ids.size() == 2);
+    // layout_flatten binds/pushes rows in ascending index order, so the first
+    // two row ids correspond to items[0] and items[1] respectively.
+    auto ids = row_ids(*snap, 2);
+    REQUIRE(ids.size() == 2);
 
-    tree.dispatch(row_ids[0], prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
-    tree.dispatch(row_ids[1], prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+    tree.dispatch(ids[0], prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+    tree.dispatch(ids[1], prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
 
     REQUIRE(clicks.size() == 2);
     CHECK(clicks[0] == std::make_pair(size_t{0}, 100));
@@ -323,19 +320,9 @@ TEST_CASE("a stale row closure does not crash if the list shrinks before the nex
     auto snap = tree.build_snapshot(400, 300, 1);
     tree.clear_dirty();
 
-    // geometry.front() is the VirtualList container's own full-viewport rect,
-    // not a row (see the write-back and on_row_click tests above). The row
-    // leaves are the entries with a small positive height, bound/pushed in
-    // ascending index order.
-    std::vector<prism::WidgetId> row_ids;
-    for (auto& [id, rect] : snap->geometry) {
-        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
-            row_ids.push_back(id);
-            if (row_ids.size() == 2) break;
-        }
-    }
-    REQUIRE(row_ids.size() == 2);
-    auto row1_id = row_ids[1];
+    auto ids = row_ids(*snap, 2);
+    REQUIRE(ids.size() == 2);
+    auto row1_id = ids[1];
 
     // Shrink the list out from under the already-bound row 1 closure.
     model.items.erase(1);
@@ -345,6 +332,34 @@ TEST_CASE("a stale row closure does not crash if the list shrinks before the nex
     tree.dispatch(row1_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
 
     CHECK(model.items.size() == 1);
+}
+
+TEST_CASE("a stale row closure does not invoke on_row_click if the list shrinks before the next event") {
+    ClickRowListModel model;
+    model.items.push_back({.id = 100});
+    model.items.push_back({.id = 200});
+
+    std::vector<std::pair<size_t, int>> clicks;
+    model.on_row_click = [&](size_t index, const ClickRow& row) {
+        clicks.emplace_back(index, row.id);
+    };
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    auto ids = row_ids(*snap, 2);
+    REQUIRE(ids.size() == 2);
+    auto row1_id = ids[1];
+
+    // Shrink the list out from under the already-bound row 1 closure.
+    model.items.erase(1);
+
+    // Must not crash, and must not invoke on_row_click for the erased index —
+    // the guard inside the click connection checks index < items.size().
+    tree.dispatch(row1_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+
+    CHECK(clicks.empty());
 }
 
 TEST_CASE("existing .list() calls without on_row_click still compile and work") {

@@ -222,6 +222,9 @@ public:
                         })
                     );
                     if (on_row_click) {
+                        // Fires synchronously with a live items[index] ref during dispatch --
+                        // a handler that mutates the list (e.g. erasing this row) risks it
+                        // dangling mid-call; capture index/copy rather than mutate through it.
                         node.connections.push_back(
                             node.on_input.connect([on_row_click, &items, index](const InputEvent& ev) {
                                 auto* mb = std::get_if<MouseButton>(&ev);
