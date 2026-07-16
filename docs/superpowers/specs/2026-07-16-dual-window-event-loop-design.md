@@ -125,20 +125,24 @@ a hot path.
   a circular include (`window_registry.hpp` needs `WidgetTree`; `model_app.hpp` needs
   `WindowRegistry`).
 
-- **`BackendBase::request_window(WindowConfig) -> WindowId`** — new **virtual with a default body**
-  (`{ return create_window(std::move(cfg)).id(); }`), **not pure**. Ten-plus `BackendBase`
-  subclasses exist across the test suite (`test_ui.cpp`, `test_model_app.cpp`); a pure virtual would
-  force every one of them to add a matching override even though none of them need it. Only
-  `SoftwareBackend` (real cross-thread creation) and `TestBackend` (needs genuine multi-window
-  storage for headless registry tests) override it; every other subclass inherits the default
-  unchanged.
+- **`BackendBase::request_window(WindowConfig) -> Window*`** — new **virtual with a default body**
+  (`{ return &create_window(std::move(cfg)); }`), **not pure**. Returns a pointer, not a `WindowId`
+  — `WindowRegistry::add` needs a `Window&` to store, and returning only an id with no way to get
+  back to the window object it names would force every caller to invent its own lookup. `nullptr`
+  means failure. Ten-plus `BackendBase` subclasses exist across the test suite (`test_ui.cpp`,
+  `test_model_app.cpp`); a pure virtual would force every one of them to add a matching override
+  even though none of them need it. Only `SoftwareBackend` (real cross-thread creation) and
+  `TestBackend` (needs genuine multi-window storage for headless registry tests) override it; every
+  other subclass inherits the default unchanged.
 
 - **`SoftwareBackend::request_window`** override — the cross-thread mechanism: a new
   `mpsc_queue<std::shared_ptr<PendingWindowRequest>> window_requests_` member
-  (`PendingWindowRequest{WindowConfig cfg; WindowId result_id = 0; bool done = false; std::mutex m;
+  (`PendingWindowRequest{WindowConfig cfg; Window* result = nullptr; bool done = false; std::mutex m;
   std::condition_variable cv;}`). `request_window` pushes a request, calls `wake()`, then
   `cv.wait_for(lock, 2s, [&]{ return req->done; })` — a *bounded* wait (not indefinite), returning
-  the sentinel `0` on timeout as well as on explicit failure. The `SDL_EVENT_USER` case in `run()`
+  `nullptr` on timeout as well as on explicit failure. The returned pointer is stable for the
+  backend's lifetime — it points into `SoftwareBackend::windows_`, the same map `create_window`
+  already returns references into. The `SDL_EVENT_USER` case in `run()`
   (currently a no-op, `software_backend.cpp:201-202`) drains the queue and, for each request still
   live (`running_.load()`), performs the same steps already done for the initial window set at
   startup (`ensure_created()` + `SDL_StartTextInput`, `software_backend.cpp:59-62`) before signaling
@@ -150,7 +154,8 @@ a hot path.
   (set by `create_window`, used by `run()` exactly as `window_.id()` was — preserves existing test
   behavior byte-for-byte since every current test calls `create_window` exactly once). Both
   `create_window` and `request_window` insert into `windows_`, synchronously (`TestBackend` has no
-  real background thread, so there's no threading concern to solve here — just storage).
+  real background thread, so there's no threading concern to solve here — just storage);
+  `request_window` returns `&windows_[id]`.
 
 ### Data flow
 
@@ -171,9 +176,7 @@ a hot path.
 ### Error handling
 
 - `request_window` failure (a platform that can't open a second window, or a shutdown race) returns
-  the sentinel invalid id `0` (matching the existing "unassigned id" convention, e.g. `WidgetId
-  next_id_ = 1` in `widget_tree.hpp:701`) rather than throwing. Callers must check for `0` before
-  calling `registry.add(...)`.
+  `nullptr` rather than throwing. Callers must check for `nullptr` before calling `registry.add(...)`.
 - The bounded (2s) wait in `SoftwareBackend::request_window` means a caller can never hang forever,
   even in an edge case not otherwise anticipated (e.g. the backend thread having already exited its
   loop for an unrelated reason at the exact moment of the request).
