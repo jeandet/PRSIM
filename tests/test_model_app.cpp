@@ -712,4 +712,53 @@ TEST_CASE("Ctrl+Shift+I attaches a debug window; pressing it again removes it") 
     // (close_window called once) — proving both the attach and the teardown path ran.
     CHECK(raw->close_calls_ == 1);
 }
+
+// Regression test for a heap-use-after-free: if the app quits while the debug inspector
+// is still attached (a single Ctrl+Shift+I press, no matching second press to detach),
+// model_app()'s locals destruct in reverse declaration order. The registry-owned debug
+// WidgetTree holds Connections into debug_model's SenderHubs, so debug_model must be
+// declared (and therefore destructed) after registry — otherwise registry's teardown
+// disconnects Connections into an already-freed debug_model. This test only needs to
+// complete without crashing/hanging to prove the fix; the earlier round-trip test above
+// (attach then detach) never exercises this path because the debug entry is already
+// removed from registry before shutdown.
+TEST_CASE("quitting while the debug inspector is still attached does not use-after-free") {
+    struct QuitWhileAttachedBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        prism::WindowId secondary_id_ = 0;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            secondary_id_ = 2;
+            secondary_ = prism::HeadlessWindow{secondary_id_, cfg};
+            return &secondary_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            auto mods = static_cast<uint16_t>(prism::mods::ctrl | prism::mods::shift);
+            // Single hotkey press attaches the inspector; no second press to detach it.
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct QuitWhileAttachedModel {
+        prism::Field<int> value{0};
+        void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); }
+    };
+    QuitWhileAttachedModel model;
+    auto backend = prism::Backend{std::make_unique<QuitWhileAttachedBackend>()};
+    auto& window = backend.create_window({});
+
+    // Reaching this line at all (no crash, no hang) is the assertion: the debug inspector's
+    // WidgetTree — and its Connections into debug_model's SenderHubs — got torn down cleanly
+    // by registry's destructor before debug_model itself was destroyed.
+    prism::model_app(backend, window, model, nullptr);
+}
 #endif

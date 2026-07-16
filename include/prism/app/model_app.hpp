@@ -61,6 +61,18 @@ void model_app(Backend& backend, Window& window, Model& model,
     stdexec::run_loop loop;
     auto sched = loop.get_scheduler();
 
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+    // Declared before `registry` so it outlives the registry-owned debug WidgetTree:
+    // that tree holds Connections into debug_model's SenderHubs, and locals destruct in
+    // reverse declaration order. If debug_model destructed before registry (i.e. were
+    // declared after it), quitting while the inspector is still attached would leave
+    // registry's teardown disconnecting Connections into an already-freed debug_model —
+    // a use-after-free. See the "quit while still attached" regression test below.
+    debug::TreeInspectorModel debug_model;
+    std::optional<WindowId> debug_window_id;
+    std::optional<debug::TreeInspectorController> debug_controller;
+#endif
+
     WindowRegistry registry;
     WindowId primary_id = registry.add(window, model);
 
@@ -168,10 +180,6 @@ void model_app(Backend& backend, Window& window, Model& model,
     // app's own setup() calling set_global_key_handler/set_post_dispatch_hook
     // below would silently override this wiring. Known limitation, not solved
     // here (see commit message).
-    debug::TreeInspectorModel debug_model;
-    std::optional<WindowId> debug_window_id;
-    std::optional<debug::TreeInspectorController> debug_controller;
-
     ctx.set_global_key_handler([&](const KeyPress& kp) {
         if (kp.key != keys::i || (kp.mods & (mods::ctrl | mods::shift)) != (mods::ctrl | mods::shift))
             return;
