@@ -9,6 +9,7 @@
 #include <prism/core/shared.hpp>
 #include <prism/input/input_event.hpp>
 #include <prism/ui/node.hpp>
+#include <prism/core/reflect.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,9 @@ using namespace prism::input;
 
 struct WidgetNode {
     WidgetId id = 0;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+    std::string debug_name;
+#endif
     bool dirty = false;
     bool is_container = false;
     FocusPolicy focus_policy = FocusPolicy::none;
@@ -115,6 +119,19 @@ Node node_leaf(Field<T>& field, WidgetId& next_id) {
     Node n;
     n.id = next_id++;
     n.is_leaf = true;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#if __cpp_impl_reflection
+    // has_identifier()/identifier_of() must be bound together into a single
+    // static constexpr constant expression (mirroring check_unplaced_fields'
+    // model_name idiom below) -- as a runtime ternary, each consteval call is
+    // an independent immediate invocation evaluated regardless of the branch
+    // taken, so identifier_of(^^T) would throw for a T without an identifier
+    // (e.g. int) even though has_identifier(^^T) guards it at "runtime".
+    static constexpr std::string_view type_name = std::meta::has_identifier(^^T)
+        ? std::meta::identifier_of(^^T) : std::string_view{};
+    n.debug_name = std::string(type_name);
+#endif
+#endif
 
     n.build_widget = [&field](WidgetNode& wn) {
         if constexpr (is_widget_v<T>) {
@@ -162,6 +179,16 @@ Node node_readonly_leaf(Observable& obs, WidgetId& next_id) {
     Node n;
     n.id = next_id++;
     n.is_leaf = true;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#if __cpp_impl_reflection
+    // See node_leaf's identical comment: has_identifier()/identifier_of() must
+    // be bound together into one static constexpr constant expression to get
+    // short-circuit behavior for T without an identifier.
+    static constexpr std::string_view type_name = std::meta::has_identifier(^^T)
+        ? std::meta::identifier_of(^^T) : std::string_view{};
+    n.debug_name = std::string(type_name);
+#endif
+#endif
 
     n.build_widget = [&obs](WidgetNode& wn) {
         wn.focus_policy = FocusPolicy::none;

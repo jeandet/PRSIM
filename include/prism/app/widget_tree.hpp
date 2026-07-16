@@ -780,6 +780,9 @@ private:
         wn.id = node.id;
         wn.layout_kind = node.layout_kind;
         wn.theme = &theme_;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+        wn.debug_name = node.debug_name;
+#endif
         if (node.is_leaf) {
             wn.is_container = false;
             if (node.build_widget)
@@ -955,7 +958,11 @@ private:
                 if constexpr (is_state_v<M>) {
                     // invisible observable — no widget
                 } else if constexpr (is_field_v<M>) {
-                    root.children.push_back(node_leaf(member, next_id_));
+                    auto leaf = node_leaf(member, next_id_);
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+                    leaf.debug_name = std::string(std::meta::identifier_of(m));
+#endif
+                    root.children.push_back(std::move(leaf));
                 } else if constexpr (is_derived_v<M>) {
                     using Inner = std::remove_cvref_t<decltype(member.get())>;
                     root.children.push_back(node_readonly_leaf<Inner>(member, next_id_));

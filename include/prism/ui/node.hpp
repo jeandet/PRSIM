@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace prism::ui {
@@ -21,6 +22,9 @@ struct TabsState;
 struct Node {
     WidgetId id = 0;
     bool is_leaf = false;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+    std::string debug_name;
+#endif
     LayoutKind layout_kind = LayoutKind::Default;
     std::vector<Node> children;
 

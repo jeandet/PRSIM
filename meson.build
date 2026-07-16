@@ -17,6 +17,16 @@ if cpp.compiles('int main() {}', args : ['-freflection'], name : '-freflection s
   add_project_arguments('-freflection', language : 'cpp')
 endif
 
+debug_tools_opt = get_option('prism_debug_tools')
+if debug_tools_opt.auto()
+  debug_tools_enabled = get_option('buildtype') != 'release'
+else
+  debug_tools_enabled = debug_tools_opt.enabled()
+endif
+if debug_tools_enabled
+  add_project_arguments('-DPRISM_DEBUG_TOOLS_ENABLED', language : 'cpp')
+endif
+
 prism_inc = include_directories('include')
 
 subdir('src')

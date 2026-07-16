@@ -40,10 +40,12 @@ namespace keys {
     inline constexpr int32_t escape    = 0x1B;          // matches SDLK_ESCAPE
     inline constexpr int32_t page_up   = 0x4000'004B;  // matches SDLK_PAGEUP
     inline constexpr int32_t page_down = 0x4000'004E;  // matches SDLK_PAGEDOWN
+    inline constexpr int32_t i         = 0x69;         // matches SDLK_I
 }
 
 namespace mods {
     inline constexpr uint16_t shift = 0x0003;  // matches SDL_KMOD_SHIFT
+    inline constexpr uint16_t ctrl  = 0x00C0;  // matches SDL_KMOD_CTRL
 }
 
 namespace buttons {

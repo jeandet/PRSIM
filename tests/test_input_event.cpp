@@ -49,3 +49,11 @@ TEST_CASE("Arrow and Escape key constants match SDL keycodes") {
     CHECK(prism::keys::down    == 0x4000'0051);
     CHECK(prism::keys::escape  == 0x1B);
 }
+
+TEST_CASE("mods::ctrl matches SDL_KMOD_CTRL value") {
+    CHECK(prism::mods::ctrl == 0x00C0);
+}
+
+TEST_CASE("keys::i matches SDLK_I value") {
+    CHECK(prism::keys::i == 0x69);
+}
