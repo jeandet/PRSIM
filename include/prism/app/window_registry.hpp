@@ -1,6 +1,5 @@
 #pragma once
 
-#include <prism/app/event_routing.hpp>
 #include <prism/app/window.hpp>
 #include <prism/app/widget_tree.hpp>
 #include <prism/ui/window_chrome.hpp>
@@ -14,7 +13,7 @@ using namespace prism::ui;
 class WindowRegistry {
 public:
     struct Entry {
-        Window* window;
+        Window* window = nullptr;
         std::unique_ptr<WidgetTree> tree;
         std::shared_ptr<const SceneSnapshot> current_snap;
         int width = 0;
@@ -39,6 +38,8 @@ public:
 
     void remove(WindowId id) { entries_.erase(id); }
 
+    // unordered_map guarantees pointer/reference stability across insertion --
+    // the dispatch loop relies on this to hold an Entry* across a re-entrant add().
     [[nodiscard]] Entry* find(WindowId id) {
         auto it = entries_.find(id);
         return it != entries_.end() ? &it->second : nullptr;

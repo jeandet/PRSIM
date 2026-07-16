@@ -3,7 +3,6 @@
 #include <prism/ui/animation.hpp>
 #include <prism/app/backend.hpp>
 #include <prism/core/exec.hpp>
-#include <prism/input/hit_test.hpp>
 #include <prism/input/input_event.hpp>
 #include <prism/app/widget_tree.hpp>
 #include <prism/ui/window_chrome.hpp>
@@ -60,7 +59,7 @@ void model_app(Backend& backend, Window& window, Model& model,
     std::function<void(const KeyPress&)> global_key_handler;
     bool tick_scheduled = false;
 
-    auto publish_entry = [&](WindowRegistry::Entry& entry, WindowId id) {
+    auto publish_entry = [&](WindowId id, WindowRegistry::Entry& entry) {
         entry.current_snap = std::shared_ptr<const SceneSnapshot>(
             entry.tree->build_snapshot(static_cast<float>(entry.width),
                                         static_cast<float>(entry.height),
@@ -72,7 +71,7 @@ void model_app(Backend& backend, Window& window, Model& model,
 
     auto publish_dirty = [&] {
         registry.for_each_dirty([&](WindowId id, WindowRegistry::Entry& entry) {
-            publish_entry(entry, id);
+            publish_entry(id, entry);
         });
     };
 
@@ -134,7 +133,7 @@ void model_app(Backend& backend, Window& window, Model& model,
 
                     entry->tree->drain_shared();
                     if (entry->tree->any_dirty() || needs_publish)
-                        publish_entry(*entry, wid);
+                        publish_entry(wid, *entry);
                     schedule_tick();
                 })
             );
@@ -143,9 +142,10 @@ void model_app(Backend& backend, Window& window, Model& model,
 
     backend.wait_ready();
     registry.for_each([&](WindowId id, WindowRegistry::Entry& entry) {
-        publish_entry(entry, id);
+        publish_entry(id, entry);
     });
 
+    // AppContext must outlive setup — callbacks captured during setup use it.
     auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler);
     if (setup) {
         setup(ctx);
