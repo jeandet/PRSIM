@@ -210,10 +210,15 @@ public:
                     Widget<T>::record(node.draws, *field_ptr, node);
                 };
                 wn.record(wn);
-                wn.wire = [field_ptr](WidgetNode& node) {
+                wn.wire = [field_ptr, &items, index](WidgetNode& node) {
                     node.connections.push_back(
                         node.on_input.connect([field_ptr, &node](const InputEvent& ev) {
                             Widget<T>::handle_input(*field_ptr, ev, node);
+                        })
+                    );
+                    node.connections.push_back(
+                        field_ptr->on_change().connect([field_ptr, &items, index](const T&) {
+                            if (index < items.size()) items.set(index, field_ptr->get());
                         })
                     );
                 };

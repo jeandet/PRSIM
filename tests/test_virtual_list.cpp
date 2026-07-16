@@ -216,6 +216,42 @@ TEST_CASE("VirtualList reacts to List set (update)") {
     CHECK(tree.any_dirty());
 }
 
+#include <prism/ui/delegate.hpp> // for Checkbox
+
+struct CheckboxListModel {
+    prism::List<prism::Checkbox> items;
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.list(items);
+    }
+};
+
+TEST_CASE("clicking a VirtualList row writes the mutation back to the source List") {
+    CheckboxListModel model;
+    model.items.push_back({.checked = false, .label = "Enable feature"});
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    REQUIRE(!snap->geometry.empty());
+    // The VirtualList container itself is geometry.front() (full viewport rect);
+    // the actual row leaf is the child with a small, positive height — same
+    // pattern used by the other VirtualList tests above (e.g. "scroll_at works
+    // on VirtualList").
+    prism::WidgetId row_id = 0;
+    for (auto& [id, rect] : snap->geometry) {
+        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            row_id = id;
+            break;
+        }
+    }
+    REQUIRE(row_id != 0);
+
+    tree.dispatch(row_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+
+    CHECK(model.items[0].checked == true);
+}
+
 TEST_CASE("VirtualList full scroll workflow") {
     StringListModel model;
     for (int i = 0; i < 100; ++i)
