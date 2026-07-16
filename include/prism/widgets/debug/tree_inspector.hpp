@@ -133,4 +133,50 @@ struct TreeInspectorModel {
     }
 };
 
+// Ties the main WidgetTree to a TreeInspectorModel: refresh() re-flattens the
+// main tree into the debug model's rows and mirrors the main tree's hover
+// state into the debug model's selection; on_row_clicked() drives the main
+// tree's debug highlight and toggles expand/collapse for the clicked row.
+//
+// Lifetime: TreeInspectorController stores raw pointers to both the main
+// WidgetTree and the TreeInspectorModel, and the constructor wires
+// debug_model.on_click to call back into this. The controller must not
+// outlive either referenced object; callers own both and the controller for
+// the same scope (see tests/test_tree_inspector_controller.cpp).
+class TreeInspectorController {
+public:
+    TreeInspectorController(WidgetTree& main_tree, TreeInspectorModel& debug_model)
+        : main_tree_(&main_tree), debug_model_(&debug_model) {
+        expanded_.insert(main_tree_->root().id);
+        debug_model_->on_click = [this](size_t index, const NodeRow& row) {
+            on_row_clicked(index, row);
+        };
+    }
+
+    void refresh() {
+        auto rows = flatten_tree(*main_tree_, expanded_);
+        while (!debug_model_->rows.empty())
+            debug_model_->rows.erase(debug_model_->rows.size() - 1);
+        for (auto& row : rows)
+            debug_model_->rows.push_back(row);
+
+        auto hovered = main_tree_->hovered_id();
+        if (hovered != 0)
+            debug_model_->selected.set(hovered);
+    }
+
+    void on_row_clicked(size_t, const NodeRow& row) {
+        main_tree_->set_debug_highlight(row.id);
+        if (row.has_children) {
+            if (expanded_.contains(row.id)) expanded_.erase(row.id);
+            else expanded_.insert(row.id);
+        }
+    }
+
+private:
+    WidgetTree* main_tree_;
+    TreeInspectorModel* debug_model_;
+    std::set<WidgetId> expanded_;
+};
+
 } // namespace prism::debug
