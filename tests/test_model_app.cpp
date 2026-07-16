@@ -224,6 +224,19 @@ TEST_CASE("model_app exposes registry() and backend() via AppContext") {
     CHECK(saw_backend);
 }
 
+// Two tab-focusable Field<bool> members: Widget<int> has FocusPolicy::none
+// (it's a plain read-only display), so IntFieldModel above can't exercise
+// focus_next(). Widget<bool> is FocusPolicy::tab_and_click, giving keys::tab
+// an observable effect via WidgetTree::focus_next().
+struct TwoFocusableFieldsModel {
+    prism::Field<bool> first{false};
+    prism::Field<bool> second{false};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack(first, second);
+    }
+};
+
 TEST_CASE("model_app's global key handler fires before per-window dispatch") {
     struct CapturingBackend final : public prism::BackendBase {
         prism::HeadlessWindow window_{0, {}};
@@ -240,16 +253,33 @@ TEST_CASE("model_app's global key handler fires before per-window dispatch") {
         void quit() override {}
     };
 
-    IntFieldModel model;
+    TwoFocusableFieldsModel model;
     auto backend = prism::Backend{std::make_unique<CapturingBackend>()};
     auto& window = backend.create_window({});
 
     int handler_calls = 0;
+    prism::WidgetId first_id = 0;
+    prism::WidgetId focus_seen_by_handler = 0;
+
     prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
-        ctx.set_global_key_handler([&](const prism::KeyPress&) { ++handler_calls; });
+        auto* entry = ctx.registry().find(window.id());
+        REQUIRE(entry != nullptr);
+        REQUIRE(entry->tree->focus_order().size() == 2);
+        first_id = entry->tree->focus_order()[0];
+        entry->tree->set_focused(first_id);
+
+        ctx.set_global_key_handler([&, entry](const prism::KeyPress&) {
+            ++handler_calls;
+            focus_seen_by_handler = entry->tree->focused_id();
+        });
     });
 
     CHECK(handler_calls == 1);
+    // keys::tab makes detail::route_key_press call tree.focus_next(), moving
+    // focus away from first_id to the second field. The handler capturing
+    // first_id (not the post-tab focus) proves it ran strictly before
+    // route_key_press, not just that it ran at all.
+    CHECK(focus_seen_by_handler == first_id);
 }
 
 #include <prism/ui/delegate.hpp>
