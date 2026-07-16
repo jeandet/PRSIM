@@ -1,8 +1,14 @@
 # Live Tree Inspector — Design Spec
 
 **Date:** 2026-07-15
-**Status:** Approved (pending spec review)
+**Status:** Approved, blocked on two prerequisite specs (see below)
 **Roadmap:** Phase 4.5, strategic priority #5 (debugging/profiling story) — see `project-roadmap`/`project-strategic-direction` memory. First of several sub-projects under that priority; the others (dirty-region viewer, snapshot version viewer, thread-latency overlay, Tracy integration) are out of scope here and will get their own specs.
+
+**Split during plan-writing (2026-07-16):** Implementation-plan research found this spec implicitly assumed two subsystems that don't exist yet:
+1. **Dual-window event loop foundation** — `model_app()`/`AppContext`/the event-dispatch loop are hard-wired to one `Window`/`WidgetTree` and discard `WindowEvent.window`; only `SoftwareBackend` itself can already track multiple windows. A live debug window needs this regardless of what it shows.
+2. **`VirtualList` row interactivity fix** — `vlist_bind_row` (`widget_tree.hpp`) clones each row into a detached `Field<T>` copy and never writes mutations back, so a `.list()` row click currently can't do anything observable; no existing code exercises this path.
+
+Both get their own specs and plans, built and shipped before this one. This spec's "debug → main click highlight" direction (Data flow step 2) depends on fix #2; "main → debug hover highlight" (step 3) does not.
 
 ## Problem
 
