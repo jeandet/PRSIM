@@ -46,6 +46,7 @@ headless_tests = {
   'fixed_string' : files('test_fixed_string.cpp'),
   'debug_name' : files('test_debug_name.cpp'),
   'flatten_tree' : files('test_flatten_tree.cpp'),
+  'tree_inspector_model' : files('test_tree_inspector_model.cpp'),
 }
 
 foreach name, src : headless_tests
