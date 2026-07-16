@@ -8,8 +8,12 @@
 #include <prism/ui/window_chrome.hpp>
 #include <prism/app/event_routing.hpp>
 #include <prism/app/window_registry.hpp>
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#include <prism/widgets/debug/tree_inspector.hpp>
+#endif
 
 #include <cstdint>
+#include <optional>
 #include <thread>
 #include <variant>
 
@@ -157,6 +161,40 @@ void model_app(Backend& backend, Window& window, Model& model,
 
     // AppContext must outlive setup — callbacks captured during setup use it.
     auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook);
+
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+    // Live tree inspector, toggled by Ctrl+Shift+I. This installs the sole
+    // global-key-handler/post-dispatch-hook slots AppContext exposes — an
+    // app's own setup() calling set_global_key_handler/set_post_dispatch_hook
+    // below would silently override this wiring. Known limitation, not solved
+    // here (see commit message).
+    debug::TreeInspectorModel debug_model;
+    std::optional<WindowId> debug_window_id;
+    std::optional<debug::TreeInspectorController> debug_controller;
+
+    ctx.set_global_key_handler([&](const KeyPress& kp) {
+        if (kp.key != keys::i || (kp.mods & (mods::ctrl | mods::shift)) != (mods::ctrl | mods::shift))
+            return;
+        if (!debug_window_id) {
+            auto* win = backend.request_window(WindowConfig{.title = "PRISM Tree Inspector"});
+            if (!win) return; // request failed — stay dormant, try again on next hotkey press
+            auto* primary_entry = registry.find(primary_id);
+            if (!primary_entry) return;
+            debug_window_id = registry.add(*win, debug_model);
+            debug_controller.emplace(*primary_entry->tree, debug_model);
+            ctx.set_post_dispatch_hook([&] {
+                if (debug_controller) debug_controller->refresh();
+            });
+        } else {
+            registry.remove(*debug_window_id);
+            backend.close_window(*debug_window_id);
+            debug_window_id.reset();
+            debug_controller.reset();
+            ctx.set_post_dispatch_hook(nullptr);
+        }
+    });
+#endif
+
     if (setup) {
         setup(ctx);
         schedule_tick();

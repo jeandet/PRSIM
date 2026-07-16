@@ -664,3 +664,52 @@ TEST_CASE("Shared<T> drain fires observer during model_app event loop") {
     CHECK(model.value.get() == 42);
     CHECK(observed_value.load() == 42);
 }
+
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#include <prism/widgets/debug/tree_inspector.hpp>
+
+TEST_CASE("Ctrl+Shift+I attaches a debug window; pressing it again removes it") {
+    struct HotkeyBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        prism::WindowId secondary_id_ = 0;
+        int close_calls_ = 0;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            secondary_id_ = 2;
+            secondary_ = prism::HeadlessWindow{secondary_id_, cfg};
+            return &secondary_;
+        }
+        void close_window(prism::WindowId) override { ++close_calls_; }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            auto mods = static_cast<uint16_t>(prism::mods::ctrl | prism::mods::shift);
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct HotkeyTestModel { prism::Field<int> value{0}; void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); } };
+    HotkeyTestModel model;
+    auto backend_ptr = std::make_unique<HotkeyBackend>();
+    auto* raw = backend_ptr.get();
+    auto backend = prism::Backend{std::move(backend_ptr)};
+    auto& window = backend.create_window({});
+
+    // The hotkey is installed inside model_app() itself (Step 3), unconditionally when
+    // PRISM_DEBUG_TOOLS_ENABLED is defined — no app-provided setup() is needed for it to fire, so
+    // this test passes nullptr and relies purely on HotkeyBackend's two KeyPress events.
+    prism::model_app(backend, window, model, nullptr);
+
+    // First Ctrl+Shift+I attaches (request_window called, no close yet); second detaches
+    // (close_window called once) — proving both the attach and the teardown path ran.
+    CHECK(raw->close_calls_ == 1);
+}
+#endif
