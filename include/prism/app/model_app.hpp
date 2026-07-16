@@ -8,6 +8,7 @@
 #include <prism/app/widget_tree.hpp>
 #include <prism/ui/window_chrome.hpp>
 #include <prism/app/event_routing.hpp>
+#include <prism/app/window_registry.hpp>
 
 #include <cstdint>
 #include <thread>
@@ -41,22 +42,26 @@ void model_app(Backend& backend, Window& window, Model& model,
     stdexec::run_loop loop;
     auto sched = loop.get_scheduler();
 
-    WidgetTree tree(model);
+    WindowRegistry registry;
+    WindowId primary_id = registry.add(window, model);
+
     AnimationClock anim_clock;
     bool tick_scheduled = false;
-    auto [w, h] = window.size();
-    if (window.decoration_mode() == DecorationMode::Custom)
-        h -= static_cast<int>(WindowChrome::title_bar_h.raw());
-    uint64_t version = 0;
 
-    std::shared_ptr<const SceneSnapshot> current_snap;
-
-    auto publish = [&] {
-        current_snap = std::shared_ptr<const SceneSnapshot>(
-            tree.build_snapshot(w, h, ++version));
-        backend.submit(window.id(), current_snap);
+    auto publish_entry = [&](WindowRegistry::Entry& entry, WindowId id) {
+        entry.current_snap = std::shared_ptr<const SceneSnapshot>(
+            entry.tree->build_snapshot(static_cast<float>(entry.width),
+                                        static_cast<float>(entry.height),
+                                        ++entry.version));
+        backend.submit(id, entry.current_snap);
         backend.wake();
-        tree.clear_dirty();
+        entry.tree->clear_dirty();
+    };
+
+    auto publish_dirty = [&] {
+        registry.for_each_dirty([&](WindowId id, WindowRegistry::Entry& entry) {
+            publish_entry(entry, id);
+        });
     };
 
     std::function<void()> schedule_tick;
@@ -68,8 +73,7 @@ void model_app(Backend& backend, Window& window, Model& model,
             | stdexec::then([&] {
                 tick_scheduled = false;
                 anim_clock.tick(AnimationClock::clock::now());
-                if (tree.any_dirty())
-                    publish();
+                publish_dirty();
                 if (anim_clock.active())
                     schedule_tick();
             })
@@ -79,36 +83,44 @@ void model_app(Backend& backend, Window& window, Model& model,
     std::thread backend_thread([&] {
         backend.run([&](const WindowEvent& we) {
             const auto& ev = we.event;
+            WindowId wid = we.window;
             exec::start_detached(
                 stdexec::schedule(sched)
-                | stdexec::then([&, ev] {
+                | stdexec::then([&, ev, wid] {
                     if (std::holds_alternative<WindowClose>(ev)) {
-                        loop.finish();
+                        if (wid == primary_id) {
+                            loop.finish();
+                        } else {
+                            registry.remove(wid);
+                        }
                         return;
                     }
 
+                    auto* entry = registry.find(wid);
+                    if (!entry) return;
+
                     bool needs_publish = false;
                     if (auto* resize = std::get_if<WindowResize>(&ev)) {
-                        w = resize->width;
-                        h = resize->height;
+                        entry->width = resize->width;
+                        entry->height = resize->height;
                         needs_publish = true;
                     }
-                    if (current_snap) {
+                    if (entry->current_snap) {
                         if (auto* mm = std::get_if<MouseMove>(&ev))
-                            detail::route_mouse_move(tree, *current_snap, *mm);
+                            detail::route_mouse_move(*entry->tree, *entry->current_snap, *mm);
                         if (auto* mb = std::get_if<MouseButton>(&ev))
-                            detail::route_mouse_button(tree, *current_snap, ev, *mb);
+                            detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
                         if (auto* ms = std::get_if<MouseScroll>(&ev))
-                            detail::route_mouse_scroll(tree, *current_snap, *ms);
+                            detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
                     }
                     if (auto* kp = std::get_if<KeyPress>(&ev))
-                        detail::route_key_press(tree, ev, *kp);
+                        detail::route_key_press(*entry->tree, ev, *kp);
                     if (std::get_if<TextInput>(&ev))
-                        detail::route_text_input(tree, ev);
+                        detail::route_text_input(*entry->tree, ev);
 
-                    tree.drain_shared();
-                    if (tree.any_dirty() || needs_publish)
-                        publish();
+                    entry->tree->drain_shared();
+                    if (entry->tree->any_dirty() || needs_publish)
+                        publish_entry(*entry, wid);
                     schedule_tick();
                 })
             );
@@ -116,9 +128,10 @@ void model_app(Backend& backend, Window& window, Model& model,
     });
 
     backend.wait_ready();
-    publish();
+    registry.for_each([&](WindowId id, WindowRegistry::Entry& entry) {
+        publish_entry(entry, id);
+    });
 
-    // AppContext must outlive setup — callbacks captured during setup use it.
     auto ctx = AppContext(sched, anim_clock, window);
     if (setup) {
         setup(ctx);
