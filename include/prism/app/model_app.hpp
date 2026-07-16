@@ -109,6 +109,7 @@ void model_app(Backend& backend, Window& window, Model& model,
                             loop.finish();
                         } else {
                             registry.remove(wid);
+                            backend.close_window(wid);
                         }
                         return;
                     }

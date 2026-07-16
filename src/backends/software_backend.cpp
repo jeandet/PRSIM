@@ -72,6 +72,18 @@ void SoftwareBackend::drain_window_requests() {
     }
 }
 
+void SoftwareBackend::close_window(WindowId id) {
+    close_requests_.push(id);
+    wake();
+}
+
+void SoftwareBackend::drain_close_requests() {
+    while (auto id_opt = close_requests_.pop()) {
+        windows_.erase(*id_opt);
+        snapshots_.erase(*id_opt);
+    }
+}
+
 WindowId SoftwareBackend::sdl_id_to_prism_id(uint32_t sdl_window_id) const {
     for (auto& [id, win] : windows_) {
         if (SDL_GetWindowID(win->sdl_window()) == sdl_window_id)
@@ -165,7 +177,6 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                         static_cast<int>(ev.button.x), static_cast<int>(ev.button.y), ww, wh);
                     if (zone == WindowChrome::HitZone::Close) {
                         event_cb(WindowEvent{wid, WindowClose{}});
-                        running_.store(false, std::memory_order_relaxed);
                         break;
                     }
                     if (zone == WindowChrome::HitZone::Minimize) {
@@ -232,8 +243,12 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             case SDL_EVENT_TEXT_INPUT:
                 event_cb(WindowEvent{wid, TextInput{ev.text.text}});
                 break;
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                event_cb(WindowEvent{wid, WindowClose{}});
+                break;
             case SDL_EVENT_USER:
                 drain_window_requests();
+                drain_close_requests();
                 break;
             default:
                 break;
@@ -252,6 +267,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
         }
     }
     drain_window_requests();
+    drain_close_requests();
 }
 
 void SoftwareBackend::submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) {

@@ -34,6 +34,7 @@ public:
 
     Window& create_window(WindowConfig cfg) override;
     Window* request_window(WindowConfig cfg) override;
+    void close_window(WindowId id) override;
     void run(std::function<void(const WindowEvent&)> event_cb) override;
     void submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) override;
     void wake() override;
@@ -57,6 +58,9 @@ private:
 
     prism::core::mpsc_queue<std::shared_ptr<PendingWindowRequest>> window_requests_;
     void drain_window_requests();
+
+    prism::core::mpsc_queue<WindowId> close_requests_;
+    void drain_close_requests();
 
     WindowId sdl_id_to_prism_id(uint32_t sdl_window_id) const;
 

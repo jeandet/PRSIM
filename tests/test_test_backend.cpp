@@ -84,3 +84,18 @@ TEST_CASE("TestBackend::request_window can be called before create_window") {
     REQUIRE(b != nullptr);
     CHECK(a->id() != b->id());
 }
+
+TEST_CASE("TestBackend::close_window removes a window created via request_window") {
+    prism::TestBackend tb{{}};
+    auto* win = tb.request_window({});
+    REQUIRE(win != nullptr);
+    auto id = win->id();
+    tb.close_window(id);
+    CHECK(tb.window_count() == 0); // see Step 3 — a small test-only accessor
+}
+
+TEST_CASE("TestBackend::close_window on an unknown id is a safe no-op") {
+    prism::TestBackend tb{{}};
+    tb.close_window(9999);
+    CHECK(true); // must not crash
+}

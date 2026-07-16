@@ -31,6 +31,9 @@ public:
         return &it->second;
     }
 
+    void close_window(WindowId id) override { windows_.erase(id); }
+    [[nodiscard]] size_t window_count() const { return windows_.size(); }
+
     void run(std::function<void(const WindowEvent&)> event_cb) override {
         for (const auto& ev : events_)
             event_cb(WindowEvent{primary_id_, ev});

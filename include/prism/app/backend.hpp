@@ -18,6 +18,7 @@ public:
 
     virtual Window& create_window(WindowConfig cfg) = 0;
     virtual Window* request_window(WindowConfig cfg) { return &create_window(std::move(cfg)); }
+    virtual void close_window(WindowId) {}
     virtual void run(std::function<void(const WindowEvent&)> event_cb) = 0;
     virtual void submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) = 0;
     virtual void wake() = 0;
@@ -36,6 +37,7 @@ public:
 
     Window& create_window(WindowConfig cfg) { return impl_->create_window(std::move(cfg)); }
     Window* request_window(WindowConfig cfg) { return impl_->request_window(std::move(cfg)); }
+    void close_window(WindowId id) { impl_->close_window(id); }
     void run(std::function<void(const WindowEvent&)> cb) { impl_->run(std::move(cb)); }
     void submit(WindowId w, std::shared_ptr<const SceneSnapshot> s) { impl_->submit(w, std::move(s)); }
     void wake() { impl_->wake(); }
