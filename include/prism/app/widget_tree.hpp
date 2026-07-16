@@ -189,14 +189,14 @@ public:
         }
 
         template <typename T>
-        void list(List<T>& items) {
+        void list(List<T>& items, std::function<void(size_t, const T&)> on_row_click = nullptr) {
             Node container;
             container.id = tree_.next_id_++;
             container.is_leaf = false;
             container.layout_kind = LayoutKind::VirtualList;
             container.vlist_item_count = items.size();
 
-            container.vlist_bind_row = [&items](WidgetNode& wn, size_t index) {
+            container.vlist_bind_row = [&items, on_row_click](WidgetNode& wn, size_t index) {
                 auto field_ptr = std::make_shared<Field<T>>(items[index]);
                 wn.edit_state = std::shared_ptr<void>(field_ptr);
                 wn.focus_policy = Widget<T>::focus_policy;
@@ -210,7 +210,7 @@ public:
                     Widget<T>::record(node.draws, *field_ptr, node);
                 };
                 wn.record(wn);
-                wn.wire = [field_ptr, &items, index](WidgetNode& node) {
+                wn.wire = [field_ptr, &items, index, on_row_click](WidgetNode& node) {
                     node.connections.push_back(
                         node.on_input.connect([field_ptr, &node](const InputEvent& ev) {
                             Widget<T>::handle_input(*field_ptr, ev, node);
@@ -221,6 +221,15 @@ public:
                             if (index < items.size()) items.set(index, field_ptr->get());
                         })
                     );
+                    if (on_row_click) {
+                        node.connections.push_back(
+                            node.on_input.connect([on_row_click, &items, index](const InputEvent& ev) {
+                                auto* mb = std::get_if<MouseButton>(&ev);
+                                if (mb && mb->pressed && mb->button == 1 && index < items.size())
+                                    on_row_click(index, items[index]);
+                            })
+                        );
+                    }
                 };
             };
 

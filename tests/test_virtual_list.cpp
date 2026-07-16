@@ -252,6 +252,81 @@ TEST_CASE("clicking a VirtualList row writes the mutation back to the source Lis
     CHECK(model.items[0].checked == true);
 }
 
+struct ClickRow { int id; };
+
+namespace prism::ui {
+template <> struct Widget<ClickRow> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+
+    static void record(DrawList& dl, const Field<ClickRow>&, WidgetNode& node) {
+        auto& vs = node_vs(node);
+        auto& t = node_theme(node);
+        Width w = detail::widget_w(node);
+        auto bg = vs.hovered ? t.surface_hover : t.surface;
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
+    }
+
+    static void handle_input(Field<ClickRow>&, const InputEvent&, WidgetNode&) {}
+};
+}
+
+struct ClickRowListModel {
+    prism::List<ClickRow> items;
+    std::function<void(size_t, const ClickRow&)> on_row_click;
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.list(items, on_row_click);
+    }
+};
+
+TEST_CASE("clicking a VirtualList row invokes on_row_click with the index and value") {
+    ClickRowListModel model;
+    model.items.push_back({.id = 100});
+    model.items.push_back({.id = 200});
+
+    std::vector<std::pair<size_t, int>> clicks;
+    model.on_row_click = [&](size_t index, const ClickRow& row) {
+        clicks.emplace_back(index, row.id);
+    };
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    // geometry.front() is the VirtualList container's own full-viewport rect
+    // (established by the write-back test above), not a row. The actual row
+    // leaves are the entries with a small positive height; layout_flatten
+    // binds/pushes rows in ascending index order, so the first two such
+    // entries correspond to items[0] and items[1] respectively.
+    std::vector<prism::WidgetId> row_ids;
+    for (auto& [id, rect] : snap->geometry) {
+        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) {
+            row_ids.push_back(id);
+            if (row_ids.size() == 2) break;
+        }
+    }
+    REQUIRE(row_ids.size() == 2);
+
+    tree.dispatch(row_ids[0], prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+    tree.dispatch(row_ids[1], prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
+
+    REQUIRE(clicks.size() == 2);
+    CHECK(clicks[0] == std::make_pair(size_t{0}, 100));
+    CHECK(clicks[1] == std::make_pair(size_t{1}, 200));
+}
+
+TEST_CASE("existing .list() calls without on_row_click still compile and work") {
+    prism::List<std::string> items;
+    items.push_back("unchanged");
+    struct M {
+        prism::List<std::string>* items_ptr;
+        void view(prism::WidgetTree::ViewBuilder& vb) { vb.list(*items_ptr); }
+    };
+    M model{&items};
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    CHECK(snap != nullptr);
+}
+
 TEST_CASE("VirtualList full scroll workflow") {
     StringListModel model;
     for (int i = 0; i < 100; ++i)
