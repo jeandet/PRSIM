@@ -89,6 +89,10 @@ void model_app(Backend& backend, Window& window, Model& model,
         debug_window_id.reset();
         debug_controller.reset();
         post_dispatch_hook = nullptr;
+        // Closing the inspector (either path) must not leave a stale highlight rect on the
+        // main window with no inspector left to explain it.
+        if (auto* primary_entry = registry.find(primary_id))
+            primary_entry->tree->set_debug_highlight(std::nullopt);
     };
 #endif
 

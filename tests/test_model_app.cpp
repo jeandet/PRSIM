@@ -959,8 +959,19 @@ TEST_CASE("end-to-end: hotkey attach then hover-select then row-click-highlight 
             }
             CHECK(found_highlight_on_leaf);
 
-            // 5. Detach: Ctrl+Shift+I again — must tear down cleanly.
+            // 5. Detach: Ctrl+Shift+I again — must tear down cleanly, and must also clear
+            // the highlight this same session left on the main window (closing the
+            // inspector shouldn't leave a stale selection rect behind with no inspector
+            // left to explain it).
+            auto primary_before_detach = primary_count_.load(std::memory_order_acquire);
             cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            primary_count_.wait(primary_before_detach, std::memory_order_acquire);
+
+            auto primary_snap3 = latest_primary_;
+            bool still_highlighted = false;
+            for (auto& cmd : primary_snap3->overlay.commands)
+                if (std::holds_alternative<prism::RectOutline>(cmd)) still_highlighted = true;
+            CHECK_FALSE(still_highlighted);
 
             cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
         }
