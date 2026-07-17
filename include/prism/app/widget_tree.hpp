@@ -42,6 +42,21 @@ public:
             return stack_.empty() ? target_ : *stack_.back();
         }
 
+        // Names a leaf after its enclosing field member (tree_.field_names_, populated by
+        // build_node_tree()'s reflection walk) instead of node_leaf<T>'s generic value-type
+        // fallback -- e.g. "count" instead of "int". No-op when the address isn't a reflected
+        // member of any model this tree was built from (component() sub-trees populate their own
+        // entries recursively) or when this build lacks reflection support.
+        template <typename T>
+        void apply_field_name([[maybe_unused]] Node& leaf, [[maybe_unused]] T& observable) {
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#if __cpp_impl_reflection
+            auto it = tree_.field_names_.find(static_cast<const void*>(&observable));
+            if (it != tree_.field_names_.end()) leaf.debug_name = std::string(it->second);
+#endif
+#endif
+        }
+
     public:
         template <typename Self>
         struct DependsOnMixin {
@@ -80,7 +95,9 @@ public:
         template <typename T>
         void widget(Field<T>& field) {
             placed_.insert(&field);
-            current_parent().children.push_back(node_leaf(field, tree_.next_id_));
+            auto leaf = node_leaf(field, tree_.next_id_);
+            apply_field_name(leaf, field);
+            current_parent().children.push_back(std::move(leaf));
         }
 
         // Renders like widget(Field<T>&) but without focus/input wiring --
@@ -88,20 +105,24 @@ public:
         template <typename T>
         void widget_readonly(Field<T>& field) {
             placed_.insert(&field);
-            current_parent().children.push_back(node_readonly_leaf<T>(field, tree_.next_id_));
+            auto leaf = node_readonly_leaf<T>(field, tree_.next_id_);
+            apply_field_name(leaf, field);
+            current_parent().children.push_back(std::move(leaf));
         }
 
         template <typename T>
         void widget(Derived<T>& derived) {
             placed_.insert(&derived);
-            current_parent().children.push_back(
-                node_readonly_leaf<T>(derived, tree_.next_id_));
+            auto leaf = node_readonly_leaf<T>(derived, tree_.next_id_);
+            apply_field_name(leaf, derived);
+            current_parent().children.push_back(std::move(leaf));
         }
 
         template <typename T>
         void widget(Shared<T>& shared) {
             placed_.insert(&shared);
             auto node = node_readonly_leaf<T>(shared, tree_.next_id_);
+            apply_field_name(node, shared);
             node.drain_fn = [&shared] { shared.drain_notifications(); };
             current_parent().children.push_back(std::move(node));
         }
@@ -730,6 +751,15 @@ public:
 private:
     WidgetNode root_;
     Theme theme_;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#if __cpp_impl_reflection
+    // Address -> reflected member identifier, accumulated across every build_node_tree() call
+    // (the top-level model and every nested component()) -- lives as long as the tree itself, so
+    // tab()'s lazily-materialized content builders (which run well after the initial tree build)
+    // can still resolve names. See ViewBuilder::apply_field_name.
+    std::unordered_map<const void*, std::string_view> field_names_;
+#endif
+#endif
     WidgetId next_id_ = 1;
     WidgetId hovered_id_ = 0;
     WidgetId focused_id_ = 0;
@@ -964,6 +994,26 @@ private:
 #endif
 
         if constexpr (requires(Model& m, ViewBuilder& vb) { m.view(vb); }) {
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#if __cpp_impl_reflection
+            // view()-driven placement (vb.widget(field)) only ever sees a Field<T>&, never the
+            // member identifier that placed it -- unlike the whole-model reflection branch below,
+            // which walks Model's own members and knows both. Recover the identifier here, keyed
+            // by address, so ViewBuilder::apply_field_name can resolve it for whichever field
+            // view() happens to place.
+            static constexpr auto own_members = std::define_static_array(
+                std::meta::nonstatic_data_members_of(
+                    ^^Model, std::meta::access_context::unchecked()));
+            template for (constexpr auto m : own_members) {
+                auto& member = model.[:m:];
+                using M = std::remove_cvref_t<decltype(member)>;
+                if constexpr (is_field_v<M> || is_derived_v<M> || is_shared_v<M>) {
+                    field_names_.emplace(static_cast<const void*>(&member),
+                                         std::meta::identifier_of(m));
+                }
+            }
+#endif
+#endif
             ViewBuilder vb{*this, root};
             model.view(vb);
 #if __cpp_impl_reflection
