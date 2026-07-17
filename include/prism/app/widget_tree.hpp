@@ -553,6 +553,24 @@ public:
         set_dirty(id);
     }
 
+    void scroll_row_into_view(WidgetId container_id, size_t row_index, Height row_h) {
+        auto it = index_.find(container_id);
+        if (it == index_.end()) return;
+        auto sv = get_scroll_view(*it->second);
+        if (!sv) return;
+
+        DY row_top{static_cast<float>(row_index) * row_h.raw()};
+        DY row_bottom = row_top + DY{row_h.raw()};
+        DY vp_top = sv->offset;
+        DY vp_bottom = vp_top + DY{sv->viewport_h.raw()};
+        DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+
+        if (row_bottom > vp_bottom)
+            scroll_to(container_id, DY{std::clamp(row_bottom.raw() - sv->viewport_h.raw(), 0.f, max_off.raw())});
+        else if (row_top < vp_top)
+            scroll_to(container_id, DY{std::clamp(row_top.raw(), 0.f, max_off.raw())});
+    }
+
     [[nodiscard]] std::vector<WidgetId> leaf_ids() const {
         std::vector<WidgetId> ids;
         collect_leaf_ids(root_, ids);

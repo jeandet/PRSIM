@@ -190,6 +190,91 @@ TEST_CASE("scroll_at clamps VirtualList to bounds") {
     CHECK_FALSE(tree.any_dirty());
 }
 
+TEST_CASE("scroll_row_into_view scrolls down to reveal an off-screen-below row, converges to a no-op") {
+    StringListModel model;
+    for (int i = 0; i < 50; ++i)
+        model.items.push_back(fmt::format("item {}", i));
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 100, 1);
+    tree.clear_dirty();
+
+    // Measure the real row height rather than assuming one — see this file's own
+    // "VirtualList items at correct Y position after scroll" test for the same convention.
+    float item_h = 0;
+    for (auto& [id, rect] : snap->geometry)
+        if (rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) { item_h = rect.extent.h.raw(); break; }
+    REQUIRE(item_h > 0);
+
+    // StringListModel::view() is a single vb.list(items) call — LayoutKind::VirtualList, not
+    // Row/Column, so ViewBuilder::finalize()'s single-child hoist never fires here; root()'s
+    // one child is the VirtualList container itself (same pattern already used in
+    // tests/test_debug_name.cpp and tests/test_table.cpp).
+    auto container_id = tree.root().children.front().id;
+
+    tree.scroll_row_into_view(container_id, 30, prism::Height{item_h});
+    CHECK(tree.any_dirty());
+
+    tree.clear_dirty();
+    tree.scroll_row_into_view(container_id, 30, prism::Height{item_h});
+    CHECK_FALSE(tree.any_dirty()); // already revealed — second identical call is a no-op
+}
+
+TEST_CASE("scroll_row_into_view scrolls up to reveal an off-screen-above row") {
+    StringListModel model;
+    for (int i = 0; i < 50; ++i)
+        model.items.push_back(fmt::format("item {}", i));
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 100, 1);
+    tree.clear_dirty();
+
+    float item_h = 0;
+    for (auto& [id, rect] : snap->geometry)
+        if (rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) { item_h = rect.extent.h.raw(); break; }
+    REQUIRE(item_h > 0);
+    auto container_id = tree.root().children.front().id;
+
+    tree.scroll_row_into_view(container_id, 40, prism::Height{item_h}); // scroll deep down first
+    tree.clear_dirty();
+
+    tree.scroll_row_into_view(container_id, 0, prism::Height{item_h}); // now ask for row 0
+    CHECK(tree.any_dirty());
+
+    tree.clear_dirty();
+    tree.scroll_row_into_view(container_id, 0, prism::Height{item_h});
+    CHECK_FALSE(tree.any_dirty());
+}
+
+TEST_CASE("scroll_row_into_view is a no-op when the row already fits in the viewport") {
+    StringListModel model;
+    model.items.push_back("only one");
+
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    float item_h = 0;
+    for (auto& [id, rect] : snap->geometry)
+        if (rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) { item_h = rect.extent.h.raw(); break; }
+    REQUIRE(item_h > 0);
+
+    auto container_id = tree.root().children.front().id;
+    tree.scroll_row_into_view(container_id, 0, prism::Height{item_h});
+    CHECK_FALSE(tree.any_dirty());
+}
+
+TEST_CASE("scroll_row_into_view on an unknown container id is a safe no-op") {
+    StringListModel model;
+    model.items.push_back("only one");
+    prism::WidgetTree tree(model);
+    tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    tree.scroll_row_into_view(999999, 0, prism::Height{30.f});
+    CHECK_FALSE(tree.any_dirty());
+}
+
 TEST_CASE("VirtualList reacts to List push_back") {
     StringListModel model;
     model.items.push_back("initial");
