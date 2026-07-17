@@ -137,21 +137,29 @@ struct TreeInspectorModel {
     }
 };
 
-// Ties the main WidgetTree to a TreeInspectorModel: refresh() re-flattens the
-// main tree into the debug model's rows and mirrors the main tree's hover
-// state into the debug model's selection; on_row_clicked() drives the main
-// tree's debug highlight and toggles expand/collapse for the clicked row.
+// Ties the main WidgetTree to a TreeInspectorModel (rendered by the debug
+// window's own WidgetTree): refresh() re-flattens the main tree into the
+// debug model's rows, mirrors the main tree's hover state into the debug
+// model's selection, and scrolls the debug tree's list to reveal the
+// hovered row when present; on_row_clicked() drives the main tree's debug
+// highlight and toggles expand/collapse for the clicked row.
 //
-// Lifetime: TreeInspectorController stores raw pointers to both the main
-// WidgetTree and the TreeInspectorModel, and the constructor wires
-// debug_model.on_click to call back into this. The controller must not
-// outlive either referenced object; callers own both and the controller for
-// the same scope (see tests/test_tree_inspector_controller.cpp).
+// Lifetime: TreeInspectorController stores raw pointers to the main
+// WidgetTree, the debug WidgetTree, and the TreeInspectorModel, and the
+// constructor wires debug_model.on_click to call back into this. The
+// controller must not outlive any referenced object; callers own all three
+// and the controller for the same scope (see
+// tests/test_tree_inspector_controller.cpp).
 class TreeInspectorController {
 public:
-    TreeInspectorController(WidgetTree& main_tree, TreeInspectorModel& debug_model)
-        : main_tree_(&main_tree), debug_model_(&debug_model) {
+    TreeInspectorController(WidgetTree& main_tree, WidgetTree& debug_tree, TreeInspectorModel& debug_model)
+        : main_tree_(&main_tree), debug_tree_(&debug_tree), debug_model_(&debug_model) {
         expanded_.insert(main_tree_->root().id);
+        // TreeInspectorModel::view() today is a single vb.list(rows, ...) call — LayoutKind::
+        // VirtualList, not Row/Column, so ViewBuilder::finalize()'s single-child hoist never
+        // fires; debug_tree_->root()'s one child is the VirtualList container itself (same
+        // pattern used in tests/test_debug_name.cpp and tests/test_table.cpp).
+        list_container_id_ = debug_tree_->root().children.front().id;
         debug_model_->on_click = [this](size_t index, const NodeRow& row) {
             on_row_clicked(index, row);
         };
@@ -172,15 +180,18 @@ public:
             debug_model_->rows.push_back(row);
 
         auto hovered = main_tree_->hovered_id();
-        // `selected` now only records which id is hovered; NodeRow::hovered (populated by
-        // flatten_tree above) is what actually drives the visible main -> debug highlight.
-        // Auto-scrolling the debug list to bring that row into view is a deliberately
-        // deferred follow-up — it needs TreeInspectorController to also hold the debug
-        // window's own WidgetTree (currently only main_tree_ is held), which is a
-        // constructor signature change touching this already-reviewed class, its
-        // model_app.hpp call site, and its existing tests.
-        if (hovered != 0)
+        // `selected` records which id is hovered; NodeRow::hovered (populated by flatten_tree
+        // above) is what actually drives the visible main -> debug highlight. If the hovered
+        // row is present in this flatten, also scroll the debug window's list to reveal it.
+        if (hovered != 0) {
             debug_model_->selected.set(hovered);
+            for (size_t i = 0; i < rows.size(); ++i) {
+                if (rows[i].id == hovered) {
+                    debug_tree_->scroll_row_into_view(list_container_id_, i, Widget<NodeRow>::row_h);
+                    break;
+                }
+            }
+        }
     }
 
     void on_row_clicked(size_t, const NodeRow& row) {
@@ -193,7 +204,9 @@ public:
 
 private:
     WidgetTree* main_tree_;
+    WidgetTree* debug_tree_;
     TreeInspectorModel* debug_model_;
+    WidgetId list_container_id_;
     std::set<WidgetId> expanded_;
 };
 

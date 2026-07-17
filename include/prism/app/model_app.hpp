@@ -213,7 +213,9 @@ void model_app(Backend& backend, Window& window, Model& model,
             auto* primary_entry = registry.find(primary_id);
             if (!primary_entry) return;
             debug_window_id = registry.add(*win, debug_model);
-            debug_controller.emplace(*primary_entry->tree, debug_model);
+            auto* debug_entry = registry.find(*debug_window_id);
+            if (!debug_entry) return;
+            debug_controller.emplace(*primary_entry->tree, *debug_entry->tree, debug_model);
             ctx.set_post_dispatch_hook([&] {
                 if (debug_controller) debug_controller->refresh();
             });
