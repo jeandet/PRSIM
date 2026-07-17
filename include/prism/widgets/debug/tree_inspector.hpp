@@ -3,6 +3,8 @@
 #include <prism/app/widget_tree.hpp>
 #include <prism/core/types.hpp>
 
+#include <fmt/format.h>
+
 #include <functional>
 #include <optional>
 #include <set>
@@ -27,6 +29,8 @@ struct NodeRow {
     bool pressed = false;
     bool has_children = false;
     bool expanded = false;
+
+    bool operator==(const NodeRow&) const = default;
 };
 
 inline std::string_view layout_kind_name(LayoutKind k) {
@@ -117,6 +121,48 @@ struct Widget<prism::debug::NodeRow> {
     }
 };
 
+// Read-only detail pane for the row currently selected in the debug window's list (see
+// TreeInspectorController::detail_selected_). Shows a placeholder when nothing is selected,
+// otherwise dumps every NodeRow field as its own text line.
+template <>
+struct Widget<std::optional<prism::debug::NodeRow>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+    static constexpr Height panel_h{200.f};
+
+    static void record(DrawList& dl, const Field<std::optional<prism::debug::NodeRow>>& field,
+                        WidgetNode& node) {
+        auto& t = node_theme(node);
+        auto w = detail::widget_w(node);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, panel_h), t.surface);
+
+        auto& value = field.get();
+        if (!value) {
+            dl.text("No selection", detail::make_point(X{8.f}, Y{8.f}), 13, t.text);
+            return;
+        }
+
+        auto& row = *value;
+        Y y{8.f};
+        auto line = [&](const std::string& text) {
+            dl.text(text, detail::make_point(X{8.f}, y), 13, t.text);
+            y = y + DY{18.f};
+        };
+        line("name: " + row.name);
+        line("layout: " + row.layout_kind_name);
+        line(fmt::format("rect: {}, {}, {}, {}", row.rect.origin.x.raw(), row.rect.origin.y.raw(),
+                          row.rect.extent.w.raw(), row.rect.extent.h.raw()));
+        line(std::string("dirty: ") + (row.dirty ? "true" : "false"));
+        line(std::string("hovered: ") + (row.hovered ? "true" : "false"));
+        line(std::string("focused: ") + (row.focused ? "true" : "false"));
+        line(std::string("pressed: ") + (row.pressed ? "true" : "false"));
+    }
+
+    static void handle_input(Field<std::optional<prism::debug::NodeRow>>&, const InputEvent&,
+                              WidgetNode&) {
+        // Read-only debug output — nothing to mutate on input.
+    }
+};
+
 } // namespace prism::ui
 
 namespace prism::debug {
@@ -124,15 +170,19 @@ namespace prism::debug {
 struct TreeInspectorModel {
     List<NodeRow> rows;
     Field<std::optional<WidgetId>> selected;
+    Field<std::optional<NodeRow>> detail;
     std::function<void(size_t, const NodeRow&)> on_click;
 
     void view(WidgetTree::ViewBuilder& vb) {
-        // Explicit template argument: deducing T from both `rows` (a
-        // List<NodeRow>&) and this lambda (not itself a std::function)
-        // fails template argument deduction, so T is pinned here and the
-        // lambda converts to std::function normally.
-        vb.list<NodeRow>(rows, [this](size_t index, const NodeRow& row) {
-            if (on_click) on_click(index, row);
+        vb.hstack([&] {
+            // Explicit template argument: deducing T from both `rows` (a
+            // List<NodeRow>&) and this lambda (not itself a std::function)
+            // fails template argument deduction, so T is pinned here and the
+            // lambda converts to std::function normally.
+            vb.list<NodeRow>(rows, [this](size_t index, const NodeRow& row) {
+                if (on_click) on_click(index, row);
+            });
+            vb.widget(detail);
         });
     }
 };
@@ -155,10 +205,11 @@ public:
     TreeInspectorController(WidgetTree& main_tree, WidgetTree& debug_tree, TreeInspectorModel& debug_model)
         : main_tree_(&main_tree), debug_tree_(&debug_tree), debug_model_(&debug_model) {
         expanded_.insert(main_tree_->root().id);
-        // TreeInspectorModel::view() today is a single vb.list(rows, ...) call — LayoutKind::
-        // VirtualList, not Row/Column, so ViewBuilder::finalize()'s single-child hoist never
-        // fires; debug_tree_->root()'s one child is the VirtualList container itself (same
-        // pattern used in tests/test_debug_name.cpp and tests/test_table.cpp).
+        // TreeInspectorModel::view() is a single top-level vb.hstack(...) call, so
+        // ViewBuilder::finalize()'s single-child Row hoist fires: debug_tree_->root() becomes
+        // the hstack's Row node itself, with the list container and the detail pane spliced
+        // directly onto it as its two children, in the order view() adds them. The list is
+        // added first, so it's still children.front() regardless of the hoist.
         list_container_id_ = debug_tree_->root().children.front().id;
         debug_model_->on_click = [this](size_t index, const NodeRow& row) {
             on_row_clicked(index, row);
@@ -192,6 +243,21 @@ public:
                 }
             }
         }
+
+        if (detail_selected_) {
+            bool found = false;
+            for (auto& row : rows) {
+                if (row.id == *detail_selected_) {
+                    debug_model_->detail.set(row);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                detail_selected_.reset();
+                debug_model_->detail.set(std::nullopt);
+            }
+        }
     }
 
     void on_row_clicked(size_t, const NodeRow& row) {
@@ -200,6 +266,8 @@ public:
             if (expanded_.contains(row.id)) expanded_.erase(row.id);
             else expanded_.insert(row.id);
         }
+        detail_selected_ = row.id;
+        debug_model_->detail.set(row);
     }
 
 private:
@@ -208,6 +276,7 @@ private:
     TreeInspectorModel* debug_model_;
     WidgetId list_container_id_;
     std::set<WidgetId> expanded_;
+    std::optional<WidgetId> detail_selected_;
 };
 
 } // namespace prism::debug

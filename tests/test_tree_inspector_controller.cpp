@@ -188,3 +188,76 @@ TEST_CASE("hovering a node hidden by a collapsed ancestor does not crash and doe
     CHECK(debug_model.rows.size() == 3);
     CHECK(debug_model.selected.get() == std::optional<prism::WidgetId>{inner_leaf_id});
 }
+
+TEST_CASE("clicking a debug row populates the detail panel with that row's data") {
+    MainModel main_model;
+    prism::WidgetTree main_tree(main_model);
+    main_tree.build_snapshot(400, 300, 1);
+    main_tree.clear_dirty();
+
+    prism::debug::TreeInspectorModel debug_model;
+    prism::WidgetTree debug_tree(debug_model);
+    prism::debug::TreeInspectorController controller(main_tree, debug_tree, debug_model);
+    controller.refresh();
+
+    REQUIRE(!debug_model.rows.empty());
+    auto clicked = debug_model.rows[debug_model.rows.size() - 1];
+    controller.on_row_clicked(0, clicked);
+
+    REQUIRE(debug_model.detail.get().has_value());
+    CHECK(debug_model.detail.get()->id == clicked.id);
+}
+
+TEST_CASE("detail panel stays live on the next refresh") {
+    MainModel main_model;
+    prism::WidgetTree main_tree(main_model);
+    main_tree.build_snapshot(400, 300, 1);
+    main_tree.clear_dirty();
+
+    prism::debug::TreeInspectorModel debug_model;
+    prism::WidgetTree debug_tree(debug_model);
+    prism::debug::TreeInspectorController controller(main_tree, debug_tree, debug_model);
+    controller.refresh();
+
+    REQUIRE(!debug_model.rows.empty());
+    auto clicked = debug_model.rows[debug_model.rows.size() - 1];
+    controller.on_row_clicked(0, clicked);
+    REQUIRE(debug_model.detail.get().has_value());
+
+    // clicked.dirty is false here (build_snapshot + clear_dirty in this test's setup ran
+    // before the click, and on_row_clicked's set_debug_highlight marks the tree's root dirty
+    // for republish purposes, not the individual clicked leaf — confirmed via
+    // WidgetTree::set_debug_highlight's mark_dirty_by_id(root_.id) call). Mutating the field
+    // now flips that specific leaf's own dirty flag via the existing Field-to-WidgetNode
+    // dirty wiring; the next refresh() must pick up the new value, not the stale one
+    // captured at click time.
+    CHECK_FALSE(clicked.dirty);
+    main_model.value.set(main_model.value.get() + 1);
+    controller.refresh();
+
+    CHECK(debug_model.detail.get()->id == clicked.id);
+    CHECK(debug_model.detail.get()->dirty == true);
+}
+
+TEST_CASE("clicking a different row switches the detail panel") {
+    MainModel main_model;
+    prism::WidgetTree main_tree(main_model);
+    main_tree.build_snapshot(400, 300, 1);
+    main_tree.clear_dirty();
+
+    prism::debug::TreeInspectorModel debug_model;
+    prism::WidgetTree debug_tree(debug_model);
+    prism::debug::TreeInspectorController controller(main_tree, debug_tree, debug_model);
+    controller.refresh();
+
+    REQUIRE(debug_model.rows.size() >= 2);
+    auto row_a = debug_model.rows[0];
+    auto row_b = debug_model.rows[debug_model.rows.size() - 1];
+    REQUIRE(row_a.id != row_b.id);
+
+    controller.on_row_clicked(0, row_a);
+    CHECK(debug_model.detail.get()->id == row_a.id);
+
+    controller.on_row_clicked(0, row_b);
+    CHECK(debug_model.detail.get()->id == row_b.id);
+}

@@ -90,3 +90,51 @@ TEST_CASE("Widget<NodeRow> record highlights the background when row.hovered is 
     auto bg_hovered = std::get<prism::FilledRect>(dl_hovered.commands[0]).color;
     CHECK(bg_unhovered.r != bg_hovered.r);
 }
+
+TEST_CASE("Widget<std::optional<NodeRow>> shows a placeholder when empty") {
+    prism::Field<std::optional<prism::debug::NodeRow>> field{std::nullopt};
+    prism::Theme theme;
+    prism::WidgetNode node;
+    node.theme = &theme;
+
+    prism::DrawList dl;
+    prism::Widget<std::optional<prism::debug::NodeRow>>::record(dl, field, node);
+
+    bool has_text = false;
+    for (auto& cmd : dl.commands)
+        if (std::holds_alternative<prism::TextCmd>(cmd)) has_text = true;
+    CHECK(has_text);
+}
+
+TEST_CASE("Widget<std::optional<NodeRow>> renders every field when populated") {
+    prism::debug::NodeRow row;
+    row.name = "some_field";
+    row.layout_kind_name = "Row";
+    row.dirty = true;
+    prism::Field<std::optional<prism::debug::NodeRow>> field{row};
+    prism::Theme theme;
+    prism::WidgetNode node;
+    node.theme = &theme;
+
+    prism::DrawList dl;
+    prism::Widget<std::optional<prism::debug::NodeRow>>::record(dl, field, node);
+
+    int text_commands = 0;
+    for (auto& cmd : dl.commands)
+        if (std::holds_alternative<prism::TextCmd>(cmd)) ++text_commands;
+    // name, layout kind, rect, dirty, hovered, focused, pressed = 7 lines
+    CHECK(text_commands == 7);
+}
+
+TEST_CASE("TreeInspectorModel::view places the list and detail pane side by side") {
+    prism::debug::TreeInspectorModel model;
+    prism::WidgetTree tree(model);
+    // ViewBuilder::finalize()'s single-child Row/Column hoist fires here: view()'s top level is
+    // now a single hstack (Row) call, so tree.root() itself becomes that Row, and its two
+    // children (list, detail) are spliced directly onto it — verify this empirically rather
+    // than assuming it holds after the view() change below (this exact codebase has twice
+    // shipped a wrong WidgetTree-traversal assumption baked into a test before — see this
+    // plan's Global Constraints).
+    REQUIRE(tree.root().children.size() == 2);
+    CHECK(tree.root().children[0].layout_kind == prism::LayoutKind::VirtualList);
+}
