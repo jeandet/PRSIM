@@ -722,6 +722,172 @@ TEST_CASE("Ctrl+Shift+I attaches a debug window; pressing it again removes it") 
 // complete without crashing/hanging to prove the fix; the earlier round-trip test above
 // (attach then detach) never exercises this path because the debug entry is already
 // removed from registry before shutdown.
+namespace {
+// Debug-window rows render as ~22px-tall leaf widgets (Widget<NodeRow>::row_h); the
+// surrounding VirtualList viewport/container geometry is much taller. Filtering by
+// height isolates just the per-row rects, in ascending row-index order (mirrors
+// tests/test_virtual_list.cpp's row_ids() helper — duplicated here since these are
+// two independent test binaries with no shared test-support header).
+std::vector<std::pair<prism::WidgetId, prism::Rect>> debug_row_rects(const prism::SceneSnapshot& snap) {
+    std::vector<std::pair<prism::WidgetId, prism::Rect>> rows;
+    for (auto& [id, rect] : snap.geometry)
+        if (id != 0 && rect.extent.h.raw() > 0.f && rect.extent.h.raw() < 50.f)
+            rows.emplace_back(id, rect);
+    return rows;
+}
+}
+
+// Genuine end-to-end integration test: exercises the full live-inspector data flow
+// (spec's "Data flow" steps 2-4) in ONE connected scenario through the real
+// model_app() hotkey wiring — not a restatement of any single prior task's narrower
+// test (Task 7's controller test drives two WidgetTrees directly with no model_app()
+// or hotkey involved; Task 8's test only proves attach/detach fires, with no hover or
+// click in between).
+TEST_CASE("end-to-end: hotkey attach then hover-select then row-click-highlight then hotkey detach") {
+    struct IntegrationMainModel {
+        prism::Field<int> value{0};
+        void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); }
+    };
+
+    struct IntegrationBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        prism::WindowId secondary_id_ = 0;
+        int close_calls_ = 0;
+
+        std::shared_ptr<const prism::SceneSnapshot> latest_primary_;
+        std::shared_ptr<const prism::SceneSnapshot> latest_secondary_;
+        std::atomic<size_t> primary_count_{0};
+        std::atomic<size_t> secondary_count_{0};
+
+        // Set by the test's setup() callback (main thread, strictly before loop.run()
+        // starts processing any event this run() schedules) and read from run() only
+        // after a count.wait() below establishes happens-before with that write.
+        prism::WidgetTree* main_tree_ptr = nullptr;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            secondary_id_ = 2;
+            secondary_ = prism::HeadlessWindow{secondary_id_, cfg};
+            return &secondary_;
+        }
+        void close_window(prism::WindowId) override { ++close_calls_; }
+
+        void submit(prism::WindowId id, std::shared_ptr<const prism::SceneSnapshot> s) override {
+            if (id == primary_.id()) {
+                latest_primary_ = std::move(s);
+                primary_count_.fetch_add(1, std::memory_order_release);
+                primary_count_.notify_all();
+            } else if (id == secondary_id_) {
+                latest_secondary_ = std::move(s);
+                secondary_count_.fetch_add(1, std::memory_order_release);
+                secondary_count_.notify_all();
+            }
+        }
+        void wake() override {}
+        void quit() override {}
+
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            // 1. Initial publish of the primary window; locate its sole leaf widget.
+            primary_count_.wait(0, std::memory_order_acquire);
+            auto primary_snap0 = latest_primary_;
+            REQUIRE_FALSE(primary_snap0->geometry.empty());
+            auto [leaf_id, leaf_rect] = primary_snap0->geometry[0];
+
+            // 2. Attach: Ctrl+Shift+I. Task 8's wiring installs the post-dispatch hook
+            // and the hook fires within this SAME event tick (right after the global
+            // key handler that installs it), so controller.refresh() already ran once
+            // and the debug window's first *populated* snapshot (not an empty shell)
+            // republishes before this event finishes processing.
+            auto mods = static_cast<uint16_t>(prism::mods::ctrl | prism::mods::shift);
+            cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+
+            secondary_count_.wait(0, std::memory_order_acquire);
+            auto debug_snap1 = latest_secondary_;
+            auto rows1 = debug_row_rects(*debug_snap1);
+            REQUIRE(rows1.size() >= 2); // root row + the int field's leaf row
+
+            // 3. Hover the main window's leaf via the *real* hit-test + update_hover
+            // path (detail::route_mouse_move) — unlike Task 7's controller test, which
+            // called WidgetTree::update_hover() directly as a documented workaround.
+            //
+            // This single event dirties BOTH trees: WidgetTree::update_hover marks the
+            // newly-hovered leaf dirty (primary republishes), and refresh() unconditionally
+            // rewrites debug_model.rows (secondary republishes) — both from the same
+            // for_each_dirty loop, in unspecified (unordered_map) iteration order. Waiting
+            // on only one counter races the other: if secondary is visited first, our wait
+            // can unblock before primary's *own* hover-triggered publish has run, and that
+            // publish can then land late and get mistaken for the click step's publish
+            // below (this was caught empirically — the test was flaky before this fix).
+            // Waiting on both baselines makes the hover step's full settle observable
+            // before any later step captures its own "before" baseline.
+            auto primary_before_hover = primary_count_.load(std::memory_order_acquire);
+            auto secondary_before_hover = secondary_count_.load(std::memory_order_acquire);
+            cb(prism::WindowEvent{primary_.id(), prism::MouseMove{leaf_rect.center()}});
+            primary_count_.wait(primary_before_hover, std::memory_order_acquire);
+            secondary_count_.wait(secondary_before_hover, std::memory_order_acquire);
+
+            // TreeInspectorModel::selected is a private local inside model_app() with
+            // no externally observable rendering effect (nothing reads it besides
+            // refresh() itself — confirmed by inspection), so it cannot be asserted on
+            // directly through model_app()'s public surface. main_tree_ptr aliases the
+            // exact WidgetTree the live debug_controller reads hovered_id() from
+            // (captured via the same public AppContext::registry() surface Task 3
+            // already exercises); asserting it reflects the real routed hover is the
+            // strongest black-box proof available that the hover signal reached
+            // refresh()'s input. Task 7's own test already covers hovered_id() ->
+            // selected in isolation with full white-box access to debug_model.
+            REQUIRE(main_tree_ptr != nullptr);
+            CHECK(main_tree_ptr->hovered_id() == leaf_id);
+
+            // 4. Click the leaf's row (index 1 — root is index 0) in the debug window,
+            // driving TreeInspectorController::on_row_clicked -> set_debug_highlight.
+            auto debug_snap2 = latest_secondary_;
+            auto rows2 = debug_row_rects(*debug_snap2);
+            REQUIRE(rows2.size() >= 2);
+            auto leaf_row_center = rows2[1].second.center();
+
+            auto primary_before_click = primary_count_.load(std::memory_order_acquire);
+            cb(prism::WindowEvent{secondary_id_, prism::MouseButton{leaf_row_center, 1, true}});
+            primary_count_.wait(primary_before_click, std::memory_order_acquire);
+
+            auto primary_snap2 = latest_primary_;
+            bool found_highlight_on_leaf = false;
+            for (auto& cmd : primary_snap2->overlay.commands) {
+                if (auto* outline = std::get_if<prism::RectOutline>(&cmd))
+                    found_highlight_on_leaf = found_highlight_on_leaf || (outline->rect == leaf_rect);
+            }
+            CHECK(found_highlight_on_leaf);
+
+            // 5. Detach: Ctrl+Shift+I again — must tear down cleanly.
+            cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+
+            cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+    };
+
+    IntegrationMainModel model;
+    auto backend_ptr = std::make_unique<IntegrationBackend>();
+    auto* raw = backend_ptr.get();
+    auto backend = prism::Backend{std::move(backend_ptr)};
+    auto& window = backend.create_window({});
+
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        auto* entry = ctx.registry().find(window.id());
+        REQUIRE(entry != nullptr);
+        raw->main_tree_ptr = entry->tree.get();
+    });
+
+    // Reaching this line at all (no crash/hang) plus close_calls_ == 1 proves the
+    // second hotkey press genuinely detached and tore down the debug window across a
+    // realistic multi-step sequence (attach, hover, click, detach) — the exact
+    // balanced path Task 8's UAF regression test also relies on reaching cleanly.
+    CHECK(raw->close_calls_ == 1);
+}
+
 TEST_CASE("quitting while the debug inspector is still attached does not use-after-free") {
     struct QuitWhileAttachedBackend final : public prism::BackendBase {
         prism::HeadlessWindow primary_{0, {}};
