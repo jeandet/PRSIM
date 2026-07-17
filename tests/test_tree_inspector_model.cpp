@@ -51,3 +51,42 @@ TEST_CASE("TreeInspectorModel with no on_click set does not crash on row click")
     tree.dispatch(row_leaf_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
     CHECK(true); // must not crash — on_click is unset (default-constructed std::function)
 }
+
+namespace {
+prism::Theme row_test_theme;
+
+prism::WidgetNode make_row_node() {
+    prism::WidgetNode node;
+    node.theme = &row_test_theme;
+    return node;
+}
+}
+
+// Closes the "main -> debug" highlighting gap: row.hovered mirrors whether this row's
+// widget is the one currently hovered in the *main* window (populated by flatten_node
+// from WidgetTree::hovered_id()), independent of vs.hovered (mouse-over-this-debug-row
+// itself). Widget<NodeRow>::record must render a visible difference for it, or hovering
+// a widget in the main window has no observable effect in the debug window.
+TEST_CASE("Widget<NodeRow> record highlights the background when row.hovered is true") {
+    prism::debug::NodeRow unhovered_row;
+    unhovered_row.id = 1;
+    unhovered_row.name = "leaf";
+    unhovered_row.hovered = false;
+    prism::Field<prism::debug::NodeRow> unhovered_field{unhovered_row};
+    auto node = make_row_node();
+
+    prism::DrawList dl_unhovered;
+    prism::Widget<prism::debug::NodeRow>::record(dl_unhovered, unhovered_field, node);
+
+    prism::debug::NodeRow hovered_row = unhovered_row;
+    hovered_row.hovered = true;
+    prism::Field<prism::debug::NodeRow> hovered_field{hovered_row};
+    prism::DrawList dl_hovered;
+    prism::Widget<prism::debug::NodeRow>::record(dl_hovered, hovered_field, node);
+
+    REQUIRE(!dl_unhovered.commands.empty());
+    REQUIRE(!dl_hovered.commands.empty());
+    auto bg_unhovered = std::get<prism::FilledRect>(dl_unhovered.commands[0]).color;
+    auto bg_hovered = std::get<prism::FilledRect>(dl_hovered.commands[0]).color;
+    CHECK(bg_unhovered.r != bg_hovered.r);
+}

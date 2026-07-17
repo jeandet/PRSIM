@@ -81,6 +81,17 @@ void model_app(Backend& backend, Window& window, Model& model,
     std::function<void()> post_dispatch_hook;
     bool tick_scheduled = false;
 
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+    // Shared by the hotkey's own detach branch and the generic secondary-WindowClose
+    // path below (debug window closed via its own chrome) — both must leave the
+    // inspector fully dormant so the next Ctrl+Shift+I press reopens it.
+    auto reset_debug_inspector = [&] {
+        debug_window_id.reset();
+        debug_controller.reset();
+        post_dispatch_hook = nullptr;
+    };
+#endif
+
     auto publish_entry = [&](WindowId id, WindowRegistry::Entry& entry) {
         entry.current_snap = std::shared_ptr<const SceneSnapshot>(
             entry.tree->build_snapshot(static_cast<float>(entry.width),
@@ -126,6 +137,14 @@ void model_app(Backend& backend, Window& window, Model& model,
                         } else {
                             registry.remove(wid);
                             backend.close_window(wid);
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+                            // Debug window closed via its own chrome (not the hotkey) —
+                            // reset the same state the hotkey's detach branch would, so
+                            // the next Ctrl+Shift+I press reopens rather than tries to
+                            // detach an already-removed window.
+                            if (debug_window_id && wid == *debug_window_id)
+                                reset_debug_inspector();
+#endif
                         }
                         return;
                     }
@@ -196,9 +215,7 @@ void model_app(Backend& backend, Window& window, Model& model,
         } else {
             registry.remove(*debug_window_id);
             backend.close_window(*debug_window_id);
-            debug_window_id.reset();
-            debug_controller.reset();
-            ctx.set_post_dispatch_hook(nullptr);
+            reset_debug_inspector();
         }
     });
 #endif

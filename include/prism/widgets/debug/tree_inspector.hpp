@@ -97,7 +97,11 @@ struct Widget<prism::debug::NodeRow> {
         auto& row = field.get();
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        auto bg = vs.hovered ? t.surface_hover : t.surface;
+        // vs.hovered: mouse is over this row in the debug window itself.
+        // row.hovered: this row's widget is the one currently hovered in the
+        // *main* window (see flatten_node) — the "main -> debug" highlight direction.
+        bool highlight = vs.hovered || row.hovered;
+        auto bg = highlight ? t.surface_hover : t.surface;
         auto w = detail::widget_w(node);
         dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, row_h), bg);
 
@@ -153,6 +157,13 @@ public:
         };
     }
 
+    // debug_model_->on_click above captures `this` — a copy or move would leave that
+    // callback pointing at a stale (possibly destroyed) controller.
+    TreeInspectorController(const TreeInspectorController&) = delete;
+    TreeInspectorController& operator=(const TreeInspectorController&) = delete;
+    TreeInspectorController(TreeInspectorController&&) = delete;
+    TreeInspectorController& operator=(TreeInspectorController&&) = delete;
+
     void refresh() {
         auto rows = flatten_tree(*main_tree_, expanded_);
         while (!debug_model_->rows.empty())
@@ -161,6 +172,13 @@ public:
             debug_model_->rows.push_back(row);
 
         auto hovered = main_tree_->hovered_id();
+        // `selected` now only records which id is hovered; NodeRow::hovered (populated by
+        // flatten_tree above) is what actually drives the visible main -> debug highlight.
+        // Auto-scrolling the debug list to bring that row into view is a deliberately
+        // deferred follow-up — it needs TreeInspectorController to also hold the debug
+        // window's own WidgetTree (currently only main_tree_ is held), which is a
+        // constructor signature change touching this already-reviewed class, its
+        // model_app.hpp call site, and its existing tests.
         if (hovered != 0)
             debug_model_->selected.set(hovered);
     }

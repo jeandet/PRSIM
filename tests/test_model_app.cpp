@@ -927,4 +927,76 @@ TEST_CASE("quitting while the debug inspector is still attached does not use-aft
     // by registry's destructor before debug_model itself was destroyed.
     prism::model_app(backend, window, model, nullptr);
 }
+
+// Regression test: closing the debug window via its own window chrome (a generic
+// secondary-window WindowClose, not the Ctrl+Shift+I hotkey's detach branch) must reset
+// the inspector's state (debug_window_id/debug_controller/post-dispatch hook) just like
+// the hotkey's own detach branch does. Otherwise debug_window_id keeps looking "set" after
+// the window is already gone, so the next hotkey press takes the "detach" branch (closing
+// an already-removed window) instead of reopening — requiring two presses to get a new
+// debug window back.
+TEST_CASE("closing the debug window via a generic secondary WindowClose lets the next hotkey press reopen it") {
+    struct GenericCloseBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        // request_window() runs on the thread executing loop.run() (i.e. wherever
+        // model_app() itself is called from), NOT on this backend's run() thread, so
+        // reading the id it assigns back in run() needs real cross-thread
+        // synchronization — mirrors the count.wait()/notify_all() pattern other tests
+        // in this file use for the same reason.
+        std::atomic<prism::WindowId> secondary_id_{0};
+        int request_window_calls_ = 0;
+        int close_calls_ = 0;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            ++request_window_calls_;
+            secondary_ = prism::HeadlessWindow{2, cfg};
+            secondary_id_.store(2, std::memory_order_release);
+            secondary_id_.notify_all();
+            return &secondary_;
+        }
+        void close_window(prism::WindowId) override { ++close_calls_; }
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            auto mods = static_cast<uint16_t>(prism::mods::ctrl | prism::mods::shift);
+            // 1. Attach via the hotkey.
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            secondary_id_.wait(0, std::memory_order_acquire);
+            auto secondary_id = secondary_id_.load(std::memory_order_acquire);
+            // 2. Close the debug window itself (e.g. its native/custom close button) —
+            // routed as a generic secondary WindowClose, NOT through the hotkey.
+            event_cb(prism::WindowEvent{secondary_id, prism::WindowClose{}});
+            // 3. Press the hotkey again. If state wasn't reset in step 2, this wrongly
+            // takes the "detach" branch (closes an already-removed window, doesn't
+            // reopen). If state WAS reset, this reopens (request_window called again).
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct GenericCloseModel {
+        prism::Field<int> value{0};
+        void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); }
+    };
+    GenericCloseModel model;
+    auto backend_ptr = std::make_unique<GenericCloseBackend>();
+    auto* raw = backend_ptr.get();
+    auto backend = prism::Backend{std::move(backend_ptr)};
+    auto& window = backend.create_window({});
+
+    prism::model_app(backend, window, model, nullptr);
+
+    // Two attaches (steps 1 and 3) prove the second hotkey press reopened the inspector
+    // rather than trying to detach an already-removed window.
+    CHECK(raw->request_window_calls_ == 2);
+    // Only step 2's generic close ever called close_window — a stale debug_window_id
+    // would make step 3 call it a second time.
+    CHECK(raw->close_calls_ == 1);
+}
 #endif
