@@ -713,6 +713,62 @@ TEST_CASE("Ctrl+Shift+I attaches a debug window; pressing it again removes it") 
     CHECK(raw->close_calls_ == 1);
 }
 
+// Regression test for a real bug: mods::ctrl/mods::shift are *group* masks (both left+right
+// bits combined), matching the existing route_key_press idiom of `kp.mods & mods::shift` as a
+// truthy "is shift held" check. The hotkey handler instead checked
+// `(kp.mods & (mods::ctrl|mods::shift)) != (mods::ctrl|mods::shift)` — equality against the
+// FULL combined mask, which requires both left AND right Ctrl plus both left AND right Shift
+// held simultaneously. A real single-side Ctrl+Shift press (e.g. left Ctrl + left Shift, the
+// overwhelmingly common case) only ever sets one bit per group, so this never matched. Every
+// prior test synthesized the same (unrealistic) full-mask value the buggy check expected,
+// which is why this was never caught.
+TEST_CASE("Ctrl+Shift+I fires with a realistic single-side modifier combination") {
+    struct SingleSideHotkeyBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+        prism::WindowId secondary_id_ = 0;
+        int request_window_calls_ = 0;
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            ++request_window_calls_;
+            secondary_id_ = 2;
+            secondary_ = prism::HeadlessWindow{secondary_id_, cfg};
+            return &secondary_;
+        }
+        void close_window(prism::WindowId) override {}
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            // Left Ctrl + Left Shift only — what a real keyboard actually reports for one
+            // physical Ctrl+Shift+I press. NOT the full ctrl|shift group mask.
+            constexpr uint16_t left_ctrl = 0x0040;
+            constexpr uint16_t left_shift = 0x0001;
+            auto mods = static_cast<uint16_t>(left_ctrl | left_shift);
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct SingleSideHotkeyModel {
+        prism::Field<int> value{0};
+        void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); }
+    };
+    SingleSideHotkeyModel model;
+    auto backend_ptr = std::make_unique<SingleSideHotkeyBackend>();
+    auto* raw = backend_ptr.get();
+    auto backend = prism::Backend{std::move(backend_ptr)};
+    auto& window = backend.create_window({});
+
+    prism::model_app(backend, window, model, nullptr);
+
+    CHECK(raw->request_window_calls_ == 1);
+}
+
 // Regression test for a heap-use-after-free: if the app quits while the debug inspector
 // is still attached (a single Ctrl+Shift+I press, no matching second press to detach),
 // model_app()'s locals destruct in reverse declaration order. The registry-owned debug

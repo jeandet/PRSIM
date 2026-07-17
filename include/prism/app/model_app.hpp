@@ -200,7 +200,7 @@ void model_app(Backend& backend, Window& window, Model& model,
     // below would silently override this wiring. Known limitation, not solved
     // here (see commit message).
     ctx.set_global_key_handler([&](const KeyPress& kp) {
-        if (kp.key != keys::i || (kp.mods & (mods::ctrl | mods::shift)) != (mods::ctrl | mods::shift))
+        if (kp.key != keys::i || !(kp.mods & mods::ctrl) || !(kp.mods & mods::shift))
             return;
         if (!debug_window_id) {
             auto* win = backend.request_window(WindowConfig{.title = "PRISM Tree Inspector"});
