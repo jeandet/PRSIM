@@ -950,6 +950,18 @@ private:
         Node root;
         root.id = next_id_++;
         root.is_leaf = false;
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+#if __cpp_impl_reflection
+        // Every component() nesting call (PRISM's primary composition mechanism) wraps its
+        // sub-tree in a root Node via this function. Without this, that wrapper's debug_name
+        // stays empty and its layout_kind default (LayoutKind::Default) leaks through as the
+        // row's displayed name -- see the analogous fallback comment on check_unplaced_fields'
+        // model_name below.
+        static constexpr std::string_view root_debug_name = std::meta::has_identifier(^^Model)
+            ? std::meta::identifier_of(^^Model) : std::string_view{"<anonymous>"};
+        root.debug_name = std::string(root_debug_name);
+#endif
+#endif
 
         if constexpr (requires(Model& m, ViewBuilder& vb) { m.view(vb); }) {
             ViewBuilder vb{*this, root};

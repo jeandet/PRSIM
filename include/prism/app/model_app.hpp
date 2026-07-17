@@ -203,7 +203,8 @@ void model_app(Backend& backend, Window& window, Model& model,
         if (kp.key != keys::i || !(kp.mods & mods::ctrl) || !(kp.mods & mods::shift))
             return;
         if (!debug_window_id) {
-            auto* win = backend.request_window(WindowConfig{.title = "PRISM Tree Inspector"});
+            auto* win = backend.request_window(WindowConfig{.title = "PRISM Tree Inspector",
+                                                              .decoration = DecorationMode::Custom});
             if (!win) return; // request failed — stay dormant, try again on next hotkey press
             auto* primary_entry = registry.find(primary_id);
             if (!primary_entry) return;

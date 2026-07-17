@@ -713,6 +713,47 @@ TEST_CASE("Ctrl+Shift+I attaches a debug window; pressing it again removes it") 
     CHECK(raw->close_calls_ == 1);
 }
 
+// Regression test: the debug window must request Custom decoration, same as every other
+// real PRISM window (see examples/model_plot.cpp), because native/server-side decoration
+// isn't available on this platform (see project-window-chrome memory) — SdlWindow only
+// draws WindowChrome when decoration_mode() == Custom. Requesting the default (Native)
+// leaves the debug window with no title bar, no close button, nothing.
+TEST_CASE("Ctrl+Shift+I requests the debug window with Custom decoration") {
+    struct HotkeyBackend final : public prism::BackendBase {
+        prism::HeadlessWindow primary_{0, {}};
+        prism::HeadlessWindow secondary_{0, {}};
+
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            primary_ = prism::HeadlessWindow{1, cfg};
+            return primary_;
+        }
+        prism::Window* request_window(prism::WindowConfig cfg) override {
+            secondary_ = prism::HeadlessWindow{2, cfg};
+            return &secondary_;
+        }
+        void close_window(prism::WindowId) override {}
+        void run(std::function<void(const prism::WindowEvent&)> event_cb) override {
+            auto mods = static_cast<uint16_t>(prism::mods::ctrl | prism::mods::shift);
+            event_cb(prism::WindowEvent{primary_.id(), prism::KeyPress{prism::keys::i, mods}});
+            event_cb(prism::WindowEvent{primary_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    struct DecorationHotkeyTestModel { prism::Field<int> value{0}; void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); } };
+    DecorationHotkeyTestModel model;
+    auto backend_ptr = std::make_unique<HotkeyBackend>();
+    auto* raw = backend_ptr.get();
+    auto backend = prism::Backend{std::move(backend_ptr)};
+    auto& window = backend.create_window({});
+
+    prism::model_app(backend, window, model, nullptr);
+
+    CHECK(raw->secondary_.decoration_mode() == prism::DecorationMode::Custom);
+}
+
 // Regression test for a real bug: mods::ctrl/mods::shift are *group* masks (both left+right
 // bits combined), matching the existing route_key_press idiom of `kp.mods & mods::shift` as a
 // truthy "is shift held" check. The hotkey handler instead checked

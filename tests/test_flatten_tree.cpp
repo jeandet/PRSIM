@@ -4,6 +4,8 @@
 #include <prism/widgets/debug/tree_inspector.hpp>
 #include <prism/core/field.hpp>
 
+#include <algorithm>
+
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
 namespace prism {
@@ -65,13 +67,47 @@ TEST_CASE("flatten_tree row fields reflect live tree state") {
     }
 }
 
-TEST_CASE("flatten_tree name falls back to layout_kind_name for container nodes") {
+TEST_CASE("flatten_tree names the model root after the model's own type") {
     FlatModel model;
     prism::WidgetTree tree(model);
     std::set<prism::WidgetId> all_expanded{tree.root().id};
     for (auto id : tree.leaf_ids()) all_expanded.insert(id);
     auto rows = prism::debug::flatten_tree(tree, all_expanded);
-    // The root is a container (Row/Column) and never receives a debug_name;
-    // its row's name must fall back to the layout-kind name.
-    CHECK(rows[0].name == rows[0].layout_kind_name);
+    // The root wraps a Model with no view() (pure reflection path); it must be labeled
+    // with the model's own type rather than falling back to "Default".
+    CHECK(rows[0].name == "FlatModel");
+}
+
+// Regression test: nested component() sub-trees (PRISM's primary composition mechanism —
+// "compose by nesting") each get their own wrapper root Node via build_node_tree(), whose
+// layout_kind defaults to LayoutKind::Default and which historically never received a
+// debug_name — so every component boundary showed up in the inspector as an unlabeled,
+// indistinguishable "Default" row. It must instead be labeled after the component's type.
+struct NamedSubComponent {
+    prism::Field<int> x{0};
+    prism::Field<int> y{0};
+    void view(prism::WidgetTree::ViewBuilder& vb) { vb.vstack(x, y); }
+};
+struct ParentOfNamedSub {
+    NamedSubComponent sub;
+    prism::Field<bool> flag{false};
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.hstack([&] {
+            vb.component(sub);
+            vb.widget(flag);
+        });
+    }
+};
+
+TEST_CASE("flatten_tree names a nested component() root after the component's own type") {
+    ParentOfNamedSub model;
+    prism::WidgetTree tree(model);
+    std::set<prism::WidgetId> all_expanded{tree.root().id};
+    for (auto id : tree.leaf_ids()) all_expanded.insert(id);
+    auto rows = prism::debug::flatten_tree(tree, all_expanded);
+
+    auto it = std::find_if(rows.begin(), rows.end(),
+        [](const prism::debug::NodeRow& r) { return r.name == "NamedSubComponent"; });
+    REQUIRE(it != rows.end());
+    CHECK(it->name != "Default");
 }
