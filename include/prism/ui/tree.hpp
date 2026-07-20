@@ -308,15 +308,25 @@ struct IsVector<std::vector<X>> : std::true_type {};
 // tree row. std::vector<...> members (including vector-of-reflectable-class -- the documented
 // v1 non-goal) match none of these branches and are silently skipped.
 //
+// Node identity is a monotonically-increasing counter (`next_id`), NOT the object's address.
+// Addresses collide whenever a nested-class member sits at offset 0 of its parent -- in a
+// standard-layout struct, `&outer == &outer.inner` when `inner` is the first member -- which
+// would make the parent and that child share one cache slot and silently drop whichever entry
+// lost the race to `cache.emplace()`. A fresh id assigned at the start of each call, threaded
+// through the recursion, has no such collision no matter how members are laid out.
+//
 // `entry` is built up as a LOCAL value and inserted into `cache` only once, at the very end --
 // never held as a reference across the recursive calls below. cache[id] / cache.emplace(...)
 // can rehash std::unordered_map and invalidate references to every other element; taking a
 // reference up front and using it after a nested populate_struct_tree_cache() call (which also
 // inserts into the same cache) would be a dangling-reference bug.
+//
+// No cycle detection (documented v1 non-goal): a self-referential structure recurses until a
+// real leaf or the stack overflows.
 template <typename X, typename Cache>
-void populate_struct_tree_cache(X& obj, std::string_view label, Cache& cache) {
-    TreeNodeId id = reinterpret_cast<TreeNodeId>(std::addressof(obj));
-    if (cache.contains(id)) return; // already visited
+TreeNodeId populate_struct_tree_cache(X& obj, std::string_view label, Cache& cache,
+                                       TreeNodeId& next_id) {
+    TreeNodeId id = next_id++;
 
     typename Cache::mapped_type entry;
     entry.label = std::string(label);
@@ -332,26 +342,30 @@ void populate_struct_tree_cache(X& obj, std::string_view label, Cache& cache) {
         if constexpr (std::is_pointer_v<M> && std::is_class_v<std::remove_pointer_t<M>>
                       && !std::is_same_v<std::remove_pointer_t<M>, std::string>) {
             if (member != nullptr) {
-                entry.children.push_back(reinterpret_cast<TreeNodeId>(member));
-                populate_struct_tree_cache(*member, member_name, cache);
+                entry.children.push_back(
+                    populate_struct_tree_cache(*member, member_name, cache, next_id));
             }
         } else if constexpr (IsOptionalOfClass<M>::value) {
             if (member.has_value()) {
-                entry.children.push_back(reinterpret_cast<TreeNodeId>(std::addressof(*member)));
-                populate_struct_tree_cache(*member, member_name, cache);
+                entry.children.push_back(
+                    populate_struct_tree_cache(*member, member_name, cache, next_id));
             }
         } else if constexpr (std::is_class_v<M> && !std::is_same_v<M, std::string>
                               && !IsVector<M>::value) {
-            entry.children.push_back(reinterpret_cast<TreeNodeId>(std::addressof(member)));
-            populate_struct_tree_cache(member, member_name, cache);
+            entry.children.push_back(
+                populate_struct_tree_cache(member, member_name, cache, next_id));
         } else if constexpr (std::is_arithmetic_v<M>) {
             entry.attributes.emplace_back(std::string(member_name), fmt::to_string(member));
         } else if constexpr (std::is_same_v<M, std::string>) {
             entry.attributes.emplace_back(std::string(member_name), member);
+        } else if constexpr (std::is_enum_v<M>) {
+            entry.attributes.emplace_back(std::string(member_name),
+                                           fmt::to_string(std::to_underlying(member)));
         }
     }
 
     cache.emplace(id, std::move(entry));
+    return id;
 }
 
 } // namespace detail_tree
@@ -364,13 +378,14 @@ TreeSource wrap_struct_tree(T& root) {
         std::vector<TreeNodeId> children;
     };
     auto cache = std::make_shared<std::unordered_map<TreeNodeId, Entry>>();
-    detail_tree::populate_struct_tree_cache(root, std::meta::identifier_of(^^T), *cache);
+    auto next_id = std::make_shared<TreeNodeId>(1);
+    TreeNodeId root_id
+        = detail_tree::populate_struct_tree_cache(root, std::meta::identifier_of(^^T), *cache,
+                                                   *next_id);
 
     TreeSource src;
     src.root_count = [] { return size_t{1}; };
-    src.root_at = [&root](size_t) -> TreeNodeId {
-        return reinterpret_cast<TreeNodeId>(std::addressof(root));
-    };
+    src.root_at = [root_id](size_t) { return root_id; };
     src.label = [cache](TreeNodeId id) { return cache->at(id).label; };
     src.has_children = [cache](TreeNodeId id) { return !cache->at(id).children.empty(); };
     src.child_count = [cache](TreeNodeId id) { return cache->at(id).children.size(); };

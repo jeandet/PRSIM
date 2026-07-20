@@ -31,12 +31,11 @@ TEST_CASE("wrap_struct_tree exposes a root and descends into non-null pointer me
     auto src = prism::wrap_struct_tree(root);
     REQUIRE(src.root_count() == 1);
     auto root_id = src.root_at(0);
-    CHECK(root_id == reinterpret_cast<prism::TreeNodeId>(&root));
 
     CHECK(src.has_children(root_id) == true);
     REQUIRE(src.child_count(root_id) == 1); // only A -- B is null, not shown at all
     auto a_id = src.child_at(root_id, 0);
-    CHECK(a_id == reinterpret_cast<prism::TreeNodeId>(&leaf_a));
+    CHECK(a_id != root_id); // distinct nodes get distinct ids
     CHECK(src.label(a_id) == "A"); // labeled by the member name that referenced it
     CHECK(src.has_children(a_id) == false); // leaf_a's own A/B are both null
 }
@@ -113,6 +112,56 @@ TEST_CASE("wrap_struct_tree skips std::vector members entirely (documented v1 no
         (void)v;
         CHECK(k != "kids");
     }
+}
+
+namespace {
+struct FirstMember {
+    int x = 0;
+};
+// NestedFirst's first member is a class type, so &NestedFirst == &NestedFirst::inner for any
+// standard-layout instance -- this is the regression case for address-derived TreeNodeId, where
+// the child and parent would collide on the very same cache key.
+struct NestedFirst {
+    FirstMember inner;
+    int value = 0;
+};
+}
+
+TEST_CASE("wrap_struct_tree keeps parent and child distinct when a nested class member is first "
+          "(same address as the parent)") {
+    NestedFirst root;
+    root.inner.x = 3;
+    root.value = 9;
+
+    auto src = prism::wrap_struct_tree(root);
+    auto root_id = src.root_at(0);
+    CHECK(src.label(root_id) == "NestedFirst"); // not overwritten/shadowed by the child's entry
+    REQUIRE(src.child_count(root_id) == 1);
+
+    auto attrs = src.attributes(root_id);
+    bool found_value = false;
+    for (auto& [k, v] : attrs)
+        if (k == "value" && v == "9") found_value = true;
+    CHECK(found_value); // root's own attribute must survive, not just the child's
+}
+
+namespace {
+enum class Color { Red, Green };
+struct WithEnum {
+    Color color = Color::Green;
+};
+}
+
+TEST_CASE("wrap_struct_tree collects enum members as attributes with their underlying value") {
+    WithEnum root;
+    auto src = prism::wrap_struct_tree(root);
+    auto root_id = src.root_at(0);
+
+    auto attrs = src.attributes(root_id);
+    bool found = false;
+    for (auto& [k, v] : attrs)
+        if (k == "color" && v == "1") found = true; // Color::Green's underlying value
+    CHECK(found);
 }
 
 #endif // __cpp_impl_reflection
