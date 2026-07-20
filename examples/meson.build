@@ -10,4 +10,8 @@ executable('model_plot', 'model_plot.cpp',
   dependencies : [prism_dep],
 )
 
+executable('model_tree_browser', 'model_tree_browser.cpp',
+  dependencies : [prism_dep],
+)
+
 subdir('showcase')
