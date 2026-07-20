@@ -1,7 +1,9 @@
 #pragma once
 
 #include <prism/core/field.hpp>
+#include <prism/core/list.hpp>
 #include <prism/core/types.hpp>
+#include <prism/input/input_event.hpp>
 #include <prism/ui/delegate.hpp>
 
 #include <cstdint>
@@ -161,5 +163,116 @@ inline std::vector<TreeRow> visible_rows(const TreeSource& source,
         detail_tree::flatten_node(source, source.root_at(i), 0, expanded, selected, rows);
     return rows;
 }
+
+class TreeController {
+public:
+    explicit TreeController(TreeSource source) : source_(std::move(source)) {
+        refresh();
+    }
+
+    List<TreeRow> rows;
+    Field<std::optional<TreeNodeId>> selected;
+    Field<std::optional<TreeDetail>> detail;
+
+    void refresh() {
+        auto fresh = visible_rows(source_, expanded_, selected.get());
+        while (!rows.empty()) rows.erase(rows.size() - 1);
+        for (auto& r : fresh) rows.push_back(r);
+    }
+
+    void on_row_clicked(size_t, const TreeRow& row) {
+        selected.set(row.id);
+        if (row.has_children) {
+            if (expanded_.contains(row.id)) expanded_.erase(row.id);
+            else expanded_.insert(row.id);
+        }
+        populate_detail(row.id);
+        refresh();
+    }
+
+    // Returns the index in `rows` that should be scrolled into view, if selection moved or
+    // an expand/collapse happened; nullopt if `ev` wasn't a handled KeyPress.
+    std::optional<size_t> on_key(const InputEvent& ev) {
+        auto* kp = std::get_if<KeyPress>(&ev);
+        if (!kp) return std::nullopt;
+
+        std::vector<TreeRow> snapshot;
+        for (size_t i = 0; i < rows.size(); ++i) snapshot.push_back(rows[i]);
+        if (snapshot.empty()) return std::nullopt;
+
+        auto sel = selected.get();
+        size_t cur = 0;
+        bool has_cur = false;
+        if (sel) {
+            for (size_t i = 0; i < snapshot.size(); ++i)
+                if (snapshot[i].id == *sel) { cur = i; has_cur = true; break; }
+        }
+
+        if (kp->key == keys::down) {
+            size_t next = has_cur ? cur + 1 : 0;
+            if (next >= snapshot.size()) return std::nullopt;
+            select_row(snapshot[next].id);
+            return next;
+        }
+        if (kp->key == keys::up) {
+            if (!has_cur || cur == 0) return std::nullopt;
+            select_row(snapshot[cur - 1].id);
+            return cur - 1;
+        }
+        if (kp->key == keys::right) {
+            if (!has_cur) return std::nullopt;
+            auto& row = snapshot[cur];
+            if (row.has_children && !row.expanded) {
+                expanded_.insert(row.id);
+                refresh();
+                return cur;
+            }
+            if (row.expanded && cur + 1 < snapshot.size()) {
+                select_row(snapshot[cur + 1].id);
+                return cur + 1;
+            }
+            return std::nullopt;
+        }
+        if (kp->key == keys::left) {
+            if (!has_cur) return std::nullopt;
+            auto& row = snapshot[cur];
+            if (row.expanded) {
+                expanded_.erase(row.id);
+                refresh();
+                return cur;
+            }
+            for (size_t i = cur; i-- > 0; ) {
+                if (snapshot[i].depth < row.depth) {
+                    select_row(snapshot[i].id);
+                    return i;
+                }
+            }
+            return std::nullopt;
+        }
+        if (kp->key == keys::enter || kp->key == keys::space) {
+            if (!has_cur) return std::nullopt;
+            on_row_clicked(cur, snapshot[cur]);
+            return cur;
+        }
+        return std::nullopt;
+    }
+
+private:
+    void select_row(TreeNodeId id) {
+        selected.set(id);
+        populate_detail(id);
+    }
+
+    void populate_detail(TreeNodeId id) {
+        TreeDetail d;
+        d.label = source_.label(id);
+        d.attributes = source_.attributes ? source_.attributes(id)
+                                           : std::vector<std::pair<std::string, std::string>>{};
+        detail.set(d);
+    }
+
+    TreeSource source_;
+    std::set<TreeNodeId> expanded_;
+};
 
 } // namespace prism::ui
