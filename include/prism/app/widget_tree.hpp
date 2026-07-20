@@ -292,8 +292,17 @@ public:
                 container.layout_kind = LayoutKind::VirtualList;
                 container.vlist_item_count = ctrl.rows.size();
 
-                container.build_widget = [](WidgetNode& wn) {
+                container.build_widget = [&ctrl, container_id = container.id, &tree = tree_](WidgetNode& wn) {
                     wn.focus_policy = FocusPolicy::tab_and_click;
+                    wn.wire = [&ctrl, container_id, &tree](WidgetNode& self) {
+                        self.connections.push_back(
+                            self.on_input.connect([&ctrl, container_id, &tree](const InputEvent& ev) {
+                                auto idx = ctrl.on_key(ev);
+                                if (idx)
+                                    tree.scroll_row_into_view(container_id, *idx, Widget<TreeRow>::row_h);
+                            })
+                        );
+                    };
                 };
 
                 container.vlist_bind_row = [&ctrl](WidgetNode& wn, size_t index) {
