@@ -117,6 +117,7 @@ TEST_CASE("Right arrow on an already-expanded node moves to its first child") {
 
     auto idx = ctrl.on_key(prism::KeyPress{prism::keys::right, 0});
     REQUIRE(idx.has_value());
+    CHECK(*idx == 1);
     CHECK(ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
 }
 
@@ -128,6 +129,7 @@ TEST_CASE("Left arrow collapses an expanded selected node without moving selecti
 
     auto idx = ctrl.on_key(prism::KeyPress{prism::keys::left, 0});
     REQUIRE(idx.has_value());
+    CHECK(*idx == 0);
     CHECK(ctrl.rows[0].expanded == false);
     CHECK(ctrl.selected.get() == std::optional<prism::TreeNodeId>{1});
 }
@@ -141,6 +143,7 @@ TEST_CASE("Left arrow on a collapsed child moves selection to its parent") {
 
     auto idx = ctrl.on_key(prism::KeyPress{prism::keys::left, 0});
     REQUIRE(idx.has_value());
+    CHECK(*idx == 0);
     CHECK(ctrl.selected.get() == std::optional<prism::TreeNodeId>{1});
 }
 
@@ -151,6 +154,7 @@ TEST_CASE("Enter on the selected row has the same effect as clicking it") {
 
     auto idx = ctrl.on_key(prism::KeyPress{prism::keys::enter, 0});
     REQUIRE(idx.has_value());
+    CHECK(*idx == 0);
     CHECK(ctrl.rows[0].expanded == true);
 }
 
