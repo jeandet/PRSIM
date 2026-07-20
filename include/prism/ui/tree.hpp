@@ -1,6 +1,8 @@
 #pragma once
 
+#include <prism/core/field.hpp>
 #include <prism/core/types.hpp>
+#include <prism/ui/delegate.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -64,6 +66,67 @@ struct TreeRow {
     bool selected = false;
 
     bool operator==(const TreeRow&) const = default;
+};
+
+struct TreeDetail {
+    std::string label;
+    std::vector<std::pair<std::string, std::string>> attributes;
+
+    bool operator==(const TreeDetail&) const = default;
+};
+
+template <>
+struct Widget<TreeRow> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+    static constexpr Height row_h{22.f};
+
+    static void record(DrawList& dl, const Field<TreeRow>& field, WidgetNode& node) {
+        auto& row = field.get();
+        auto& vs = node_vs(node);
+        auto& t = node_theme(node);
+        bool highlight = vs.hovered || row.selected;
+        auto bg = highlight ? t.surface_hover : t.surface;
+        auto w = detail::widget_w(node);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, row_h), bg);
+
+        DX indent{static_cast<float>(row.depth) * 16.f};
+        std::string marker = row.has_children ? (row.expanded ? "v " : "> ") : "  ";
+        std::string icon_part = row.icon ? (*row.icon + " ") : std::string{};
+        dl.text(marker + icon_part + row.label,
+                 detail::make_point(X{8.f} + indent, Y{4.f}), 13, t.text);
+    }
+
+    // Selection/expand-toggle/keyboard nav are handled centrally by TreeController via the
+    // container's row-click and container-level keyboard wiring (see ViewBuilder::tree(),
+    // Task 5/6) -- an individual row has nothing of its own to mutate on input.
+    static void handle_input(Field<TreeRow>&, const InputEvent&, WidgetNode&) {}
+};
+
+template <>
+struct Widget<std::optional<TreeDetail>> {
+    static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+    static constexpr Height panel_h{200.f};
+
+    static void record(DrawList& dl, const Field<std::optional<TreeDetail>>& field, WidgetNode& node) {
+        auto& t = node_theme(node);
+        auto w = detail::widget_w(node);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, panel_h), t.surface);
+
+        auto& value = field.get();
+        if (!value) {
+            dl.text("No selection", detail::make_point(X{8.f}, Y{8.f}), 13, t.text);
+            return;
+        }
+        Y y{8.f};
+        dl.text(value->label, detail::make_point(X{8.f}, y), 13, t.text);
+        y = y + DY{18.f};
+        for (auto& [k, v] : value->attributes) {
+            dl.text(k + ": " + v, detail::make_point(X{8.f}, y), 13, t.text);
+            y = y + DY{18.f};
+        }
+    }
+
+    static void handle_input(Field<std::optional<TreeDetail>>&, const InputEvent&, WidgetNode&) {}
 };
 
 namespace detail_tree {

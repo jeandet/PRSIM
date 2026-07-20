@@ -49,6 +49,7 @@ headless_tests = {
   'tree' : files('test_tree.cpp'),
   'tree_inspector_model' : files('test_tree_inspector_model.cpp'),
   'tree_inspector_controller' : files('test_tree_inspector_controller.cpp'),
+  'tree_widget' : files('test_tree_widget.cpp'),
 }
 
 foreach name, src : headless_tests
