@@ -7,12 +7,18 @@
 #include <prism/ui/delegate.hpp>
 
 #include <cstdint>
+#include <fmt/format.h>
 #include <functional>
 #include <optional>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
+
+#if __cpp_impl_reflection
+#include <meta>
+#endif
 
 namespace prism::ui {
 using namespace prism::core;
@@ -274,5 +280,105 @@ private:
     TreeSource source_;
     std::set<TreeNodeId> expanded_;
 };
+
+#if __cpp_impl_reflection
+
+namespace detail_tree {
+
+// Matches std::optional<X> where X is a reflectable class (excluding std::string, which is
+// itself a class type but must be treated as a plain value, not something to recurse into).
+template <typename T>
+struct IsOptionalOfClass : std::false_type {};
+template <typename X>
+struct IsOptionalOfClass<std::optional<X>>
+    : std::bool_constant<std::is_class_v<X> && !std::is_same_v<X, std::string>> {};
+
+// std::vector is itself a class type, so it must be excluded explicitly from the
+// "directly-nested class member" branch below -- otherwise it would be misclassified as an
+// always-present child slot and recursed into via reflection on its (implementation-defined)
+// internal layout, instead of being skipped per the documented container-of-children non-goal.
+template <typename T>
+struct IsVector : std::false_type {};
+template <typename X>
+struct IsVector<std::vector<X>> : std::true_type {};
+
+// Recursively classifies every member of X: a pointer/std::optional to a reflectable class is
+// a child slot (descend only if non-null); a directly-nested reflectable class member is always
+// a child slot; everything else (int, string, enum, bool, ...) becomes an attribute, never a
+// tree row. std::vector<...> members (including vector-of-reflectable-class -- the documented
+// v1 non-goal) match none of these branches and are silently skipped.
+//
+// `entry` is built up as a LOCAL value and inserted into `cache` only once, at the very end --
+// never held as a reference across the recursive calls below. cache[id] / cache.emplace(...)
+// can rehash std::unordered_map and invalidate references to every other element; taking a
+// reference up front and using it after a nested populate_struct_tree_cache() call (which also
+// inserts into the same cache) would be a dangling-reference bug.
+template <typename X, typename Cache>
+void populate_struct_tree_cache(X& obj, std::string_view label, Cache& cache) {
+    TreeNodeId id = reinterpret_cast<TreeNodeId>(std::addressof(obj));
+    if (cache.contains(id)) return; // already visited
+
+    typename Cache::mapped_type entry;
+    entry.label = std::string(label);
+
+    static constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^X, std::meta::access_context::unchecked()));
+
+    template for (constexpr auto m : members) {
+        auto member_name = std::meta::identifier_of(m);
+        auto& member = obj.[:m:];
+        using M = std::remove_cvref_t<decltype(member)>;
+
+        if constexpr (std::is_pointer_v<M> && std::is_class_v<std::remove_pointer_t<M>>
+                      && !std::is_same_v<std::remove_pointer_t<M>, std::string>) {
+            if (member != nullptr) {
+                entry.children.push_back(reinterpret_cast<TreeNodeId>(member));
+                populate_struct_tree_cache(*member, member_name, cache);
+            }
+        } else if constexpr (IsOptionalOfClass<M>::value) {
+            if (member.has_value()) {
+                entry.children.push_back(reinterpret_cast<TreeNodeId>(std::addressof(*member)));
+                populate_struct_tree_cache(*member, member_name, cache);
+            }
+        } else if constexpr (std::is_class_v<M> && !std::is_same_v<M, std::string>
+                              && !IsVector<M>::value) {
+            entry.children.push_back(reinterpret_cast<TreeNodeId>(std::addressof(member)));
+            populate_struct_tree_cache(member, member_name, cache);
+        } else if constexpr (std::is_arithmetic_v<M>) {
+            entry.attributes.emplace_back(std::string(member_name), fmt::to_string(member));
+        } else if constexpr (std::is_same_v<M, std::string>) {
+            entry.attributes.emplace_back(std::string(member_name), member);
+        }
+    }
+
+    cache.emplace(id, std::move(entry));
+}
+
+} // namespace detail_tree
+
+template <typename T>
+TreeSource wrap_struct_tree(T& root) {
+    struct Entry {
+        std::string label;
+        std::vector<std::pair<std::string, std::string>> attributes;
+        std::vector<TreeNodeId> children;
+    };
+    auto cache = std::make_shared<std::unordered_map<TreeNodeId, Entry>>();
+    detail_tree::populate_struct_tree_cache(root, std::meta::identifier_of(^^T), *cache);
+
+    TreeSource src;
+    src.root_count = [] { return size_t{1}; };
+    src.root_at = [&root](size_t) -> TreeNodeId {
+        return reinterpret_cast<TreeNodeId>(std::addressof(root));
+    };
+    src.label = [cache](TreeNodeId id) { return cache->at(id).label; };
+    src.has_children = [cache](TreeNodeId id) { return !cache->at(id).children.empty(); };
+    src.child_count = [cache](TreeNodeId id) { return cache->at(id).children.size(); };
+    src.child_at = [cache](TreeNodeId id, size_t i) { return cache->at(id).children[i]; };
+    src.attributes = [cache](TreeNodeId id) { return cache->at(id).attributes; };
+    return src;
+}
+
+#endif // __cpp_impl_reflection
 
 } // namespace prism::ui
