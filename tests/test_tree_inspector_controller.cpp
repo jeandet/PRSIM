@@ -47,7 +47,7 @@ TEST_CASE("flatten_tree reports each row's real on-screen rect, not a hardcoded 
 TEST_CASE("TreeInspectorController refresh populates rows from the main tree") {
     MainModel main_model;
     prism::WidgetTree main_tree(main_model);
-    main_tree.build_snapshot(400, 300, 1);
+    (void)main_tree.build_snapshot(400, 300, 1);
     main_tree.clear_dirty();
 
     prism::debug::TreeInspectorModel debug_model;
@@ -133,7 +133,7 @@ bool debug_tree_shows_text(const prism::render::SceneSnapshot& snap, std::string
 TEST_CASE("hovering an off-screen row in the main tree scrolls the debug tree to reveal it") {
     ManyLeavesModel main_model;
     prism::WidgetTree main_tree(main_model);
-    main_tree.build_snapshot(400, 300, 1);
+    (void)main_tree.build_snapshot(400, 300, 1);
     main_tree.clear_dirty();
 
     prism::debug::TreeInspectorModel debug_model;
@@ -145,7 +145,7 @@ TEST_CASE("hovering an off-screen row in the main tree scrolls the debug tree to
     // build_snapshot/materialize step — see tests/test_virtual_list.cpp's "VirtualList stabilizes
     // after two frames" for the same two-cycle convention) before asserting scroll behavior.
     controller.refresh();
-    debug_tree.build_snapshot(200, 80, 1); // deliberately short — only a few debug rows fit
+    (void)debug_tree.build_snapshot(200, 80, 1); // deliberately short — only a few debug rows fit
     debug_tree.clear_dirty();
     controller.refresh();
     auto before_snap = debug_tree.build_snapshot(200, 80, 2);
@@ -221,7 +221,7 @@ TEST_CASE("hovering a node hidden by a collapsed ancestor does not crash and doe
 TEST_CASE("clicking a debug row populates the detail panel with that row's data") {
     MainModel main_model;
     prism::WidgetTree main_tree(main_model);
-    main_tree.build_snapshot(400, 300, 1);
+    (void)main_tree.build_snapshot(400, 300, 1);
     main_tree.clear_dirty();
 
     prism::debug::TreeInspectorModel debug_model;
@@ -240,7 +240,7 @@ TEST_CASE("clicking a debug row populates the detail panel with that row's data"
 TEST_CASE("detail panel stays live on the next refresh") {
     MainModel main_model;
     prism::WidgetTree main_tree(main_model);
-    main_tree.build_snapshot(400, 300, 1);
+    (void)main_tree.build_snapshot(400, 300, 1);
     main_tree.clear_dirty();
 
     prism::debug::TreeInspectorModel debug_model;
@@ -271,7 +271,7 @@ TEST_CASE("detail panel stays live on the next refresh") {
 TEST_CASE("clicking a different row switches the detail panel") {
     MainModel main_model;
     prism::WidgetTree main_tree(main_model);
-    main_tree.build_snapshot(400, 300, 1);
+    (void)main_tree.build_snapshot(400, 300, 1);
     main_tree.clear_dirty();
 
     prism::debug::TreeInspectorModel debug_model;

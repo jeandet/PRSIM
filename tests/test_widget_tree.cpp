@@ -570,7 +570,7 @@ TEST_CASE("set_debug_highlight injects a RectOutline at the target's rect on the
 TEST_CASE("set_debug_highlight(nullopt) clears the highlight") {
     SimpleModel model;
     prism::WidgetTree tree(model);
-    tree.build_snapshot(400, 300, 1);
+    (void)tree.build_snapshot(400, 300, 1);
     tree.clear_dirty();
     auto ids = tree.leaf_ids();
     REQUIRE(!ids.empty());

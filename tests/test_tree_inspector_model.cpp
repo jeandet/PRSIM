@@ -12,7 +12,9 @@ using namespace ui; using namespace app; using namespace plot;
 
 TEST_CASE("TreeInspectorModel row click invokes on_click with the row's index and id") {
     prism::debug::TreeInspectorModel model;
-    model.rows.push_back(prism::debug::NodeRow{.id = 42});
+    prism::debug::NodeRow row42;
+    row42.id = 42;
+    model.rows.push_back(row42);
 
     std::vector<std::pair<size_t, prism::WidgetId>> clicks;
     model.on_click = [&](size_t index, const prism::debug::NodeRow& row) {
@@ -38,7 +40,9 @@ TEST_CASE("TreeInspectorModel row click invokes on_click with the row's index an
 
 TEST_CASE("TreeInspectorModel with no on_click set does not crash on row click") {
     prism::debug::TreeInspectorModel model;
-    model.rows.push_back(prism::debug::NodeRow{.id = 7});
+    prism::debug::NodeRow row7;
+    row7.id = 7;
+    model.rows.push_back(row7);
     prism::WidgetTree tree(model);
     auto snap = tree.build_snapshot(400, 300, 1);
     tree.clear_dirty();

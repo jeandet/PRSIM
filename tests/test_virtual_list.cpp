@@ -268,7 +268,7 @@ TEST_CASE("scroll_row_into_view on an unknown container id is a safe no-op") {
     StringListModel model;
     model.items.push_back("only one");
     prism::WidgetTree tree(model);
-    tree.build_snapshot(400, 300, 1);
+    (void)tree.build_snapshot(400, 300, 1);
     tree.clear_dirty();
 
     tree.scroll_row_into_view(999999, 0, prism::Height{30.f});
