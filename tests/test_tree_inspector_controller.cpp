@@ -15,6 +15,35 @@ namespace {
 struct MainModel { prism::Field<int> value{0}; void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(value); } };
 }
 
+namespace {
+struct SideBySideModel {
+    prism::Field<int> a{0}, b{0};
+    void view(prism::WidgetTree::ViewBuilder& vb) { vb.hstack(a, b); }
+};
+}
+
+TEST_CASE("flatten_tree reports each row's real on-screen rect, not a hardcoded (0,0) origin") {
+    SideBySideModel main_model;
+    prism::WidgetTree main_tree(main_model);
+    auto snap = main_tree.build_snapshot(400, 300, 1);
+    main_tree.clear_dirty();
+
+    // `b` is the second child of the hstack, so it's laid out to the right of `a` —
+    // its real absolute rect has a nonzero x origin.
+    REQUIRE(snap->geometry.size() >= 2);
+    auto [b_id, b_rect] = snap->geometry.back();
+    REQUIRE(b_rect.origin.x.raw() > 0.f);
+
+    auto rows = prism::debug::flatten_tree(main_tree, {main_tree.root().id});
+    const prism::debug::NodeRow* b_row = nullptr;
+    for (auto& row : rows)
+        if (row.id == b_id) b_row = &row;
+    REQUIRE(b_row != nullptr);
+
+    CHECK(b_row->rect.origin.x.raw() == doctest::Approx(b_rect.origin.x.raw()));
+    CHECK(b_row->rect.origin.y.raw() == doctest::Approx(b_rect.origin.y.raw()));
+}
+
 TEST_CASE("TreeInspectorController refresh populates rows from the main tree") {
     MainModel main_model;
     prism::WidgetTree main_tree(main_model);

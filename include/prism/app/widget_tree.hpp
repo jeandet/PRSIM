@@ -1233,6 +1233,7 @@ private:
         if (layout_node.id != 0) {
             auto it = index_.find(layout_node.id);
             if (it != index_.end()) {
+                it->second->absolute_x = layout_node.allocated.origin.x;
                 it->second->absolute_y = layout_node.allocated.origin.y;
                 it->second->viewport_height = viewport_h;
             }

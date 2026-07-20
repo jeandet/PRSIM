@@ -61,7 +61,7 @@ inline void flatten_node(const WidgetNode& node, int depth, WidgetId hovered_id,
     row.name = row.layout_kind_name;
 #endif
     row.depth = depth;
-    row.rect = Rect{Point{X{0}, Y{0}}, node.canvas_bounds.extent};
+    row.rect = Rect{Point{node.absolute_x, node.absolute_y}, node.canvas_bounds.extent};
     row.dirty = node.dirty;
     row.hovered = (node.id == hovered_id);
     row.focused = node.visual_state.focused;

@@ -62,6 +62,7 @@ struct WidgetNode {
     bool table_input_wired = false;
     std::shared_ptr<std::vector<std::string>> tab_names;
     Height viewport_height{0};
+    X absolute_x{0};
     Y absolute_y{0};
 };
 
