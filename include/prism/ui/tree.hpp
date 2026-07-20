@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -51,6 +52,51 @@ TreeSource wrap_tree_storage(T& data) {
         src.attributes = [&data](TreeNodeId id) { return data.attributes(id); };
     }
     return src;
+}
+
+struct TreeRow {
+    TreeNodeId id = 0;
+    std::string label;
+    std::optional<std::string> icon;
+    int depth = 0;
+    bool has_children = false;
+    bool expanded = false;
+    bool selected = false;
+
+    bool operator==(const TreeRow&) const = default;
+};
+
+namespace detail_tree {
+inline void flatten_node(const TreeSource& source, TreeNodeId id, int depth,
+                          const std::set<TreeNodeId>& expanded,
+                          std::optional<TreeNodeId> selected,
+                          std::vector<TreeRow>& out) {
+    TreeRow row;
+    row.id = id;
+    row.label = source.label(id);
+    row.icon = source.icon ? source.icon(id) : std::nullopt;
+    row.depth = depth;
+    row.has_children = source.has_children(id);
+    row.expanded = expanded.contains(id);
+    row.selected = selected.has_value() && *selected == id;
+    out.push_back(row);
+
+    if (row.has_children && row.expanded) {
+        size_t n = source.child_count(id);
+        for (size_t i = 0; i < n; ++i)
+            flatten_node(source, source.child_at(id, i), depth + 1, expanded, selected, out);
+    }
+}
+} // namespace detail_tree
+
+inline std::vector<TreeRow> visible_rows(const TreeSource& source,
+                                          const std::set<TreeNodeId>& expanded,
+                                          std::optional<TreeNodeId> selected = std::nullopt) {
+    std::vector<TreeRow> rows;
+    size_t n = source.root_count();
+    for (size_t i = 0; i < n; ++i)
+        detail_tree::flatten_node(source, source.root_at(i), 0, expanded, selected, rows);
+    return rows;
 }
 
 } // namespace prism::ui
