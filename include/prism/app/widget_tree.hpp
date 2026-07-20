@@ -5,6 +5,7 @@
 #include <prism/ui/layout.hpp>
 #include <prism/core/list.hpp>
 #include <prism/ui/table.hpp>
+#include <prism/ui/tree.hpp>
 #include <prism/delegates/text_delegates.hpp>
 #include <prism/core/traits.hpp>
 #include <prism/ui/widget_node.hpp>
@@ -281,6 +282,68 @@ public:
             };
 
             current_parent().children.push_back(std::move(container));
+        }
+
+        void tree(TreeController& ctrl) {
+            hstack([&] {
+                Node container;
+                container.id = tree_.next_id_++;
+                container.is_leaf = false;
+                container.layout_kind = LayoutKind::VirtualList;
+                container.vlist_item_count = ctrl.rows.size();
+
+                container.build_widget = [](WidgetNode& wn) {
+                    wn.focus_policy = FocusPolicy::tab_and_click;
+                };
+
+                container.vlist_bind_row = [&ctrl](WidgetNode& wn, size_t index) {
+                    auto field_ptr = std::make_shared<Field<TreeRow>>(ctrl.rows[index]);
+                    wn.edit_state = std::shared_ptr<void>(field_ptr);
+                    wn.focus_policy = FocusPolicy::none; // rows never take focus; the container does
+                    wn.dirty = true;
+                    wn.is_container = false;
+                    wn.draws.clear();
+                    wn.overlay_draws.clear();
+                    wn.record = [field_ptr](WidgetNode& node) {
+                        node.draws.clear();
+                        node.overlay_draws.clear();
+                        Widget<TreeRow>::record(node.draws, *field_ptr, node);
+                    };
+                    wn.record(wn);
+                    wn.wire = [field_ptr, &ctrl, index](WidgetNode& node) {
+                        node.connections.push_back(
+                            node.on_input.connect([&ctrl, index](const InputEvent& ev) {
+                                auto* mb = std::get_if<MouseButton>(&ev);
+                                if (mb && mb->pressed && mb->button == 1 && index < ctrl.rows.size())
+                                    ctrl.on_row_clicked(index, ctrl.rows[index]);
+                            })
+                        );
+                    };
+                };
+
+                container.vlist_unbind_row = [](WidgetNode& wn) {
+                    wn.connections.clear();
+                    wn.draws.clear();
+                    wn.overlay_draws.clear();
+                    wn.edit_state.reset();
+                    wn.wire = nullptr;
+                    wn.record = nullptr;
+                    wn.dirty = false;
+                };
+
+                container.vlist_on_insert = [&ctrl](size_t, std::function<void()> cb) -> Connection {
+                    return ctrl.rows.on_insert().connect([cb = std::move(cb)](size_t, const auto&) { cb(); });
+                };
+                container.vlist_on_remove = [&ctrl](size_t, std::function<void()> cb) -> Connection {
+                    return ctrl.rows.on_remove().connect([cb = std::move(cb)](size_t) { cb(); });
+                };
+                container.vlist_on_update = [&ctrl](size_t, std::function<void()> cb) -> Connection {
+                    return ctrl.rows.on_update().connect([cb = std::move(cb)](size_t, const auto&) { cb(); });
+                };
+
+                current_parent().children.push_back(std::move(container));
+                widget(ctrl.detail);
+            });
         }
 
         template <ColumnStorage T>
@@ -867,6 +930,10 @@ private:
                 if (node.vlist_bind_row) vls->bind_row = node.vlist_bind_row;
                 if (node.vlist_unbind_row) vls->unbind_row = node.vlist_unbind_row;
                 wn.edit_state = vls;
+                // Opt-in only: no existing .list() caller sets build_widget, so this is a no-op
+                // for every VirtualList container except the one ViewBuilder::tree() builds below.
+                if (node.build_widget)
+                    node.build_widget(wn);
             } else if (node.layout_kind == LayoutKind::Table && node.table_state) {
                 node.table_state->event_policy = node.scroll_event_policy;
                 wn.edit_state = node.table_state;
@@ -1119,7 +1186,8 @@ private:
             node.wire = nullptr;
         }
         if (node.focus_policy != FocusPolicy::none &&
-            (!node.is_container || node.layout_kind == LayoutKind::Table))
+            (!node.is_container || node.layout_kind == LayoutKind::Table ||
+             node.layout_kind == LayoutKind::VirtualList))
             focus_order_.push_back(node.id);
         for (auto& c : node.children) {
             parent_map_[c.id] = node.id;
