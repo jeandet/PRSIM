@@ -311,3 +311,56 @@ TEST_CASE("Resizing the window after a drag proportionally rescales pane sizes o
     CHECK(pane0_rect4.extent.w.raw() + pane1_rect4.extent.w.raw()
           == doctest::Approx(812.f - splitter::thickness_px).epsilon(0.02));
 }
+
+struct TwoPaneColumnModel {
+    Field<int> a{0};
+    Field<int> b{0};
+    WidgetId container_id = 0;
+
+    void view(WidgetTree::ViewBuilder& vb) {
+        container_id = vb.vstack([&] {
+            vb.widget(a);
+            vb.handle();
+            vb.widget(b);
+        });
+    }
+};
+
+TEST_CASE("Dragging a handle in a vstack resizes panes along the Y axis") {
+    // Window height is an exact fit for the two panes' *actual* default height
+    // (30px each, from detail::default_widget_h) plus one handle (6px) = 66 --
+    // mirroring the same "exact fit avoids a spurious Task 6 rescale" precedent
+    // documented on ThreePaneModel's test above, just along the Y axis instead
+    // of X. A naive copy of the X-axis tests' "406" (sized for the 200px-wide
+    // default) would leave 340px of unclaimed slack on the main axis and make
+    // Task 6's resize-rescale fire on the very first post-drag frame.
+    TwoPaneColumnModel model;
+    WidgetTree tree(model);
+    auto snap = tree.build_snapshot(200, 66, 1);
+    REQUIRE(snap->geometry.size() == 3);
+
+    auto [pane0_id, pane0_rect] = snap->geometry[0];
+    auto [handle_id, handle_rect] = snap->geometry[1];
+    auto [pane1_id, pane1_rect] = snap->geometry[2];
+    float pane0_h0 = pane0_rect.extent.h.raw();
+    float pane1_h0 = pane1_rect.extent.h.raw();
+
+    Point press_pos{X{handle_rect.origin.x.raw() + 5.f}, Y{handle_rect.origin.y.raw() + 2.f}};
+    MouseButton press{press_pos, 1, true};
+    InputEvent press_ev{press};
+    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    CHECK(tree.captured_id() == handle_id);
+
+    // 5px, not the X-axis tests' 20px: the default pane height (30px) is far
+    // smaller than the default pane width (200px), and splitter::min_pane_size_px
+    // is 24px, so a proportionally-large delta here would clamp pane1 at its
+    // minimum instead of exercising a clean, unclamped resize.
+    MouseMove move{Point{press_pos.x, Y{press_pos.y.raw() + 5.f}}};
+    prism::app::detail::route_mouse_move(tree, *snap, move);
+
+    auto snap2 = tree.build_snapshot(200, 66, 2);
+    auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
+    auto [pane1_id2, pane1_rect2] = snap2->geometry[2];
+    CHECK(pane0_rect2.extent.h.raw() == doctest::Approx(pane0_h0 + 5.f));
+    CHECK(pane1_rect2.extent.h.raw() == doctest::Approx(pane1_h0 - 5.f));
+}

@@ -274,6 +274,10 @@ inline Width widget_w(const WidgetNode& node) {
     auto sz = node_allocated(node);
     return sz.w.raw() > 0 ? sz.w : default_widget_w;
 }
+inline Height widget_h(const WidgetNode& node) {
+    auto sz = node_allocated(node);
+    return sz.h.raw() > 0 ? sz.h : default_widget_h;
+}
 } // namespace detail
 
 // Primary template: default widget for any Field<T>.
@@ -287,7 +291,7 @@ struct Widget {
         auto& t = node_theme(node);
         Width w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), bg);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -311,7 +315,7 @@ struct Widget<T> {
         auto& t = node_theme(node);
         Width w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), bg);
         dl.text(std::to_string(field.get()),
                 detail::make_point(X{4}, Y{4}), 14, t.text);
     }
@@ -329,7 +333,7 @@ struct Widget<T> {
         auto& t = node_theme(node);
         Width w = detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), bg);
         dl.text(std::string(field.get().data(), field.get().size()),
                 detail::make_point(X{4}, Y{4}), 14, t.text);
     }
