@@ -179,7 +179,7 @@ public:
                         auto& t = node_theme(node);
                         auto sz = node_allocated(node);
                         auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
-                        node.draws.filled_rect(detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
+                        node.draws.filled_rect(ui::detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
                     };
                     wn.wire = [&tree, container_id, index, vertical](WidgetNode& self) {
                         self.connections.push_back(self.on_input.connect(
@@ -223,7 +223,7 @@ public:
                     auto& t = node_theme(node);
                     auto sz = node_allocated(node);
                     auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
-                    node.draws.filled_rect(detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
+                    node.draws.filled_rect(ui::detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
                 };
                 wn.record(wn);
             };
