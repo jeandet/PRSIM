@@ -62,7 +62,12 @@ In `include/prism/ui/context.hpp`, right after the `scrollbar_thumb` line:
 Run: `meson test -C builddir test_theme -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the full test suite**
+
+Run: `meson test -C builddir`
+Expected: all tests pass (read the actual pass/fail count and exit code)
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add include/prism/ui/context.hpp tests/test_theme.cpp
@@ -82,7 +87,7 @@ git commit -m "feat(theme): add divider/divider_hover colors for split panes"
 
 **Interfaces:**
 - Consumes: nothing new from other tasks.
-- Produces: `LayoutKind::Handle` (enum value), `LayoutNode::Kind::Handle` (enum value), `splitter::thickness_px` (`inline constexpr float`, value `6.f`), `splitter::min_pane_size_px` (`inline constexpr float`, value `24.f`) — both consumed by Tasks 3 and 5. `ViewBuilder::handle()` (no-arg method) — consumed by all later tasks and by Task 9's `tree()` wiring.
+- Produces: `LayoutKind::Handle` (enum value), `LayoutNode::Kind::Handle` (enum value), `splitter::thickness_px` (`inline constexpr float`, value `6.f`), `splitter::min_pane_size_px` (`inline constexpr float`, value `24.f`) — both consumed by Tasks 3 and 4. `ViewBuilder::handle()` (no-arg method) — consumed by all later tasks and by Task 8's `tree()` wiring.
 
 - [ ] **Step 1: Write the failing pure-layout test**
 
@@ -327,7 +332,7 @@ git commit -m "feat(layout): add Handle primitive rendering as a fixed-thickness
 
 **Interfaces:**
 - Consumes: `LayoutNode::Kind::Handle` (Task 2).
-- Produces: `LayoutNode::split_sizes` (`std::vector<float>`) — consumed by Task 5 (`build_layout` populates it from `SplitState`).
+- Produces: `LayoutNode::split_sizes` (`std::vector<float>`) — consumed by Task 4 (`build_layout` populates it from `SplitState`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -443,7 +448,12 @@ inline void measure_linear(LayoutNode& node, LayoutAxis own_axis, LayoutAxis par
 Run: `meson test -C builddir test_layout -v`
 Expected: both PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Run the full test suite**
+
+Run: `meson test -C builddir`
+Expected: all tests pass (read the actual pass/fail count and exit code)
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add include/prism/ui/layout.hpp tests/test_layout.cpp
@@ -452,120 +462,19 @@ git commit -m "feat(layout): Row/Column measure reads pane sizes from split_size
 
 ---
 
-## Task 4: `WidgetNode::arranged_extent` for every node kind
+## Task 4: `arranged_extent`, `SplitState`, and drag-driven layout engagement
 
 **Files:**
-- Modify: `include/prism/ui/widget_node.hpp:27-67` (`WidgetNode` struct)
-- Modify: `include/prism/app/widget_tree.hpp:1310-1320` (`update_canvas_bounds`)
-- Test: `tests/test_split.cpp`
-
-**Interfaces:**
-- Produces: `WidgetNode::arranged_extent` (`Size`) — the last-arranged main-axis extent for *any* node kind (unlike `canvas_bounds`, which only `update_canvas_bounds` populates for `Leaf`/`Canvas`/`Handle`). Consumed by Task 5's `begin_split_drag` (needs the actual size of container-kind panes, e.g. a nested `vstack` or a `VirtualList`, which never get `canvas_bounds`).
-
-- [ ] **Step 1: Write the failing test**
-
-Add to `tests/test_split.cpp`:
-
-```cpp
-struct NestedPaneModel {
-    Field<int> a{0};
-    Field<int> b{0};
-
-    void view(WidgetTree::ViewBuilder& vb) {
-        vb.hstack([&] {
-            vb.widget(a);   // leaf pane
-            vb.handle();
-            vb.vstack([&] { vb.widget(b); });  // container pane
-        });
-    }
-};
-
-TEST_CASE("arranged_extent is populated for both leaf and container panes") {
-    NestedPaneModel model;
-    WidgetTree tree(model);
-    auto snap = tree.build_snapshot(406, 100, 1);
-    REQUIRE(snap->geometry.size() >= 2);
-
-    // geometry[0] is the leaf pane's own rect; the container pane's rect is
-    // whatever the nested vstack produces as its outermost geometry entry.
-    // We assert via the public snapshot instead of poking WidgetNode directly
-    // (WidgetTree::index_ is private) — cross-check arranged_extent indirectly
-    // by confirming the total layout is self-consistent and the container's
-    // child widget got a real, nonzero allocation.
-    auto& [pane0_id, pane0_rect] = snap->geometry[0];
-    CHECK(pane0_rect.extent.w.raw() > 0.f);
-
-    bool found_nonzero_nested = false;
-    for (auto& [id, rect] : snap->geometry) {
-        if (id != pane0_id && rect.extent.w.raw() > 0.f) found_nonzero_nested = true;
-    }
-    CHECK(found_nonzero_nested);
-}
-```
-
-Note: this test only exercises the *observable* consequence (the nested container's child still gets laid out correctly) since `arranged_extent` itself isn't reachable from outside `WidgetTree`. The real proof that `arranged_extent` reaches container panes comes in Task 5's drag test, which depends on it.
-
-- [ ] **Step 2: Run test to verify it fails or passes**
-
-Run: `meson test -C builddir test_split -v`
-Expected: PASS already (this test doesn't yet depend on the new field — it's a pre-existing-behavior sanity check kept as a placeholder assertion for Task 5 to build on). If it passes trivially, that's expected; proceed to add the field so Task 5 has something to consume.
-
-- [ ] **Step 3: Add the field**
-
-In `include/prism/ui/widget_node.hpp`, add to `WidgetNode` right after `canvas_bounds`:
-
-```cpp
-    Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
-    Size arranged_extent{Width{0}, Height{0}};  // last-arranged main-axis extent, populated for every node kind
-```
-
-- [ ] **Step 4: Populate it in `update_canvas_bounds`**
-
-In `include/prism/app/widget_tree.hpp`, change:
-
-```cpp
-    void update_canvas_bounds(LayoutNode& layout_node, Height viewport_h = Height{0}) {
-        // Propagate absolute Y and viewport height to all indexed widget nodes
-        if (layout_node.id != 0) {
-            auto it = index_.find(layout_node.id);
-            if (it != index_.end()) {
-                it->second->absolute_x = layout_node.allocated.origin.x;
-                it->second->absolute_y = layout_node.allocated.origin.y;
-                it->second->viewport_height = viewport_h;
-                it->second->arranged_extent = layout_node.allocated.extent;
-            }
-        }
-```
-
-- [ ] **Step 5: Run test to verify it passes**
-
-Run: `meson test -C builddir test_split -v`
-Expected: PASS
-
-- [ ] **Step 6: Run the full suite**
-
-Run: `meson test -C builddir`
-Expected: all pass
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add include/prism/ui/widget_node.hpp include/prism/app/widget_tree.hpp tests/test_split.cpp
-git commit -m "feat(widget-tree): populate arranged_extent for every node kind, not just leaves"
-```
-
----
-
-## Task 5: `SplitState` and drag-driven layout engagement
-
-**Files:**
+- Modify: `include/prism/ui/widget_node.hpp:27-67` (`WidgetNode` struct — add `arranged_extent`)
 - Modify: `include/prism/ui/delegate.hpp` (add `SplitState` beside `ScrollState`)
-- Modify: `include/prism/app/widget_tree.hpp` (`build_layout`'s Row/Column branch, new `SplitDrag` struct + `begin_split_drag`/`update_split_drag`/`end_split_drag`/`in_split_drag` methods, `split_drag_` member)
+- Modify: `include/prism/app/widget_tree.hpp` (`update_canvas_bounds`, `build_layout`'s Row/Column branch, `hstack`/`vstack` return type, new `SplitDrag` struct + `begin_split_drag`/`update_split_drag`/`end_split_drag`/`in_split_drag` methods, `split_drag_` member)
 - Test: `tests/test_split.cpp`
 
 **Interfaces:**
-- Consumes: `LayoutNode::split_sizes` (Task 3), `WidgetNode::arranged_extent` (Task 4), `splitter::min_pane_size_px` (Task 2).
-- Produces: `SplitState{engaged, pane_sizes}`, `WidgetTree::begin_split_drag(WidgetId container_id, size_t handle_index, float pos)`, `WidgetTree::update_split_drag(float pos)`, `WidgetTree::end_split_drag()`, `WidgetTree::in_split_drag() -> bool`. Consumed by Task 6 (real input wiring) and Task 7 (rescale).
+- Consumes: `LayoutNode::split_sizes` (Task 3), `splitter::min_pane_size_px` (Task 2).
+- Produces: `WidgetNode::arranged_extent` (`Size` — the last-arranged main-axis extent for *any* node kind, unlike `canvas_bounds`, which only `update_canvas_bounds` populates for `Leaf`/`Canvas`/`Handle`), `SplitState{engaged, pane_sizes}`, `WidgetTree::begin_split_drag(WidgetId container_id, size_t handle_index, float pos)`, `WidgetTree::update_split_drag(float pos)`, `WidgetTree::end_split_drag()`, `WidgetTree::in_split_drag() -> bool`. Consumed by Task 5 (real input wiring) and Task 6 (rescale).
+
+Note: `arranged_extent` and the drag mechanics are one task, not two, because `arranged_extent` has no independently observable effect until `begin_split_drag` reads it — a standalone test for the field alone would necessarily be checking something else (ordinary layout still working) and not the field itself. The tests below exercise `arranged_extent` for both leaf and container-kind panes precisely because `begin_split_drag` consumes it directly.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -626,6 +535,47 @@ TEST_CASE("First drag engages split mode and resizes exactly the two adjacent pa
 
     tree.end_split_drag();
     CHECK_FALSE(tree.in_split_drag());
+}
+
+struct ContainerPaneModel {
+    Field<int> a{0};
+    Field<int> b{0};
+    WidgetId container_id = 0;
+
+    void view(WidgetTree::ViewBuilder& vb) {
+        container_id = vb.hstack([&] {
+            vb.vstack([&] { vb.widget(a); });  // container-kind pane (nested vstack), not a leaf
+            vb.handle();
+            vb.widget(b);
+        });
+    }
+};
+
+TEST_CASE("First drag captures a container-kind pane's real size, not just leaf panes") {
+    // The nested vstack's own arranged width is never exposed via canvas_bounds
+    // (only Leaf/Canvas/Handle get that) -- this specifically proves
+    // arranged_extent reaches container-kind panes too, which begin_split_drag
+    // depends on. geometry[0] is the leaf INSIDE the nested vstack; since a
+    // Column arranges its child at the container's full allocated width, this
+    // leaf's rect width equals the container pane's own width.
+    ContainerPaneModel model;
+    WidgetTree tree(model);
+    auto snap = tree.build_snapshot(406, 100, 1);
+    REQUIRE(snap->geometry.size() == 3);
+    auto [pane0_id, pane0_rect] = snap->geometry[0];
+    auto [handle_id, handle_rect] = snap->geometry[1];
+    float pane0_w0 = pane0_rect.extent.w.raw();
+
+    float anchor = handle_rect.origin.x.raw();
+    tree.begin_split_drag(model.container_id, 0, anchor);
+    tree.update_split_drag(anchor + 20.f);
+
+    auto snap2 = tree.build_snapshot(406, 100, 2);
+    auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
+    // If arranged_extent were NOT populated for a container-kind pane (stayed
+    // at its default {0,0}), the captured pre-drag size would be 0 and this
+    // would read exactly 20.f instead of pane0_w0 + 20.f.
+    CHECK(pane0_rect2.extent.w.raw() == doctest::Approx(pane0_w0 + 20.f));
 }
 
 TEST_CASE("Dragging clamps at the minimum pane size") {
@@ -727,7 +677,34 @@ TEST_CASE("First drag captures an expanding pane's real allocated size, not a fa
 Run: `meson test -C builddir test_split -v`
 Expected: FAIL to compile — no `SplitState`, no `begin_split_drag`/`update_split_drag`/`end_split_drag`/`in_split_drag`.
 
-- [ ] **Step 3: Add `SplitState`**
+- [ ] **Step 3: Add `arranged_extent` to `WidgetNode`**
+
+In `include/prism/ui/widget_node.hpp`, add to `WidgetNode` right after `canvas_bounds`:
+
+```cpp
+    Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
+    Size arranged_extent{Width{0}, Height{0}};  // last-arranged main-axis extent, populated for every node kind
+```
+
+- [ ] **Step 4: Populate `arranged_extent` in `update_canvas_bounds`**
+
+In `include/prism/app/widget_tree.hpp`, change:
+
+```cpp
+    void update_canvas_bounds(LayoutNode& layout_node, Height viewport_h = Height{0}) {
+        // Propagate absolute Y and viewport height to all indexed widget nodes
+        if (layout_node.id != 0) {
+            auto it = index_.find(layout_node.id);
+            if (it != index_.end()) {
+                it->second->absolute_x = layout_node.allocated.origin.x;
+                it->second->absolute_y = layout_node.allocated.origin.y;
+                it->second->viewport_height = viewport_h;
+                it->second->arranged_extent = layout_node.allocated.extent;
+            }
+        }
+```
+
+- [ ] **Step 5: Add `SplitState`**
 
 In `include/prism/ui/delegate.hpp`, right after `struct ScrollState { ... };`:
 
@@ -739,7 +716,7 @@ struct SplitState {
 };
 ```
 
-- [ ] **Step 5: `build_layout` reads `SplitState` into `split_sizes`**
+- [ ] **Step 6: `build_layout` reads `SplitState` into `split_sizes`**
 
 In `include/prism/app/widget_tree.hpp`, change the `Row`/`Column` branch of `build_layout`:
 
@@ -760,7 +737,7 @@ In `include/prism/app/widget_tree.hpp`, change the `Row`/`Column` branch of `bui
 
 (This is a reordering-free change: insert the `if (auto* ss = ...)` line into the existing Row/Column `else if` block, right after `container.theme = node.theme;`.)
 
-- [ ] **Step 6: Add `SplitDrag` and the drag methods**
+- [ ] **Step 7: Add `SplitDrag` and the drag methods**
 
 In `include/prism/app/widget_tree.hpp`, add the member struct right after `struct ScrollbarDrag { ... };`:
 
@@ -838,33 +815,33 @@ Add the member variable right after `ScrollbarDrag scrollbar_drag_;`:
     SplitDrag split_drag_;
 ```
 
-- [ ] **Step 6: Run tests to verify they pass**
+- [ ] **Step 8: Run tests to verify they pass**
 
 Run: `meson test -C builddir test_split -v`
 Expected: PASS
 
-- [ ] **Step 7: Run the full suite**
+- [ ] **Step 9: Run the full suite**
 
 Run: `meson test -C builddir`
 Expected: all pass
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add include/prism/ui/delegate.hpp include/prism/app/widget_tree.hpp tests/test_split.cpp
-git commit -m "feat(widget-tree): SplitState + begin/update/end_split_drag engage resizable layout on first drag"
+git add include/prism/ui/widget_node.hpp include/prism/ui/delegate.hpp include/prism/app/widget_tree.hpp tests/test_split.cpp
+git commit -m "feat(widget-tree): arranged_extent + SplitState + begin/update/end_split_drag engage resizable layout on first drag"
 ```
 
 ---
 
-## Task 6: Real input wiring (press/drag/release on the handle itself)
+## Task 5: Real input wiring (press/drag/release on the handle itself)
 
 **Files:**
 - Modify: `include/prism/app/widget_tree.hpp` (`push_container`, new private `wire_split_handles`)
 - Test: `tests/test_split.cpp`
 
 **Interfaces:**
-- Consumes: `WidgetTree::begin_split_drag`/`update_split_drag`/`end_split_drag` (Task 5).
+- Consumes: `WidgetTree::begin_split_drag`/`update_split_drag`/`end_split_drag` (Task 4).
 - Produces: automatic drag behavior for every `vb.handle()` placed inside an `hstack`/`vstack` — no new public API; this is purely internal wiring exercised by user interaction.
 
 Note on why this needs its own math, not just localized event coordinates: the handle's own rect moves every frame as a *direct result* of the drag it's tracking (its neighbor pane grows/shrinks). Using the event's already-localized position (relative to the handle's own, moving, rect) would make the tracked delta reference a shifting origin and desync from the real cumulative mouse movement. The fix is to reconstruct the *absolute* mouse position by adding the handle's last-known `absolute_x`/`absolute_y` back to the localized coordinate before calling into `WidgetTree`.
@@ -1008,14 +985,14 @@ git commit -m "feat(widget-tree): wire real press/drag/release input on split ha
 
 ---
 
-## Task 7: Proportional rescale on parent resize
+## Task 6: Proportional rescale on parent resize
 
 **Files:**
 - Modify: `include/prism/app/widget_tree.hpp` (new `update_split_state`, call it from `build_snapshot`)
 - Test: `tests/test_split.cpp`
 
 **Interfaces:**
-- Consumes: `SplitState` (Task 5), `LayoutNode::split_sizes`/`allocated` (Tasks 3, existing).
+- Consumes: `SplitState` (Task 4), `LayoutNode::split_sizes`/`allocated` (Tasks 3, existing).
 - Produces: `WidgetTree::update_split_state(LayoutNode&)` (private) — no public API; behavior-only change.
 
 - [ ] **Step 1: Write the failing test**
@@ -1125,13 +1102,13 @@ git commit -m "feat(widget-tree): proportionally rescale pane sizes on parent re
 
 ---
 
-## Task 8: vstack symmetry (Column-axis dragging)
+## Task 7: vstack symmetry (Column-axis dragging)
 
 **Files:**
 - Test only: `tests/test_split.cpp`
 
 **Interfaces:**
-- Consumes: everything built in Tasks 2–7. No production code is expected to change in this task — it's a dedicated behavioral proof that the axis-agnostic design (Tasks 2–7 all branch on `vertical` derived from `layout_kind == Column`) actually holds for `vstack`. If it fails, fix the specific spot the failure points to rather than adding new vstack-specific code paths.
+- Consumes: everything built in Tasks 2–6. No production code is expected to change in this task — it's a dedicated behavioral proof that the axis-agnostic design (Tasks 2–6 all branch on `vertical` derived from `layout_kind == Column`) actually holds for `vstack`. If it fails, fix the specific spot the failure points to rather than adding new vstack-specific code paths.
 
 - [ ] **Step 1: Write the test**
 
@@ -1184,7 +1161,7 @@ TEST_CASE("Dragging a handle in a vstack resizes panes along the Y axis") {
 - [ ] **Step 2: Run test**
 
 Run: `meson test -C builddir test_split -v`
-Expected: PASS, given Tasks 2–7 were implemented axis-agnostically as specified. If it fails, the failure will point at whichever spot hardcoded a Row/X assumption — fix that specific line (do not add a parallel vstack-only code path).
+Expected: PASS, given Tasks 2–6 were implemented axis-agnostically as specified. If it fails, the failure will point at whichever spot hardcoded a Row/X assumption — fix that specific line (do not add a parallel vstack-only code path).
 
 - [ ] **Step 3: Run the full suite**
 
@@ -1200,7 +1177,7 @@ git commit -m "test(split): confirm vstack drags resize panes along the Y axis"
 
 ---
 
-## Task 9: Wire the primitive into the tree widget's row-list/detail-panel split
+## Task 8: Wire the primitive into the tree widget's row-list/detail-panel split
 
 **Files:**
 - Modify: `include/prism/app/widget_tree.hpp:287-358` (`ViewBuilder::tree()`)
