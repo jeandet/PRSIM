@@ -137,9 +137,9 @@ public:
 
         void vstack(auto&... args) { (item(args), ...); }
 
-        void hstack(std::invocable auto&& fn) { push_container(LayoutKind::Row, fn); }
+        WidgetId hstack(std::invocable auto&& fn) { return push_container(LayoutKind::Row, fn).id; }
         void hstack(auto&... args) { push_container(LayoutKind::Row, [&] { (item(args), ...); }); }
-        void vstack(std::invocable auto&& fn) { push_container(LayoutKind::Column, fn); }
+        WidgetId vstack(std::invocable auto&& fn) { return push_container(LayoutKind::Column, fn).id; }
 
     private:
         void item(field_type auto& field) { widget(field); }
@@ -569,6 +569,14 @@ public:
                 auto lk = target_.children[0].layout_kind;
                 if (lk == LayoutKind::Row || lk == LayoutKind::Column) {
                     target_.layout_kind = lk;
+                    // Adopt the hoisted container's own id: callers that captured it
+                    // (e.g. hstack()'s single-lambda overload return value) must be
+                    // able to look it up in the built tree afterward -- without this,
+                    // the id returned to a view() like
+                    // `container_id = vb.hstack(...)` would refer to a Node discarded
+                    // right here, and begin_split_drag(container_id, ...) would
+                    // silently fail to find it.
+                    target_.id = target_.children[0].id;
                     target_.children = std::move(target_.children[0].children);
                 }
             }
@@ -710,6 +718,14 @@ public:
         Height thumb_h{0};
     };
 
+    struct SplitDrag {
+        WidgetId container_id = 0;
+        size_t handle_index = 0;
+        float anchor = 0.f;
+        float orig_before = 0.f;
+        float orig_after = 0.f;
+    };
+
     void begin_scrollbar_drag(WidgetId id, Y mouse_y) {
         auto it = index_.find(id);
         if (it == index_.end()) return;
@@ -744,6 +760,59 @@ public:
     }
 
     [[nodiscard]] bool in_scrollbar_drag() const { return scrollbar_drag_.scroll_id != 0; }
+
+    void begin_split_drag(WidgetId container_id, size_t handle_index, float pos) {
+        auto it = index_.find(container_id);
+        if (it == index_.end()) return;
+        auto& container_wn = *it->second;
+        auto& ss = container_wn.get_or_create<SplitState>();
+        bool vertical = (container_wn.layout_kind == LayoutKind::Column);
+        if (!ss.engaged) {
+            ss.pane_sizes.clear();
+            for (auto& child : container_wn.children) {
+                if (child.layout_kind == LayoutKind::Handle) continue;
+                ss.pane_sizes.push_back(vertical ? child.arranged_extent.h.raw()
+                                                  : child.arranged_extent.w.raw());
+            }
+            ss.engaged = true;
+        }
+        if (handle_index + 1 >= ss.pane_sizes.size()) return;
+        split_drag_ = SplitDrag{
+            .container_id = container_id,
+            .handle_index = handle_index,
+            .anchor = pos,
+            .orig_before = ss.pane_sizes[handle_index],
+            .orig_after = ss.pane_sizes[handle_index + 1],
+        };
+    }
+
+    void update_split_drag(float pos) {
+        if (split_drag_.container_id == 0) return;
+        auto it = index_.find(split_drag_.container_id);
+        if (it == index_.end()) return;
+        auto* ss = std::any_cast<SplitState>(&it->second->edit_state);
+        if (!ss) return;
+        float delta = pos - split_drag_.anchor;
+        float before = split_drag_.orig_before + delta;
+        float after = split_drag_.orig_after - delta;
+        if (before < splitter::min_pane_size_px) {
+            after -= (splitter::min_pane_size_px - before);
+            before = splitter::min_pane_size_px;
+        }
+        if (after < splitter::min_pane_size_px) {
+            before -= (splitter::min_pane_size_px - after);
+            after = splitter::min_pane_size_px;
+        }
+        ss->pane_sizes[split_drag_.handle_index] = before;
+        ss->pane_sizes[split_drag_.handle_index + 1] = after;
+        set_dirty(split_drag_.container_id);
+    }
+
+    void end_split_drag() {
+        split_drag_ = {};
+    }
+
+    [[nodiscard]] bool in_split_drag() const { return split_drag_.container_id != 0; }
 
     [[nodiscard]] Connection connect_input(WidgetId id, std::function<void(const InputEvent&)> cb) {
         if (auto it = index_.find(id); it != index_.end())
@@ -824,6 +893,14 @@ public:
                 ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
             layout.id = root_.id;
             layout.theme = &theme_;
+            // ViewBuilder::finalize() hoists a lone top-level Row/Column into
+            // root_ itself (see its id-adoption comment), so this root layout
+            // node is built by hand here rather than via build_layout()'s
+            // Row/Column branch -- it needs the same split_sizes read as that
+            // branch, or an engaged split on the sole top-level container
+            // would silently never apply.
+            if (auto* ss = std::any_cast<SplitState>(&root_.edit_state); ss && ss->engaged)
+                layout.split_sizes = ss->pane_sizes;
             for (auto& c : root_.children)
                 build_layout(c, layout);
 
@@ -878,6 +955,7 @@ private:
     WidgetId captured_id_ = 0;
     std::optional<WidgetId> highlight_id_;
     ScrollbarDrag scrollbar_drag_;
+    SplitDrag split_drag_;
     std::vector<WidgetId> focus_order_;
     std::unordered_map<WidgetId, WidgetNode*> index_;
     std::unordered_map<WidgetId, WidgetId> parent_map_;
@@ -1335,6 +1413,7 @@ private:
                 it->second->absolute_x = layout_node.allocated.origin.x;
                 it->second->absolute_y = layout_node.allocated.origin.y;
                 it->second->viewport_height = viewport_h;
+                it->second->arranged_extent = layout_node.allocated.extent;
             }
         }
 
@@ -1744,6 +1823,8 @@ private:
                 ? LayoutNode::Kind::Row : LayoutNode::Kind::Column;
             container.id = node.id;
             container.theme = node.theme;
+            if (auto* ss = std::any_cast<SplitState>(&node.edit_state); ss && ss->engaged)
+                container.split_sizes = ss->pane_sizes;
             for (auto& c : node.children)
                 build_layout(c, container);
             parent.children.push_back(std::move(container));

@@ -56,6 +56,7 @@ struct WidgetNode {
     std::function<void(WidgetNode&)> record;
     LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
+    Size arranged_extent{Width{0}, Height{0}};  // last-arranged main-axis extent, populated for every node kind
     bool expand = false;
     ExpandAxis expand_axis = ExpandAxis::None;
     const Theme* theme = nullptr;

@@ -112,6 +112,12 @@ struct ScrollState {
     uint8_t show_ticks = 0;
 };
 
+// Ephemeral split-pane state (stored in WidgetNode::edit_state on a Row/Column container)
+struct SplitState {
+    bool engaged = false;           // true once the user has dragged a handle at least once
+    std::vector<float> pane_sizes;  // main-axis size per pane (excludes Handle thickness); valid when engaged
+};
+
 // Sentinel: scroll container with observable position
 struct ScrollArea {
     ScrollBarPolicy scrollbar = ScrollBarPolicy::Auto;
