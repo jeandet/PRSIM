@@ -38,6 +38,41 @@ TEST_CASE("vb.tree() builds without crashing and produces geometry") {
     CHECK(snap->geometry.size() > 0);
 }
 
+TEST_CASE("vb.tree() places a draggable Handle between the row list and the detail panel") {
+    TreeModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+
+    // geometry[0] is the VirtualList container's own clip-viewport entry, i.e. the row
+    // list pane (see "clicking the root row..." below for how that indexing was verified).
+    REQUIRE(snap->geometry.size() > 2);
+    auto row_list_rect = snap->geometry[0].second;
+
+    // Detail panel: the leaf that ends up furthest right (same heuristic used by the
+    // "tree detail panel draws to fill its full allocated height" test above).
+    prism::WidgetId detail_id = 0;
+    prism::Rect detail_rect;
+    for (auto& [id, rect] : snap->geometry) {
+        if (rect.origin.x.raw() > 0 && (detail_id == 0 || rect.origin.x > detail_rect.origin.x)) {
+            detail_id = id;
+            detail_rect = rect;
+        }
+    }
+    REQUIRE(detail_id != 0);
+
+    // A Handle must sit strictly between the row list's right edge and the detail panel's
+    // left edge: a fixed-thickness geometry entry positioned in that gap, not just any
+    // entry that happens to share the splitter's width.
+    bool found_handle = false;
+    for (auto& [id, rect] : snap->geometry) {
+        if (rect.extent.w.raw() != doctest::Approx(prism::splitter::thickness_px).epsilon(0.01)) continue;
+        found_handle = true;
+        CHECK(rect.origin.x.raw() >= row_list_rect.origin.x.raw() + row_list_rect.extent.w.raw() - 0.5f);
+        CHECK(rect.origin.x.raw() + rect.extent.w.raw() <= detail_rect.origin.x.raw() + 0.5f);
+    }
+    CHECK(found_handle);
+}
+
 // vb.tree() places the detail panel in an hstack alongside the row list, so the panel's
 // allocated height is the full viewport height (hstack's cross axis), not its own preferred
 // size. If the panel's own drawn content only covers part of that column, the rest of the

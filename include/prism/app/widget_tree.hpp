@@ -411,6 +411,7 @@ public:
                 };
 
                 current_parent().children.push_back(std::move(container));
+                handle();
                 widget(ctrl.detail);
             });
         }
