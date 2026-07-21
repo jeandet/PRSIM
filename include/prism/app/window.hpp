@@ -20,7 +20,11 @@ struct WindowConfig {
     int         height     = 600;
     bool        resizable  = true;
     bool        fullscreen = false;
-    DecorationMode decoration = DecorationMode::Native;
+    // Custom, not Native: every real window this project ships (all examples, the debug
+    // inspector) already opts into Custom by hand, because native/server-side decoration is
+    // unavailable in this project's own dev environment (Wayland gives none at all) -- Native
+    // as a default has silently produced a chromeless, uncloseable window twice already.
+    DecorationMode decoration = DecorationMode::Custom;
 };
 
 struct RenderConfig {

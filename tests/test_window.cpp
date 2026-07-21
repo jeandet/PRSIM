@@ -18,7 +18,7 @@ TEST_CASE("WindowConfig has sensible defaults") {
     CHECK(cfg.height == 600);
     CHECK(cfg.resizable == true);
     CHECK(cfg.fullscreen == false);
-    CHECK(cfg.decoration == prism::DecorationMode::Native);
+    CHECK(cfg.decoration == prism::DecorationMode::Custom);
 }
 
 TEST_CASE("RenderConfig defaults to null font path") {
@@ -32,7 +32,7 @@ TEST_CASE("WindowConfig designated initializer override") {
     CHECK(cfg.width == 320);
     CHECK(cfg.height == 240);
     CHECK(cfg.fullscreen == true);
-    CHECK(cfg.decoration == prism::DecorationMode::Native);
+    CHECK(cfg.decoration == prism::DecorationMode::Custom);
 }
 
 TEST_CASE("WindowEvent wraps InputEvent with WindowId") {
@@ -90,7 +90,7 @@ TEST_CASE("HeadlessWindow set_position updates position") {
 
 TEST_CASE("HeadlessWindow set_decoration_mode") {
     prism::HeadlessWindow w(1, {});
-    CHECK(w.decoration_mode() == prism::DecorationMode::Native);
+    CHECK(w.decoration_mode() == prism::DecorationMode::Custom);
     w.set_decoration_mode(prism::DecorationMode::None);
     CHECK(w.decoration_mode() == prism::DecorationMode::None);
 }
