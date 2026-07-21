@@ -159,7 +159,45 @@ public:
             stack_.push_back(&ref);
             fn();
             stack_.pop_back();
+            if (kind == LayoutKind::Row || kind == LayoutKind::Column)
+                wire_split_handles(ref);
             return ref;
+        }
+
+        void wire_split_handles(Node& container) {
+            bool vertical = (container.layout_kind == LayoutKind::Column);
+            WidgetId container_id = container.id;
+            size_t handle_index = 0;
+            for (auto& child : container.children) {
+                if (child.layout_kind != LayoutKind::Handle) continue;
+                size_t index = handle_index++;
+                child.build_widget = [&tree = tree_, container_id, index, vertical](WidgetNode& wn) {
+                    wn.focus_policy = FocusPolicy::none;
+                    wn.record = [](WidgetNode& node) {
+                        node.draws.clear();
+                        auto& vs = node_vs(node);
+                        auto& t = node_theme(node);
+                        auto sz = node_allocated(node);
+                        auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
+                        node.draws.filled_rect(detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
+                    };
+                    wn.wire = [&tree, container_id, index, vertical](WidgetNode& self) {
+                        self.connections.push_back(self.on_input.connect(
+                            [&tree, container_id, index, vertical, &self](const InputEvent& ev) {
+                                float origin = vertical ? self.absolute_y.raw() : self.absolute_x.raw();
+                                if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->button == 1) {
+                                    float local = vertical ? mb->position.y.raw() : mb->position.x.raw();
+                                    if (mb->pressed) tree.begin_split_drag(container_id, index, local + origin);
+                                    else tree.end_split_drag();
+                                } else if (auto* mm = std::get_if<MouseMove>(&ev); mm && node_vs(self).pressed) {
+                                    float local = vertical ? mm->position.y.raw() : mm->position.x.raw();
+                                    tree.update_split_drag(local + origin);
+                                }
+                            }));
+                    };
+                    wn.record(wn);
+                };
+            }
         }
 
     public:

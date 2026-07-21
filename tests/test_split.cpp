@@ -201,6 +201,55 @@ struct ExpandingPaneModel {
     }
 };
 
+TEST_CASE("Pressing and dragging the handle through the real input pipeline resizes panes") {
+    TwoPaneModelWithId model;
+    WidgetTree tree(model);
+    auto snap = tree.build_snapshot(406, 100, 1);
+    REQUIRE(snap->geometry.size() == 3);
+
+    auto [pane0_id, pane0_rect] = snap->geometry[0];
+    auto [handle_id, handle_rect] = snap->geometry[1];
+    auto [pane1_id, pane1_rect] = snap->geometry[2];
+    float pane0_w0 = pane0_rect.extent.w.raw();
+    float pane1_w0 = pane1_rect.extent.w.raw();
+
+    Point press_pos{X{handle_rect.origin.x.raw() + 2.f}, Y{handle_rect.origin.y.raw() + 5.f}};
+    auto hit = prism::hit_test(*snap, press_pos);
+    REQUIRE(hit.has_value());
+    CHECK(*hit == handle_id);
+
+    MouseButton press{press_pos, /*button=*/1, /*pressed=*/true};
+    InputEvent press_ev{press};
+    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    CHECK(tree.captured_id() == handle_id);
+
+    // Two separate MouseMove events, each a real 10px rightward mouse movement.
+    // This specifically guards the absolute-position fix described in this
+    // task: if the handle's own (moving) rect were used to localize
+    // subsequent events instead of reconstructing absolute position, the
+    // second move would not add another clean 10px -- it would desync.
+    MouseMove move1{Point{X{press_pos.x.raw() + 10.f}, press_pos.y}};
+    prism::app::detail::route_mouse_move(tree, *snap, move1);
+    auto snap2 = tree.build_snapshot(406, 100, 2);
+    auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
+    CHECK(pane0_rect2.extent.w.raw() == doctest::Approx(pane0_w0 + 10.f));
+
+    MouseMove move2{Point{X{press_pos.x.raw() + 20.f}, press_pos.y}};
+    prism::app::detail::route_mouse_move(tree, *snap2, move2);
+    auto snap3 = tree.build_snapshot(406, 100, 3);
+    auto [pane0_id3, pane0_rect3] = snap3->geometry[0];
+    CHECK(pane0_rect3.extent.w.raw() == doctest::Approx(pane0_w0 + 20.f));
+
+    MouseButton release{Point{X{press_pos.x.raw() + 20.f}, press_pos.y}, 1, false};
+    InputEvent release_ev{release};
+    prism::app::detail::route_mouse_button(tree, *snap3, release_ev, release);
+    CHECK(tree.captured_id() == 0);
+
+    auto snap4 = tree.build_snapshot(406, 100, 4);
+    auto [pane1_id4, pane1_rect4] = snap4->geometry[2];
+    CHECK(pane1_rect4.extent.w.raw() == doctest::Approx(pane1_w0 - 20.f));
+}
+
 TEST_CASE("First drag captures an expanding pane's real allocated size, not a fallback") {
     ExpandingPaneModel model;
     WidgetTree tree(model);
