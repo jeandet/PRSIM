@@ -5,6 +5,9 @@ showcases = {
   'canvas':   'showcase_canvas.cpp',
   'plot':     'showcase_plot.cpp',
   'inspector': 'showcase_inspector.cpp',
+  'tree':     'showcase_tree.cpp',
+  'table':    'showcase_table.cpp',
+  'tabs':     'showcase_tabs.cpp',
 }
 
 foreach name, src : showcases

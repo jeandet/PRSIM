@@ -184,6 +184,75 @@ prism::model_app("Device Control", inspector);
 
 <p align="center"><img src="doc/screenshots/inspector.svg" alt="Inspector" width="300"/></p>
 
+**Tree widget** — lazy, virtualized tree view over any hierarchical data source, with keyboard
+nav (arrow keys expand/collapse/move) and a synced detail panel. On C++26, `wrap_struct_tree()`
+turns any nested struct into a browsable tree via reflection, no adapter code:
+
+```cpp
+struct Sensors { float battery_v = 3.7f; float bus_v = 12.1f; };
+struct Device { std::string name = "Controller"; Sensors sensors; int firmware = 12; };
+
+struct TreeShowcase {
+    Device device;
+    prism::TreeController ctrl{prism::wrap_struct_tree(device)};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) { vb.tree(ctrl); }
+};
+```
+
+<p align="center"><img src="doc/screenshots/tree.svg" alt="Tree" width="400"/></p>
+
+For data that isn't a plain struct — a filesystem, a database, a custom model — implement
+`TreeSource` by hand (Tier 1), or satisfy the `TreeStorage` concept and adapt it with
+`wrap_tree_storage()` (Tier 2, see `examples/model_tree_browser.cpp` for a filesystem browser).
+`wrap_struct_tree()` (Tier 3) is the reflection-only fast path shown above.
+
+**Table widget** — virtualized rows with headers and single-row selection. `wrap_row_storage()`
+turns a `List<T>` of `Field<T>`-bearing rows into a table via reflection; `wrap_column_storage()`
+adapts any type satisfying `ColumnStorage` without reflection:
+
+```cpp
+struct Reading {
+    prism::Field<std::string> sensor{""};
+    prism::Field<double> value{0.0};
+};
+
+struct TableShowcase {
+    prism::List<Reading> readings;
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.table(readings).headers({"Sensor", "Value"});
+    }
+};
+```
+
+<p align="center"><img src="doc/screenshots/table.svg" alt="Table" width="400"/></p>
+
+**Tabs** — group content behind a tab bar. Each tab body is an independent `ViewBuilder` closure,
+built lazily:
+
+```cpp
+struct TabsShowcase {
+    prism::Field<prism::TextField<>> username{{.value = "jeandet"}};
+    prism::Field<bool> dark_mode{true};
+    prism::Field<prism::Slider<>> volume{{.value = 0.6}};
+    prism::Field<prism::TabBar<>> tabs;
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.tabs(tabs, [&] {
+            vb.tab("Account", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.vstack(username, dark_mode);
+            });
+            vb.tab("Audio", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                tvb.widget(volume);
+            });
+        });
+    }
+};
+```
+
+<p align="center"><img src="doc/screenshots/tabs.svg" alt="Tabs" width="400"/></p>
+
 **Inspector annotations** — customize how individual fields render in the inspector via
 C++26 attributes, without changing the field's declared type:
 
@@ -218,6 +287,16 @@ struct Settings {
 `Field<T>` holds only the value — no display label. The member name via P2996 reflection provides identity. Display labels are a form-layout concern.
 
 Both support equality-guarded `set()` (no spurious notifications) and RAII `Connection` lifetime on `on_change()`.
+
+Two more observable types round out the reactive core, both usable outside any widget tree:
+
+- **`Derived<T>`** — read-only value recomputed from other observables, recalculated (and only notifies on actual change) whenever a source fires:
+  ```cpp
+  prism::Derived<double> total{[&]{ return price.get() * quantity.get(); }, price, quantity};
+  ```
+- **`Shared<T>`** — lock-free cross-thread cell (`get()`/`set()` from any thread); the owning thread calls `drain_notifications()` to fire `on_change()` on its own turn. This is what backs the `Shared<DeviceState>` in the live inspector example above — devices/background workers publish into it from another thread.
+
+Wrap a batch of `field.set()` calls in `prism::transaction([&]{ ... })` to coalesce their notifications into one flush at the end of the block instead of firing per-call (see [Transaction API](docs/superpowers/specs/2026-04-04-transaction-api-design.md)).
 
 ## Sentinel Types & Widgets
 
@@ -329,6 +408,25 @@ app.run([](prism::Frame& frame) {
 });
 ```
 
+### Window Configuration
+
+All three entry points take a `WindowConfig` — `model_app()` accepts one directly in place of a
+bare title string:
+
+```cpp
+prism::model_app({.title = "My App", .width = 900, .height = 600,
+                   .resizable = true, .decoration = prism::DecorationMode::Custom},
+                  dashboard);
+```
+
+`decoration` selects the window chrome:
+
+| Mode | Behavior |
+|---|---|
+| `DecorationMode::Custom` (default) | PRISM draws its own title bar, close/min/max buttons, and manual resize edges — works identically across platforms, including Wayland where server-side decoration is often unavailable |
+| `DecorationMode::Native` | Defers to the OS window manager's decoration |
+| `DecorationMode::None` | Borderless, undecorated window |
+
 ## Threading Model
 
 ```mermaid
@@ -401,8 +499,8 @@ graph LR
 - **Phase 3** (done) — Widget dispatch, SDL_Renderer + SDL3_ttf, all built-in widgets (Label, TextField, Password, TextArea, Slider, Button, Checkbox, Dropdown), overlay/popup system, keyboard focus (Tab/Shift+Tab), custom `view()` override, `canvas()` escape hatch, strong coordinate types, `clip_push` local coordinate system
 - **Phase 3.5** (done) — stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, `AppContext`
 - **Phase 3.6** (done) — `Node` intermediate layer (type-erased `Field<T>` + children), pre-C++26 support via `view()` methods, magic_enum enum fallback, `#if __cpp_impl_reflection` guards (only 2 locations)
-- **Phase 4** (done) — Scroll areas, virtual lists, animation system (easing/spring, `Animation<T>`, `TransitionGuard<T>`), mouse capture & drag, table widget (virtual scroll, headers, row selection), plot widget (zoom/pan/crosshair, auto-fit), SVG export, window abstraction + custom chrome, theme palette (runtime-switchable), transaction API (deferred/coalesced callbacks), `Derived<T>`/`Shared<T>` state taxonomy, codebase reorganization into 8 modules
-- **Phase 4.5** (in progress) — Custom widget from type (`Widget<T>`, `is_widget_v`, `EditState`), live object inspector (`Inspector<T>`/`FieldMirror<T>` — edit a `Shared<T>` cross-thread with zero boilerplate), inspector field annotations (`skip`/`readonly`/`label`/`section` via C++26 `[[=...]]` attributes); debugging/profiling story (tree inspector, dirty-region viewer) next
+- **Phase 4** (done) — Scroll areas, virtual lists, animation system (easing/spring, `Animation<T>`, `TransitionGuard<T>`), mouse capture & drag, table widget (virtual scroll, headers, row selection), tab bar (`TabBar<>`, lazy per-tab `ViewBuilder`), plot widget (zoom/pan/crosshair, auto-fit), SVG export, window abstraction + custom chrome, theme palette (runtime-switchable), transaction API (deferred/coalesced callbacks), `Derived<T>`/`Shared<T>` state taxonomy, codebase reorganization into 8 modules
+- **Phase 4.5** (in progress) — Custom widget from type (`Widget<T>`, `is_widget_v`, `EditState`), live object inspector (`Inspector<T>`/`FieldMirror<T>` — edit a `Shared<T>` cross-thread with zero boilerplate), inspector field annotations (`skip`/`readonly`/`label`/`section` via C++26 `[[=...]]` attributes), `Tree<T>` widget (`TreeSource`/`TreeController`, `wrap_tree_storage()`/`wrap_struct_tree()`, virtualized rows, keyboard nav), live tree inspector (browse a running app's own `WidgetNode` tree, synced detail panel with auto-scroll); broader debugging/profiling story (dirty-region viewer) continues
 - **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
 
 ## Design Documents
@@ -423,6 +521,19 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Dynamic Node Tree](doc/design/dynamic-node-tree.md) — `Node` intermediate layer, pre-C++26 support, ViewBuilder→Node→WidgetNode pipeline
 - [Styling](doc/design/styling.md) — theme as data, context propagation (draft)
 - [Components](doc/design/components.md) — `prism::Component` base class, self-wiring reusable UI + logic bundles (design only)
+- [Table Widget](docs/superpowers/specs/2026-03-31-table-widget-design.md) — `ColumnStorage`/`RowStorage` adapters, virtual scroll, headers, row selection
+- [Tab Widget](docs/superpowers/specs/2026-03-31-tab-widget-design.md) — tabbed container, active-tab state
+- [Plot Widget](docs/superpowers/specs/2026-04-01-plot-widget-design.md) — `PlotModel`, per-axis zoom/pan, crosshair, auto-fit
+- [SVG Export](docs/superpowers/specs/2026-04-01-svg-export-draw-commands-design.md) — draw commands, viewport-aware `to_svg()`
+- [Theme Palette](docs/superpowers/specs/2026-04-01-theme-palette-design.md) — flat `Theme` struct, runtime-switchable palette
+- [Window Abstraction](docs/superpowers/specs/2026-04-01-window-abstraction-design.md) — `Window`/`WindowConfig`, custom chrome, manual resize tracking
+- [Transaction API](docs/superpowers/specs/2026-04-04-transaction-api-design.md) — `prism::transaction()`/`TransactionGuard`, coalesced notifications
+- [State Taxonomy](docs/superpowers/specs/2026-04-11-state-taxonomy-design.md) — `Derived<T>` signal graph, `Shared<T>` cross-thread cell
+- [Custom Widget From Type](docs/superpowers/specs/2026-04-11-custom-widget-from-type-design.md) — `Widget<T>`, `is_widget_v`, `EditState`, user extension story
+- [Live Object Inspector](docs/superpowers/specs/2026-07-14-live-object-inspector-design.md) — `Inspector<T>`/`FieldMirror<T>` reflection synthesis
+- [Inspector Field Annotations](docs/superpowers/specs/2026-07-15-inspector-field-annotations-design.md) — `skip`/`readonly`/`label`/`section` C++26 attributes
+- [Tree Widget](docs/superpowers/specs/2026-07-20-tree-widget-design.md) — `TreeSource`, 3-tier adapter API, virtualized rows, keyboard nav
+- [Live Tree Inspector](docs/superpowers/specs/2026-07-15-live-tree-inspector-design.md) — live `WidgetNode` tree browser, dual-window event loop, detail panel auto-scroll
 
 ## License
 
