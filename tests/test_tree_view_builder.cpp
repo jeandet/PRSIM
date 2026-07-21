@@ -2,6 +2,7 @@
 #include <doctest.h>
 
 #include <prism/app/widget_tree.hpp>
+#include <prism/app/event_routing.hpp>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
@@ -70,6 +71,63 @@ TEST_CASE("clicking the root row expands it and updates the row count") {
 
     CHECK(model.ctrl.selected.get() == std::optional<prism::TreeNodeId>{1});
     CHECK(model.ctrl.rows.size() == 3); // root + 2 children now visible
+}
+
+TEST_CASE("clicking a row through the real hit_test/route_mouse_button pipeline focuses the tree container") {
+    // Every other test in this file focuses the container via the tree.set_focused(container_id)
+    // shortcut, bypassing the real click pipeline entirely. That's exactly how the reported bug
+    // ("arrow keys do nothing at all") slipped through: hit_test() walks widgets back-to-front and
+    // returns the first nonzero-id match under the click point, and rows deliberately have real,
+    // distinct, nonzero ids (so each row's own click handler can fire ctrl.on_row_clicked) --
+    // so a real click's hit_test() always resolves to the ROW's id, never the container's. This
+    // test drives the actual prism::hit_test() + prism::app::detail::route_mouse_button() pipeline
+    // a real running app uses, with no shortcut, to prove a real click ends up focusing the
+    // container (which is what makes subsequent arrow-key presses route anywhere at all).
+    TreeModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    REQUIRE(tree.focus_order().size() == 1);
+    auto container_id = tree.focus_order()[0];
+    REQUIRE(tree.focused_id() != container_id); // nothing focused yet
+
+    // Root row's rect: geometry[1] is the first visible row (see "clicking the root row..."
+    // above for how this was verified empirically for this fixture/viewport).
+    REQUIRE(snap->geometry.size() > 1);
+    auto [row_id, row_rect] = snap->geometry[1];
+    prism::Point click_pos{prism::X{row_rect.origin.x.raw() + 5.f},
+                            prism::Y{row_rect.origin.y.raw() + 5.f}};
+
+    // Confirm hit_test really resolves to the row, not the container -- this is the crux of the
+    // bug this test guards against.
+    auto hit = prism::hit_test(*snap, click_pos);
+    REQUIRE(hit.has_value());
+    CHECK(*hit == row_id);
+    CHECK(*hit != container_id);
+
+    prism::MouseButton mb{click_pos, /*button=*/1, /*pressed=*/true};
+    prism::InputEvent ev{mb};
+    prism::app::detail::route_mouse_button(tree, *snap, ev, mb);
+
+    // A real click on a row must still end up focusing the container -- otherwise every
+    // subsequent arrow-key press has no focused widget to route to, exactly reproducing
+    // "arrow keys do nothing at all".
+    CHECK(tree.focused_id() == container_id);
+
+    // The click also reached the row's own handler: root got selected and expanded.
+    CHECK(model.ctrl.selected.get() == std::optional<prism::TreeNodeId>{1});
+    REQUIRE(model.ctrl.rows.size() == 3); // root + 2 children now visible
+
+    // End-to-end, exactly like a real user: click a row, then press Down -- routed through
+    // route_key_press (which dispatches to tree.focused_id(), NOT a hardcoded id) so this only
+    // passes if the click genuinely left the container focused.
+    (void)tree.build_snapshot(400, 300, 2);
+    tree.clear_dirty();
+    prism::KeyPress down_kp{prism::keys::down, 0};
+    prism::InputEvent down_ev{down_kp};
+    prism::app::detail::route_key_press(tree, down_ev, down_kp);
+    CHECK(model.ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
 }
 
 TEST_CASE("Down arrow on the focused tree container moves selection") {

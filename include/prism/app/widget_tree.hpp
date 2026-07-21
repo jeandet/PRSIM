@@ -305,7 +305,7 @@ public:
                     };
                 };
 
-                container.vlist_bind_row = [&ctrl](WidgetNode& wn, size_t index) {
+                container.vlist_bind_row = [&ctrl, container_id = container.id, &tree = tree_](WidgetNode& wn, size_t index) {
                     auto field_ptr = std::make_shared<Field<TreeRow>>(ctrl.rows[index]);
                     wn.edit_state = std::shared_ptr<void>(field_ptr);
                     wn.focus_policy = FocusPolicy::none; // rows never take focus; the container does
@@ -319,12 +319,14 @@ public:
                         Widget<TreeRow>::record(node.draws, *field_ptr, node);
                     };
                     wn.record(wn);
-                    wn.wire = [field_ptr, &ctrl, index](WidgetNode& node) {
+                    wn.wire = [field_ptr, &ctrl, index, container_id, &tree](WidgetNode& node) {
                         node.connections.push_back(
-                            node.on_input.connect([&ctrl, index](const InputEvent& ev) {
+                            node.on_input.connect([&ctrl, index, container_id, &tree](const InputEvent& ev) {
                                 auto* mb = std::get_if<MouseButton>(&ev);
-                                if (mb && mb->pressed && mb->button == 1 && index < ctrl.rows.size())
+                                if (mb && mb->pressed && mb->button == 1 && index < ctrl.rows.size()) {
+                                    tree.set_focused(container_id);
                                     ctrl.on_row_clicked(index, ctrl.rows[index]);
+                                }
                             })
                         );
                     };
