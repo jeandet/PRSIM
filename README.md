@@ -124,6 +124,20 @@ void view(prism::WidgetTree::ViewBuilder& vb) {
 
 <p align="center"><img src="doc/screenshots/layout.svg" alt="Layout" width="400"/></p>
 
+**Resizable split panes** — drop a `handle()` between two children of any `hstack`/`vstack` to let
+the user drag the divider; sizes stay content-based until the first drag, then persist and rescale
+proportionally on resize:
+
+```cpp
+void view(prism::WidgetTree::ViewBuilder& vb) {
+    vb.hstack([&] {
+        vb.component(settings);
+        vb.handle();
+        vb.widget(brightness);
+    });
+}
+```
+
 **Canvas escape hatch** — drop to raw drawing when you need it:
 
 ```cpp

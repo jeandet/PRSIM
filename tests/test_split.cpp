@@ -128,8 +128,9 @@ TEST_CASE("First drag captures a container-kind pane's real size, not just leaf 
     auto snap2 = tree.build_snapshot(406, 100, 2);
     auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
     // If arranged_extent were NOT populated for a container-kind pane (stayed
-    // at its default {0,0}), the captured pre-drag size would be 0 and this
-    // would read exactly 20.f instead of pane0_w0 + 20.f.
+    // at its default {0,0}), the captured pre-drag size would be 0, and
+    // 0 + 20 would clamp up to splitter::min_pane_size_px (24.f) instead of
+    // reading pane0_w0 + 20.f.
     CHECK(pane0_rect2.extent.w.raw() == doctest::Approx(pane0_w0 + 20.f));
 }
 
@@ -297,9 +298,12 @@ TEST_CASE("Resizing the window after a drag proportionally rescales pane sizes o
     float ratio_before = pane0_rect2.extent.w.raw()
         / (pane0_rect2.extent.w.raw() + pane1_rect2.extent.w.raw());
 
-    // Double the window width. The rescale is documented as taking effect on
+    // Double the window width. In a real event loop the rescale takes effect
     // the frame *after* the mismatch is observed (same "detect now, correct
-    // next frame" pattern already used for table/vlist viewport sizing).
+    // next frame" pattern already used for table/vlist viewport sizing). This
+    // test never calls clear_dirty(), so build_snapshot's own re-materialize-
+    // if-dirty branch already applies the correction within the very first
+    // build_snapshot(812, ...) call below -- snap4 just re-confirms stability.
     auto snap3 = tree.build_snapshot(812, 100, 3);
     auto snap4 = tree.build_snapshot(812, 100, 4);
     auto [pane0_id4, pane0_rect4] = snap4->geometry[0];

@@ -164,6 +164,19 @@ public:
             return ref;
         }
 
+        // Shared by handle() (a bare divider with no drag wiring, e.g. if placed
+        // outside a Row/Column) and wire_split_handles() (the real, draggable one) --
+        // the hit-rect Handle gets in layout_flatten is the bounding box of whatever
+        // this paints, so it must always cover the node's full allocated size.
+        static void draw_divider(WidgetNode& node) {
+            node.draws.clear();
+            auto& vs = node_vs(node);
+            auto& t = node_theme(node);
+            auto sz = node_allocated(node);
+            auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
+            node.draws.filled_rect(ui::detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
+        }
+
         void wire_split_handles(Node& container) {
             bool vertical = (container.layout_kind == LayoutKind::Column);
             WidgetId container_id = container.id;
@@ -173,14 +186,7 @@ public:
                 size_t index = handle_index++;
                 child.build_widget = [&tree = tree_, container_id, index, vertical](WidgetNode& wn) {
                     wn.focus_policy = FocusPolicy::none;
-                    wn.record = [](WidgetNode& node) {
-                        node.draws.clear();
-                        auto& vs = node_vs(node);
-                        auto& t = node_theme(node);
-                        auto sz = node_allocated(node);
-                        auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
-                        node.draws.filled_rect(ui::detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
-                    };
+                    wn.record = &draw_divider;
                     wn.wire = [&tree, container_id, index, vertical](WidgetNode& self) {
                         self.connections.push_back(self.on_input.connect(
                             [&tree, container_id, index, vertical, &self](const InputEvent& ev) {
@@ -217,14 +223,7 @@ public:
             h.layout_kind = LayoutKind::Handle;
             h.build_widget = [](WidgetNode& wn) {
                 wn.focus_policy = FocusPolicy::none;
-                wn.record = [](WidgetNode& node) {
-                    node.draws.clear();
-                    auto& vs = node_vs(node);
-                    auto& t = node_theme(node);
-                    auto sz = node_allocated(node);
-                    auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
-                    node.draws.filled_rect(ui::detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
-                };
+                wn.record = &draw_divider;
                 wn.record(wn);
             };
             current_parent().children.push_back(std::move(h));
