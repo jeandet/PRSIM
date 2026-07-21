@@ -216,6 +216,15 @@ void SdlWindow::render_draw_list(const DrawList& dl, TTF_Font* font) {
 void SdlWindow::render_cmd(const FilledRect& cmd) {
     SDL_SetRenderDrawColor(renderer_, cmd.color.r, cmd.color.g, cmd.color.b, cmd.color.a);
     SDL_FRect r = to_sdl(cmd.rect);
+    // Adjacent same-plane fills (list/tree rows, table cells) are separate FillRect calls that
+    // share an exact float edge; measured live, this renderer leaves a 1px hairline of clear
+    // color at that shared edge every time (confirmed via pixel-sampled screenshot: PRISM's own
+    // DrawList geometry tiles exactly, with zero gap, across a headless sweep of ~100 scroll
+    // offsets -- the loss is introduced here, in rasterization, not in layout). Extend the fill
+    // by a hair past its nominal bottom/right edge so neighbours overlap instead of abut; the
+    // next rect in z-order (drawn after) repaints over the overlap with its own color, so this
+    // is invisible except at the exact seam it's meant to cover.
+    r.h += 1.f;
     SDL_RenderFillRect(renderer_, &r);
 }
 
@@ -267,8 +276,20 @@ void SdlWindow::render_cmd(const TextCmd& cmd, TTF_Font* font) {
 }
 
 void SdlWindow::render_cmd(const ClipPush& cmd) {
-    SDL_Rect r = {static_cast<int>(cmd.rect.origin.x.raw()), static_cast<int>(cmd.rect.origin.y.raw()),
-                  static_cast<int>(cmd.rect.extent.w.raw()), static_cast<int>(cmd.rect.extent.h.raw())};
+    // Round the clip rect's corners outward (floor top-left, ceil bottom-right) rather than
+    // truncating position and size independently. A clip this size-for-size with the row/cell
+    // it bounds must never crop content that legitimately falls within the float-precision
+    // rect -- otherwise the 1px fill overdraw above (added to hide a rasterization seam between
+    // adjacent rows) gets clipped away before it can do its job.
+    float x0 = cmd.rect.origin.x.raw();
+    float y0 = cmd.rect.origin.y.raw();
+    float x1 = x0 + cmd.rect.extent.w.raw();
+    float y1 = y0 + cmd.rect.extent.h.raw();
+    int ix0 = static_cast<int>(std::floor(x0));
+    int iy0 = static_cast<int>(std::floor(y0));
+    int ix1 = static_cast<int>(std::ceil(x1));
+    int iy1 = static_cast<int>(std::ceil(y1));
+    SDL_Rect r = {ix0, iy0, ix1 - ix0, iy1 - iy0};
     clip_stack_.push_back(r);
     SDL_SetRenderClipRect(renderer_, &r);
 }
