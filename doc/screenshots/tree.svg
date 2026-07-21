@@ -15,7 +15,7 @@
 </g>
 <clipPath id="clip-3"><rect x="160" y="0" width="200" height="188"/></clipPath>
 <g clip-path="url(#clip-3)">
-<rect x="160" y="0" width="200" height="200" fill="rgba(45,45,55,1)"/>
+<rect x="160" y="0" width="200" height="188" fill="rgba(45,45,55,1)"/>
 <text x="168" y="8" font-family="monospace" font-size="13" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensors</text>
 <text x="168" y="26" font-family="monospace" font-size="13" fill="rgba(220,220,220,1)" dominant-baseline="hanging">battery_v: 3.7</text>
 <text x="168" y="44" font-family="monospace" font-size="13" fill="rgba(220,220,220,1)" dominant-baseline="hanging">bus_v: 12.1</text>

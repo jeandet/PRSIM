@@ -38,6 +38,43 @@ TEST_CASE("vb.tree() builds without crashing and produces geometry") {
     CHECK(snap->geometry.size() > 0);
 }
 
+// vb.tree() places the detail panel in an hstack alongside the row list, so the panel's
+// allocated height is the full viewport height (hstack's cross axis), not its own preferred
+// size. If the panel's own drawn content only covers part of that column, the rest of the
+// column paints nothing -- appearing as a solid gap of clear/background color that grows
+// with a taller window (i.e. a longer visible list). Regression for that gap.
+TEST_CASE("tree detail panel draws to fill its full allocated height, not a fixed box") {
+    TreeModel model;
+    prism::WidgetTree tree(model);
+
+    // Tall viewport, mimicking a resized window showing a long list.
+    auto snap = tree.build_snapshot(400, 800, 1);
+    REQUIRE(snap != nullptr);
+
+    prism::WidgetId detail_id = 0;
+    prism::Rect detail_allocated;
+    for (auto& [id, rect] : snap->geometry) {
+        // Heuristic: the detail panel is the leaf that ends up furthest right.
+        if (rect.origin.x.raw() > 0 && (detail_id == 0 || rect.origin.x > detail_allocated.origin.x)) {
+            detail_id = id;
+            detail_allocated = rect;
+        }
+    }
+    REQUIRE(detail_id != 0);
+
+    for (size_t i = 0; i < snap->geometry.size(); ++i) {
+        if (snap->geometry[i].first != detail_id) continue;
+        float drawn_h = 0.f;
+        for (auto& cmd : snap->draw_lists[i].commands) {
+            if (auto* fr = std::get_if<prism::FilledRect>(&cmd))
+                drawn_h = std::max(drawn_h, fr->rect.extent.h.raw());
+        }
+        // The panel's background fill should cover close to the full viewport height,
+        // not be stuck at a small fixed size while the column around it is much taller.
+        CHECK(drawn_h > 700.f);
+    }
+}
+
 TEST_CASE("the tree container is focusable via focus_order") {
     TreeModel model;
     prism::WidgetTree tree(model);

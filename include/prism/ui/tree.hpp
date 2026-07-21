@@ -113,12 +113,20 @@ struct Widget<TreeRow> {
 template <>
 struct Widget<std::optional<TreeDetail>> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
+    // Fallback only, used before layout has ever run (node_allocated() still zero) --
+    // vb.tree() places this widget in an hstack alongside the row list, so its real
+    // allocated height is the full viewport height (the hstack's cross axis), not a fixed
+    // size. Drawing to a hardcoded height regardless of allocation left the rest of the
+    // column unpainted -- showing raw canvas background as the list (and its window) grew
+    // taller.
     static constexpr Height panel_h{200.f};
 
     static void record(DrawList& dl, const Field<std::optional<TreeDetail>>& field, WidgetNode& node) {
         auto& t = node_theme(node);
         auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, panel_h), t.surface);
+        auto allocated_h = node_allocated(node).h;
+        auto h = allocated_h.raw() > 0.f ? allocated_h : panel_h;
+        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, h), t.surface);
 
         auto& value = field.get();
         if (!value) {
