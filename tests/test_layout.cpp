@@ -324,3 +324,64 @@ TEST_CASE("Handle LayoutNode measures to fixed thickness regardless of content")
     CHECK(handle.hint.preferred == doctest::Approx(prism::splitter::thickness_px));
     CHECK_FALSE(handle.hint.expand);
 }
+
+TEST_CASE("Row measure ignores split_sizes when empty (regression pin)") {
+    prism::LayoutNode row;
+    row.kind = prism::LayoutNode::Kind::Row;
+    row.id = 1;
+
+    prism::LayoutNode leaf;
+    leaf.kind = prism::LayoutNode::Kind::Leaf;
+    leaf.id = 2;
+    leaf.draws.filled_rect(R(0, 0, 80, 20), prism::Color::rgba(255, 0, 0));
+    row.children.push_back(std::move(leaf));
+
+    prism::LayoutNode handle;
+    handle.kind = prism::LayoutNode::Kind::Handle;
+    handle.id = 3;
+    row.children.push_back(std::move(handle));
+
+    prism::LayoutNode leaf2;
+    leaf2.kind = prism::LayoutNode::Kind::Leaf;
+    leaf2.id = 4;
+    leaf2.draws.filled_rect(R(0, 0, 120, 20), prism::Color::rgba(0, 255, 0));
+    row.children.push_back(std::move(leaf2));
+
+    prism::layout_measure(row, prism::LayoutAxis::Vertical);
+
+    CHECK(row.children[0].hint.preferred == doctest::Approx(80.f));
+    CHECK(row.children[1].hint.preferred == doctest::Approx(prism::splitter::thickness_px));
+    CHECK(row.children[2].hint.preferred == doctest::Approx(120.f));
+}
+
+TEST_CASE("Row measure uses split_sizes for panes when engaged, ignoring content") {
+    prism::LayoutNode row;
+    row.kind = prism::LayoutNode::Kind::Row;
+    row.id = 1;
+    row.split_sizes = {150.f, 250.f};
+
+    prism::LayoutNode leaf;
+    leaf.kind = prism::LayoutNode::Kind::Leaf;
+    leaf.id = 2;
+    leaf.draws.filled_rect(R(0, 0, 80, 20), prism::Color::rgba(255, 0, 0));
+    row.children.push_back(std::move(leaf));
+
+    prism::LayoutNode handle;
+    handle.kind = prism::LayoutNode::Kind::Handle;
+    handle.id = 3;
+    row.children.push_back(std::move(handle));
+
+    prism::LayoutNode leaf2;
+    leaf2.kind = prism::LayoutNode::Kind::Leaf;
+    leaf2.id = 4;
+    leaf2.draws.filled_rect(R(0, 0, 120, 20), prism::Color::rgba(0, 255, 0));
+    row.children.push_back(std::move(leaf2));
+
+    prism::layout_measure(row, prism::LayoutAxis::Vertical);
+
+    CHECK(row.children[0].hint.preferred == doctest::Approx(150.f));
+    CHECK(row.children[1].hint.preferred == doctest::Approx(prism::splitter::thickness_px));
+    CHECK(row.children[2].hint.preferred == doctest::Approx(250.f));
+    CHECK_FALSE(row.children[0].hint.expand);
+    CHECK_FALSE(row.children[2].hint.expand);
+}

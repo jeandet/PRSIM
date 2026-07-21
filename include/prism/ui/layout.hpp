@@ -59,6 +59,7 @@ struct LayoutNode {
     DX table_scroll_x{0};
     size_t table_column_count = 0;
     Height table_header_h{0};
+    std::vector<float> split_sizes;  // main-axis size per pane; meaningful only for Kind::Row/Column when split mode is engaged
     const Theme* theme = &detail::layout_default_theme;
 };
 
@@ -69,8 +70,16 @@ namespace detail {
 inline void measure_linear(LayoutNode& node, LayoutAxis own_axis, LayoutAxis parent_axis) {
     float sum = 0, max_cross = 0;
     bool has_expander = false;
+    size_t pane_index = 0;
     for (auto& child : node.children) {
         layout_measure(child, own_axis);
+        if (!node.split_sizes.empty() && child.kind != LayoutNode::Kind::Handle) {
+            if (pane_index < node.split_sizes.size()) {
+                child.hint.preferred = node.split_sizes[pane_index];
+                child.hint.expand = false;
+            }
+            ++pane_index;
+        }
         sum += child.hint.preferred;
         max_cross = std::max(max_cross, child.hint.cross);
         if (child.hint.expand) has_expander = true;
