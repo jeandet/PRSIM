@@ -73,5 +73,7 @@ struct BrowserModel {
 
 int main() {
     BrowserModel model;
-    prism::model_app({.title = "PRISM Tree Browser -- Filesystem"}, model);
+    prism::model_app({.title = "PRISM Tree Browser -- Filesystem", .width = 900, .height = 600,
+                       .decoration = prism::DecorationMode::Custom},
+                      model);
 }
