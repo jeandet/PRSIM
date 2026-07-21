@@ -44,6 +44,7 @@ inline std::string_view layout_kind_name(LayoutKind k) {
         case LayoutKind::VirtualList: return "VirtualList";
         case LayoutKind::Table:       return "Table";
         case LayoutKind::Tabs:        return "Tabs";
+        case LayoutKind::Handle:      return "Handle";
     }
     return "?";
 }

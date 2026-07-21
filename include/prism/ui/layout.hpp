@@ -24,6 +24,11 @@ namespace scrollbar {
     }
 }
 
+namespace splitter {
+    inline constexpr float thickness_px = 6.f;
+    inline constexpr float min_pane_size_px = 24.f;
+}
+
 enum class LayoutAxis { Horizontal, Vertical };
 
 struct SizeHint {
@@ -46,7 +51,7 @@ struct LayoutNode {
     DrawList draws;
     DrawList overlay_draws;  // after `DrawList draws;`
     std::vector<LayoutNode> children;
-    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table, Tabs } kind = Kind::Leaf;
+    enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table, Tabs, Handle } kind = Kind::Leaf;
     DY scroll_offset{0};        // only for Kind::Scroll and VirtualList
     Height scroll_content_h{0}; // total content height, for scrollbar rendering
     size_t vlist_visible_start = 0;  // first materialized item index (VirtualList only)
@@ -110,6 +115,9 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
         }
         return;
     }
+    case LayoutNode::Kind::Handle:
+        node.hint = {.preferred = splitter::thickness_px, .expand = false};
+        return;
     case LayoutNode::Kind::Row:
         detail::measure_linear(node, LayoutAxis::Horizontal, parent_axis);
         return;

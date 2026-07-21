@@ -26,6 +26,7 @@ headless_tests = {
   'view' : files('test_view.cpp'),
   'node' : files('test_node.cpp'),
   'scroll' : files('test_scroll.cpp'),
+  'split' : files('test_split.cpp'),
   'virtual_list' : files('test_virtual_list.cpp'),
   'animation' : files('test_animation.cpp'),
   'table' : files('test_table.cpp'),

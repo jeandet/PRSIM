@@ -312,3 +312,15 @@ TEST_CASE("flatten skips spacers and empty containers") {
     CHECK(snap.geometry.size() == 1);
     CHECK(snap.geometry[0].first == 1);
 }
+
+TEST_CASE("Handle LayoutNode measures to fixed thickness regardless of content") {
+    prism::LayoutNode handle;
+    handle.kind = prism::LayoutNode::Kind::Handle;
+    handle.id = 1;
+    // No draws at all — a Handle's size must not depend on bounding_box().
+
+    prism::layout_measure(handle, prism::LayoutAxis::Horizontal);
+
+    CHECK(handle.hint.preferred == doctest::Approx(prism::splitter::thickness_px));
+    CHECK_FALSE(handle.hint.expand);
+}

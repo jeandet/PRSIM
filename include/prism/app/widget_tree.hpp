@@ -172,6 +172,26 @@ public:
             current_parent().children.push_back(std::move(s));
         }
 
+        void handle() {
+            Node h;
+            h.id = tree_.next_id_++;
+            h.is_leaf = true;
+            h.layout_kind = LayoutKind::Handle;
+            h.build_widget = [](WidgetNode& wn) {
+                wn.focus_policy = FocusPolicy::none;
+                wn.record = [](WidgetNode& node) {
+                    node.draws.clear();
+                    auto& vs = node_vs(node);
+                    auto& t = node_theme(node);
+                    auto sz = node_allocated(node);
+                    auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
+                    node.draws.filled_rect(detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
+                };
+                wn.record(wn);
+            };
+            current_parent().children.push_back(std::move(h));
+        }
+
         void scroll(std::invocable auto&& fn) {
             auto& node = push_container(LayoutKind::Scroll, fn);
             node.scroll_bar_policy = ScrollBarPolicy::Auto;
@@ -1318,10 +1338,11 @@ private:
             }
         }
 
-        // Re-record all leaf/canvas widgets after layout so delegates
+        // Re-record all leaf/canvas/handle widgets after layout so delegates
         // can use their allocated size instead of hardcoded minimums.
         if (layout_node.kind == LayoutNode::Kind::Leaf ||
-            layout_node.kind == LayoutNode::Kind::Canvas) {
+            layout_node.kind == LayoutNode::Kind::Canvas ||
+            layout_node.kind == LayoutNode::Kind::Handle) {
             auto it = index_.find(layout_node.id);
             auto* wn = (it != index_.end()) ? it->second : nullptr;
             if (wn && wn->record) {
@@ -1646,6 +1667,14 @@ private:
                 canvas.draws = node.draws;
                 canvas.overlay_draws = node.overlay_draws;
                 parent.children.push_back(std::move(canvas));
+            } else if (node.layout_kind == LK::Handle) {
+                LayoutNode handle;
+                handle.kind = LayoutNode::Kind::Handle;
+                handle.id = node.id;
+                handle.theme = node.theme;
+                handle.draws = node.draws;
+                handle.overlay_draws = node.overlay_draws;
+                parent.children.push_back(std::move(handle));
             } else {
                 LayoutNode leaf;
                 leaf.kind = LayoutNode::Kind::Leaf;
