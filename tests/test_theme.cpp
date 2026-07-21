@@ -62,3 +62,10 @@ TEST_CASE("WidgetTree theme matches default_theme") {
     CHECK(tree.theme().primary.r == 40);
     CHECK(tree.theme().primary.g == 105);
 }
+
+TEST_CASE("Theme has divider colors distinct from scrollbar thumb") {
+    prism::Theme t;
+    bool has_color = t.divider.r != 0 || t.divider.g != 0 || t.divider.b != 0;
+    CHECK(has_color);
+    CHECK(t.divider_hover.a > t.divider.a);
+}

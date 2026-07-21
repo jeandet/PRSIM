@@ -63,6 +63,10 @@ struct Theme {
     // Scrollbar thumb
     Color scrollbar_thumb = Color::rgba(120, 120, 130, 160);
 
+    // Split-pane divider
+    Color divider        = Color::rgba(90, 90, 100, 160);
+    Color divider_hover   = Color::rgba(130, 130, 145, 200);
+
     // Text cursor
     Color cursor          = Color::rgba(220, 220, 240);
 
