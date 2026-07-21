@@ -945,6 +945,7 @@ public:
             layout_measure(layout, LayoutAxis::Vertical);
             layout_arrange(layout, {Point{X{0}, Y{0}}, Size{Width{w}, Height{h}}});
             update_scroll_state(layout);
+            update_split_state(layout);
             return layout;
         };
 
@@ -1441,6 +1442,35 @@ private:
         }
         for (auto& child : layout_node.children)
             update_scroll_state(child);
+    }
+
+    void update_split_state(LayoutNode& layout_node) {
+        bool is_split_container = (layout_node.kind == LayoutNode::Kind::Row
+                                 || layout_node.kind == LayoutNode::Kind::Column)
+                                 && !layout_node.split_sizes.empty();
+        if (is_split_container) {
+            auto it = index_.find(layout_node.id);
+            if (it != index_.end()) {
+                if (auto* ss = std::any_cast<SplitState>(&it->second->edit_state); ss && ss->engaged) {
+                    bool vertical = (layout_node.kind == LayoutNode::Kind::Column);
+                    float available = vertical ? layout_node.allocated.extent.h.raw()
+                                                : layout_node.allocated.extent.w.raw();
+                    float handle_total = 0.f;
+                    for (auto& child : layout_node.children)
+                        if (child.kind == LayoutNode::Kind::Handle)
+                            handle_total += splitter::thickness_px;
+                    float pane_total = 0.f;
+                    for (float sz : ss->pane_sizes) pane_total += sz;
+                    float target = available - handle_total;
+                    if (pane_total > 0.f && std::abs(target - pane_total) > 0.5f) {
+                        float scale = target / pane_total;
+                        for (auto& sz : ss->pane_sizes) sz *= scale;
+                    }
+                }
+            }
+        }
+        for (auto& child : layout_node.children)
+            update_split_state(child);
     }
 
     void update_canvas_bounds(LayoutNode& layout_node, Height viewport_h = Height{0}) {

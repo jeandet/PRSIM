@@ -168,7 +168,12 @@ struct ThreePaneModel {
 TEST_CASE("Dragging one handle in a 3-pane row leaves the far pane untouched") {
     ThreePaneModel model;
     WidgetTree tree(model);
-    auto snap = tree.build_snapshot(606, 100, 1);
+    // Window sized to exactly fit 3 fixed-width (200px) panes + 2 handles
+    // (6px each) = 612 -- an exact fit, like the other fixed-pane tests in
+    // this file, so the Task 6 resize-rescale in update_split_state doesn't
+    // spuriously fire from a pre-existing content/container mismatch that
+    // predates any drag.
+    auto snap = tree.build_snapshot(612, 100, 1);
     REQUIRE(snap->geometry.size() == 5);
 
     [[maybe_unused]] auto [id0, r0] = snap->geometry[0];
@@ -182,7 +187,7 @@ TEST_CASE("Dragging one handle in a 3-pane row leaves the far pane untouched") {
     tree.begin_split_drag(model.container_id, /*handle_index=*/0, anchor);
     tree.update_split_drag(anchor + 15.f);
 
-    auto snap2 = tree.build_snapshot(606, 100, 2);
+    auto snap2 = tree.build_snapshot(612, 100, 2);
     auto [id2b, r2b] = snap2->geometry[4];
     CHECK(r2b.extent.w.raw() == doctest::Approx(w2_before));
 }
@@ -273,4 +278,36 @@ TEST_CASE("First drag captures an expanding pane's real allocated size, not a fa
     // not some smaller content-bbox fallback that would visibly snap the pane
     // narrower the instant a drag starts.
     CHECK(pane0_rect2.extent.w.raw() == doctest::Approx(pane0_w0));
+}
+
+TEST_CASE("Resizing the window after a drag proportionally rescales pane sizes on the next frame") {
+    TwoPaneModelWithId model;
+    WidgetTree tree(model);
+    auto snap = tree.build_snapshot(406, 100, 1);
+    [[maybe_unused]] auto [pane0_id, pane0_rect] = snap->geometry[0];
+    auto [handle_id, handle_rect] = snap->geometry[1];
+
+    // Engage split mode with an uneven split: pane0 grows by 100px.
+    float anchor = handle_rect.origin.x.raw();
+    tree.begin_split_drag(model.container_id, 0, anchor);
+    tree.update_split_drag(anchor + 100.f);
+    auto snap2 = tree.build_snapshot(406, 100, 2);
+    auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
+    auto [pane1_id2, pane1_rect2] = snap2->geometry[2];
+    float ratio_before = pane0_rect2.extent.w.raw()
+        / (pane0_rect2.extent.w.raw() + pane1_rect2.extent.w.raw());
+
+    // Double the window width. The rescale is documented as taking effect on
+    // the frame *after* the mismatch is observed (same "detect now, correct
+    // next frame" pattern already used for table/vlist viewport sizing).
+    auto snap3 = tree.build_snapshot(812, 100, 3);
+    auto snap4 = tree.build_snapshot(812, 100, 4);
+    auto [pane0_id4, pane0_rect4] = snap4->geometry[0];
+    auto [pane1_id4, pane1_rect4] = snap4->geometry[2];
+    float ratio_after = pane0_rect4.extent.w.raw()
+        / (pane0_rect4.extent.w.raw() + pane1_rect4.extent.w.raw());
+
+    CHECK(ratio_after == doctest::Approx(ratio_before).epsilon(0.02));
+    CHECK(pane0_rect4.extent.w.raw() + pane1_rect4.extent.w.raw()
+          == doctest::Approx(812.f - splitter::thickness_px).epsilon(0.02));
 }
