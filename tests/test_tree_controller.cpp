@@ -87,6 +87,28 @@ TEST_CASE("Down arrow moves selection to the next visible row and returns its in
     CHECK(ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
 }
 
+TEST_CASE("Down arrow updates the per-row selected flag, not just ctrl.selected") {
+    FixtureTree data;
+    prism::TreeController ctrl(prism::wrap_tree_storage(data));
+    ctrl.on_row_clicked(0, ctrl.rows[0]); // expand root -> rows = [1, 2, 3], selects row 1
+    REQUIRE(ctrl.rows.size() == 3);
+    CHECK(ctrl.rows[0].selected == true);
+    CHECK(ctrl.rows[1].selected == false);
+    CHECK(ctrl.rows[2].selected == false);
+
+    auto idx = ctrl.on_key(prism::KeyPress{prism::keys::down, 0});
+    REQUIRE(idx.has_value());
+    CHECK(*idx == 1);
+    CHECK(ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
+
+    // The row highlight (row.selected) must follow the new selection, not stay stuck on the
+    // previously selected row -- this is what Widget<TreeRow>::record actually reads to draw
+    // the highlight (see `bool highlight = vs.hovered || row.selected;`).
+    CHECK(ctrl.rows[0].selected == false);
+    CHECK(ctrl.rows[1].selected == true);
+    CHECK(ctrl.rows[2].selected == false);
+}
+
 TEST_CASE("Up arrow at the first row does not move selection and returns nullopt") {
     FixtureTree data;
     prism::TreeController ctrl(prism::wrap_tree_storage(data));

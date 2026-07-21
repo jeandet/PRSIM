@@ -91,6 +91,54 @@ TEST_CASE("Down arrow on the focused tree container moves selection") {
     CHECK(model.ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
 }
 
+TEST_CASE("Down arrow moves the rendered row highlight, not just ctrl.selected") {
+    // Regression guard for the seam that hid the select_row()-forgets-refresh() bug: this
+    // exercises the real vb.tree()/WidgetTree pipeline end-to-end (not just TreeController in
+    // isolation) and inspects the actual FilledRect background each row draws, mirroring the
+    // row-index-via-parallel-arrays pattern already used above ("clicking the root row...").
+    TreeModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(400, 300, 1);
+    tree.clear_dirty();
+
+    REQUIRE(tree.focus_order().size() == 1);
+    auto container_id = tree.focus_order()[0];
+    tree.set_focused(container_id);
+
+    model.ctrl.selected.set(prism::TreeNodeId{1});
+    model.ctrl.on_key(prism::KeyPress{prism::keys::right, 0}); // expand root -> rows = [1, 2, 3]
+    auto before = tree.build_snapshot(400, 300, 2);
+    tree.clear_dirty();
+
+    // geometry/draw_lists are parallel arrays (see scene_snapshot.hpp); index 0 is the
+    // VirtualList container itself, index 1 is the first visible row (n1, currently selected),
+    // index 2 is the second visible row (n2, not selected).
+    REQUIRE(before->draw_lists.size() > 2);
+    auto row_bg = [](const prism::SceneSnapshot& snap, size_t idx) {
+        // Each row's own DrawList is [ClipPush, FilledRect, TextCmd, ClipPop] (verified via a
+        // throwaway dump, mirroring the empirical-verification pattern already used above).
+        REQUIRE(snap.draw_lists[idx].commands.size() > 1);
+        return std::get<prism::FilledRect>(snap.draw_lists[idx].commands[1]).color;
+    };
+    auto n1_bg_before = row_bg(*before, 1); // highlighted (selected)
+    auto n2_bg_before = row_bg(*before, 2); // not highlighted
+    CHECK(n1_bg_before.r != n2_bg_before.r); // sanity: highlight is visually distinct at all
+
+    tree.dispatch(container_id, prism::KeyPress{prism::keys::down, 0});
+    REQUIRE(model.ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
+
+    auto after = tree.build_snapshot(400, 300, 3);
+    REQUIRE(after->draw_lists.size() > 2);
+    auto n1_bg_after = row_bg(*after, 1);
+    auto n2_bg_after = row_bg(*after, 2);
+
+    // The highlight must have moved: n1's row now renders like the old non-highlighted n2, and
+    // n2's row now renders like the old highlighted n1. Before the fix, select_row() never
+    // called refresh(), so the rows' rendered backgrounds stayed stuck on the old selection.
+    CHECK(n1_bg_after.r == n2_bg_before.r);
+    CHECK(n2_bg_after.r == n1_bg_before.r);
+}
+
 TEST_CASE("keyboard navigation scrolls the newly selected row into view") {
     // A tree with enough rows that the last one starts off-screen in a short viewport --
     // same shape of test as test_tree_inspector_controller.cpp's auto-scroll case.

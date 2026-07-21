@@ -267,6 +267,7 @@ private:
     void select_row(TreeNodeId id) {
         selected.set(id);
         populate_detail(id);
+        refresh();
     }
 
     void populate_detail(TreeNodeId id) {
