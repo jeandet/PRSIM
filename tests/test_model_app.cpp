@@ -1134,10 +1134,18 @@ TEST_CASE("model_app drains Shared<T> via the animation tick path with zero inpu
     auto& window = backend.create_window({.width = 200, .height = 200});
 
     prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
-        // A perpetual tick source (never returns false) keeps AnimationClock::active()
-        // true forever, which is what keeps schedule_tick perpetually re-scheduling itself
-        // — the exact condition needed to exercise the tick-driven drain path being tested.
-        ctx.clock().add([](prism::AnimationClock::time_point) { return true; });
+        // A single, self-terminating tick (returns false immediately) is enough to
+        // exercise drain_shared() from the tick path. Deliberately NOT a perpetual
+        // source: stdexec::run_loop::run()'s shutdown drain phase
+        // (`while (execute_all() || task_count > 0);`) only terminates once the queue
+        // stops refilling — a tick source that keeps re-scheduling itself forever
+        // livelocks that phase, since schedule_tick unconditionally re-enqueues itself
+        // while anim_clock.active() stays true. Confirmed by reading
+        // subprojects/stdexec/include/stdexec/__detail/__run_loop.hpp directly. A
+        // separate task fixes this generally (AnimationClock::clear() called from
+        // WindowClose); this test predates that fix and sidesteps the issue by never
+        // staying active past the one tick it needs.
+        ctx.clock().add([](prism::AnimationClock::time_point) { return false; });
 
         std::thread writer([&model] { model.data.set(7); });
         writer.join();
