@@ -149,7 +149,14 @@ int main(int argc, char* argv[]) {
 
     prism::model_app({.title = "PRISM System Monitor", .width = 900, .height = 700,
                        .decoration = prism::DecorationMode::Custom},
-                      app, [&](prism::AppContext&) {
+                      app, [&](prism::AppContext& ctx) {
+        ctx.clock().add([&app](prism::AnimationClock::time_point now) {
+            double t = std::chrono::duration<double>(now.time_since_epoch()).count();
+            app.heartbeat_phase.set(static_cast<float>(t * 4.0)); // ~4 rad/s
+            return true; // never remove -- keeps schedule_tick perpetually re-scheduling,
+                         // which is what lets Task 1's fix keep draining Shared<T> with
+                         // zero mouse/keyboard input.
+        });
         app.sys_sample.observe([&app](const SystemSample& s) { app.ingest_system(s); });
         app.proc_list.observe([&app](const std::vector<ProcessInfo>& p) {
             app.ingest_processes(p);
