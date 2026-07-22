@@ -58,6 +58,7 @@ headless_tests = {
   'tree_reflect' : files('test_tree_reflect.cpp'),
   'file_tree_source' : files('test_file_tree_source.cpp'),
   'proc_metrics' : files('test_proc_metrics.cpp'),
+  'process_tree_source' : files('test_process_tree_source.cpp'),
 }
 
 foreach name, src : headless_tests
