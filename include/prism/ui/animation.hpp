@@ -115,6 +115,8 @@ public:
         std::erase_if(animations_, [id](auto& e) { return e.first == id; });
     }
 
+    void clear() { animations_.clear(); }
+
     void tick(time_point now) {
         auto snapshot = animations_;
         for (auto& [id, fn] : snapshot) {

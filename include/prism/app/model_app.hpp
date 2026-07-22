@@ -140,6 +140,7 @@ void model_app(Backend& backend, Window& window, Model& model,
                 | stdexec::then([&, ev, wid] {
                     if (std::holds_alternative<WindowClose>(ev)) {
                         if (wid == primary_id) {
+                            anim_clock.clear();
                             loop.finish();
                         } else {
                             registry.remove(wid);

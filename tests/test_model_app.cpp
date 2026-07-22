@@ -1155,6 +1155,39 @@ TEST_CASE("model_app drains Shared<T> via the animation tick path with zero inpu
     CHECK(observed == 7);
 }
 
+TEST_CASE("model_app shuts down cleanly with a perpetual animation still active") {
+    struct EmptyModel {
+        void view(prism::WidgetTree::ViewBuilder&) {}
+    };
+    EmptyModel model;
+
+    struct ImmediateCloseBackend final : public prism::BackendBase {
+        prism::HeadlessWindow window_{0, {}};
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    auto backend = prism::Backend{std::make_unique<ImmediateCloseBackend>()};
+    auto& window = backend.create_window({.width = 200, .height = 200});
+
+    // Perpetual tick source, deliberately never returning false -- this is exactly the
+    // shape that livelocked stdexec::run_loop's shutdown drain before the fix. If
+    // model_app returns at all, the fix works; if this test hangs, it doesn't.
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        ctx.clock().add([](prism::AnimationClock::time_point) { return true; });
+    });
+
+    CHECK(true); // reaching this line at all is the assertion -- see comment above
+}
+
 // Regression test: closing the debug window via its own window chrome (a generic
 // secondary-window WindowClose, not the Ctrl+Shift+I hotkey's detach branch) must reset
 // the inspector's state (debug_window_id/debug_controller/post-dispatch hook) just like
