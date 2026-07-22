@@ -45,6 +45,7 @@ headless_tests = {
   'field_mirror' : files('test_field_mirror.cpp'),
   'inspector' : files('test_inspector.cpp'),
   'fixed_string' : files('test_fixed_string.cpp'),
+  'cursor' : files('test_cursor.cpp'),
   'debug_name' : files('test_debug_name.cpp'),
   'flatten_tree' : files('test_flatten_tree.cpp'),
   'tree' : files('test_tree.cpp'),

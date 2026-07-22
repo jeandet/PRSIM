@@ -1,5 +1,6 @@
 #pragma once
 
+#include <prism/ui/cursor.hpp>
 #include <prism/ui/context.hpp>
 #include <prism/render/draw_list.hpp>
 #include <prism/core/field.hpp>
@@ -25,6 +26,7 @@ struct WidgetVisualState {
     bool hovered = false;
     bool pressed = false;
     bool focused = false;
+    CursorShape cursor = CursorShape::Default;
 };
 
 template <typename T>

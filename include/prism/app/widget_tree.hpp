@@ -181,11 +181,20 @@ public:
             bool vertical = (container.layout_kind == LayoutKind::Column);
             WidgetId container_id = container.id;
             size_t handle_index = 0;
-            for (auto& child : container.children) {
+            for (size_t i = 0; i < container.children.size(); ++i) {
+                auto& child = container.children[i];
                 if (child.layout_kind != LayoutKind::Handle) continue;
                 size_t index = handle_index++;
-                child.build_widget = [&tree = tree_, container_id, index, vertical](WidgetNode& wn) {
+
+                bool has_left = (i > 0);
+                bool has_right = (i + 1 < container.children.size());
+                bool is_split_divider = has_left && has_right;
+
+                child.build_widget = [&tree = tree_, container_id, index, vertical, is_split_divider](WidgetNode& wn) {
                     wn.focus_policy = FocusPolicy::none;
+                    if (is_split_divider) {
+                        wn.visual_state.cursor = vertical ? CursorShape::ResizeNS : CursorShape::ResizeEW;
+                    }
                     wn.record = &draw_divider;
                     wn.wire = [&tree, container_id, index, vertical](WidgetNode& self) {
                         self.connections.push_back(self.on_input.connect(
@@ -746,6 +755,13 @@ public:
     }
 
     [[nodiscard]] WidgetId captured_id() const { return captured_id_; }
+
+    [[nodiscard]] CursorShape desired_cursor() const {
+        WidgetId active = captured_id_ != 0 ? captured_id_ : hovered_id_;
+        if (active == 0) return CursorShape::Default;
+        auto it = index_.find(active);
+        return it != index_.end() ? it->second->visual_state.cursor : CursorShape::Default;
+    }
 
     struct ScrollbarDrag {
         WidgetId scroll_id = 0;
