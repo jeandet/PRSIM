@@ -9,6 +9,9 @@
 #include <prism/input/hit_test.hpp>
 #include <prism/render/scene_snapshot.hpp>
 
+#include <atomic>
+#include <chrono>
+#include <thread>
 #include <string>
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
@@ -1087,6 +1090,61 @@ TEST_CASE("quitting while the debug inspector is still attached does not use-aft
     // WidgetTree — and its Connections into debug_model's SenderHubs — got torn down cleanly
     // by registry's destructor before debug_model itself was destroyed.
     prism::model_app(backend, window, model, nullptr);
+}
+
+TEST_CASE("model_app drains Shared<T> via the animation tick path with zero input events") {
+    struct TickModel {
+        prism::Shared<int> data{0};
+        void view(prism::WidgetTree::ViewBuilder& vb) { vb.widget(data); }
+    };
+
+    TickModel model;
+    std::atomic<bool> drained{false};
+    int observed = -1;
+    auto conn = model.data.on_change().connect([&](const int& v) {
+        observed = v;
+        drained.store(true, std::memory_order_release);
+    });
+
+    // Fires WindowClose only after `drained` flips true (or a 2s safety deadline), so the
+    // loop cannot exit before the tick path has had a real chance to drain — no fixed-count
+    // event replay that could race the animation clock's own scheduling.
+    struct WaitForDrainBackend final : public prism::BackendBase {
+        prism::HeadlessWindow window_{0, {}};
+        std::atomic<bool>& drained_ref;
+        explicit WaitForDrainBackend(std::atomic<bool>& d) : drained_ref(d) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (!drained_ref.load(std::memory_order_acquire)
+                   && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    auto backend = prism::Backend{std::make_unique<WaitForDrainBackend>(drained)};
+    auto& window = backend.create_window({.width = 200, .height = 200});
+
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        // A perpetual tick source (never returns false) keeps AnimationClock::active()
+        // true forever, which is what keeps schedule_tick perpetually re-scheduling itself
+        // — the exact condition needed to exercise the tick-driven drain path being tested.
+        ctx.clock().add([](prism::AnimationClock::time_point) { return true; });
+
+        std::thread writer([&model] { model.data.set(7); });
+        writer.join();
+    });
+
+    REQUIRE(drained.load());
+    CHECK(observed == 7);
 }
 
 // Regression test: closing the debug window via its own window chrome (a generic

@@ -121,6 +121,9 @@ void model_app(Backend& backend, Window& window, Model& model,
             | stdexec::then([&] {
                 tick_scheduled = false;
                 anim_clock.tick(AnimationClock::clock::now());
+                registry.for_each([&](WindowId, WindowRegistry::Entry& entry) {
+                    entry.tree->drain_shared();
+                });
                 publish_dirty();
                 if (anim_clock.active())
                     schedule_tick();
