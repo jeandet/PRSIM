@@ -1,12 +1,20 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
+#include <chrono>
 #include <cstdlib>
 #include <deque>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <unordered_map>
 #include <vector>
+
+#include <prism/core/shared.hpp>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
@@ -218,4 +226,78 @@ inline SystemSampleResult parse_system_sample(std::string_view stat_text,
         sample.net_tx_kbps = (cur.net.tx_bytes - prev.net.tx_bytes) / 1024.0 / dt_seconds;
     }
     return {sample, cur};
+}
+
+inline std::string read_whole_file(const char* path) {
+    std::ifstream f(path);
+    std::stringstream buf;
+    buf << f.rdbuf();
+    return buf.str();
+}
+
+inline SystemSampleResult read_system_sample(const SystemTotals& prev, double dt_seconds) {
+    return parse_system_sample(read_whole_file("/proc/stat"), read_whole_file("/proc/meminfo"),
+                                read_whole_file("/proc/net/dev"), prev, dt_seconds);
+}
+
+inline std::vector<ProcessInfo> read_process_list(const std::vector<ProcessInfo>& prev,
+                                                   double dt_seconds) {
+    std::unordered_map<int, long> prev_jiffies;
+    for (const auto& p : prev) prev_jiffies[p.pid] = p.total_jiffies;
+
+    double total_mem_kb = parse_meminfo(read_whole_file("/proc/meminfo")).total_kb;
+
+    std::vector<ProcessInfo> result;
+    for (const auto& entry : std::filesystem::directory_iterator("/proc")) {
+        if (!entry.is_directory()) continue;
+        const std::string name = entry.path().filename().string();
+        if (name.empty() || !std::all_of(name.begin(), name.end(),
+                                          [](unsigned char c) { return std::isdigit(c); }))
+            continue;
+
+        std::ifstream stat_file(entry.path() / "stat");
+        std::ifstream status_file(entry.path() / "status");
+        if (!stat_file || !status_file) continue; // process exited mid-scan
+
+        std::stringstream stat_buf, status_buf;
+        stat_buf << stat_file.rdbuf();
+        status_buf << status_file.rdbuf();
+
+        int pid = std::atoi(name.c_str());
+        auto it = prev_jiffies.find(pid);
+        long prev_ticks = it != prev_jiffies.end() ? it->second : -1;
+
+        result.push_back(parse_process_entry(stat_buf.str(), status_buf.str(), prev_ticks,
+                                              dt_seconds, total_mem_kb));
+    }
+    return result;
+}
+
+inline void poll_system_loop(prism::Shared<SystemSample>& out, std::stop_token stop) {
+    SystemTotals prev = read_system_sample({}, 0.0).totals; // prime the delta baseline
+    auto last = std::chrono::steady_clock::now();
+    while (!stop.stop_requested()) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        auto now = std::chrono::steady_clock::now();
+        double dt = std::chrono::duration<double>(now - last).count();
+        last = now;
+        auto result = read_system_sample(prev, dt);
+        prev = result.totals;
+        out.set(result.sample);
+    }
+}
+
+inline void poll_processes_loop(prism::Shared<std::vector<ProcessInfo>>& out,
+                                 std::stop_token stop) {
+    std::vector<ProcessInfo> prev;
+    auto last = std::chrono::steady_clock::now();
+    while (!stop.stop_requested()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+        auto now = std::chrono::steady_clock::now();
+        double dt = std::chrono::duration<double>(now - last).count();
+        last = now;
+        auto current = read_process_list(prev, dt);
+        prev = current;
+        out.set(std::move(current));
+    }
 }
