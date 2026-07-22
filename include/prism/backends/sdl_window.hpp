@@ -51,6 +51,7 @@ public:
     void close() override;
 
     void set_cursor(CursorShape shape) override;
+    CursorShape cursor() const { return last_cursor_; }
 
     // Backend-internal access
     SDL_Window* sdl_window() { return sdl_window_; }
@@ -78,6 +79,7 @@ private:
     WindowChrome::HitZone resize_zone_ = WindowChrome::HitZone::Client;
     float resize_start_x_ = 0, resize_start_y_ = 0;
     int resize_start_w_ = 0, resize_start_h_ = 0;
+    CursorShape last_cursor_ = CursorShape::Default;
 
     void create_sdl_window();
     void destroy_sdl_window();

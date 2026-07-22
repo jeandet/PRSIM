@@ -158,6 +158,17 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                         static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
                     break;
                 }
+                if (it_w != windows_.end() &&
+                    it_w->second->decoration_mode() == DecorationMode::Custom) {
+                    int ww, wh;
+                    SDL_GetWindowSize(it_w->second->sdl_window(), &ww, &wh);
+                    auto zone = WindowChrome::hit_test(
+                        static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y), ww, wh);
+                    if (zone != WindowChrome::HitZone::Client) {
+                        it_w->second->set_cursor(WindowChrome::cursor_for(zone));
+                        break;
+                    }
+                }
                 float my = ev.motion.y;
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom)

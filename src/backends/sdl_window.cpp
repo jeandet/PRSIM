@@ -185,6 +185,7 @@ SDL_Cursor* sdl_cursor_for(CursorShape shape) {
 } // namespace
 
 void SdlWindow::set_cursor(CursorShape shape) {
+    last_cursor_ = shape;
     if (auto* c = sdl_cursor_for(shape)) SDL_SetCursor(c);
 }
 
