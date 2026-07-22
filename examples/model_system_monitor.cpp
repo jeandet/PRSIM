@@ -4,6 +4,8 @@
 #include "process_tree_source.hpp"
 #include "showcase/showcase_common.hpp"
 
+#include <thread>
+
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
 namespace prism {
@@ -142,9 +144,27 @@ int main(int argc, char* argv[]) {
         return showcase(argc, argv, app, 900, 700);
     }
 
-    std::cerr << "This build only supports headless SVG snapshot mode so far "
-                 "(pass an output path) -- interactive mode lands in Task 7.\n";
-    return 1;
+    std::jthread sys_thread;
+    std::jthread proc_thread;
+
+    prism::model_app({.title = "PRISM System Monitor", .width = 900, .height = 700,
+                       .decoration = prism::DecorationMode::Custom},
+                      app, [&](prism::AppContext&) {
+        app.sys_sample.observe([&app](const SystemSample& s) { app.ingest_system(s); });
+        app.proc_list.observe([&app](const std::vector<ProcessInfo>& p) {
+            app.ingest_processes(p);
+        });
+        // Re-sort immediately on a Dropdown change using the last known snapshot, rather
+        // than waiting up to 1.5s for the next background poll to land.
+        app.sort_key.observe([&app](const SortKey&) {
+            app.ingest_processes(app.proc_list.get());
+        });
+
+        sys_thread = std::jthread(poll_system_loop, std::ref(app.sys_sample));
+        proc_thread = std::jthread(poll_processes_loop, std::ref(app.proc_list));
+    });
+
+    return 0;
 }
 
 #else
