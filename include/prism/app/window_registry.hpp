@@ -19,6 +19,7 @@ public:
         int width = 0;
         int height = 0;
         uint64_t version = 0;
+        CursorShape last_cursor = CursorShape::Default;
     };
 
     template <typename Model>

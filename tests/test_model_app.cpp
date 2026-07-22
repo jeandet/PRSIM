@@ -153,6 +153,58 @@ TEST_CASE("model_app routes MouseButton to Field<bool> toggle") {
     CHECK(snap_count.load() >= 2);
 }
 
+struct CursorTextFieldModel {
+    prism::Field<prism::TextField<>> name{{.value = "hi"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.widget(name);
+    }
+};
+
+TEST_CASE("model_app pushes a hovered TextField's cursor to the window") {
+    std::shared_ptr<const prism::SceneSnapshot> latest_snap;
+    std::atomic<size_t> snap_count{0};
+
+    struct HoverBackend final : public prism::BackendBase {
+        std::shared_ptr<const prism::SceneSnapshot>& latest;
+        std::atomic<size_t>& count;
+        prism::HeadlessWindow window_{0, {}};
+        HoverBackend(std::shared_ptr<const prism::SceneSnapshot>& l, std::atomic<size_t>& c)
+            : latest(l), count(c) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            count.wait(0, std::memory_order_acquire);
+            auto geo = latest;
+            REQUIRE_FALSE(geo->geometry.empty());
+            auto [id, rect] = geo->geometry[0];
+
+            cb(prism::WindowEvent{window_.id(), prism::MouseMove{rect.center()}});
+
+            auto before = count.load(std::memory_order_acquire);
+            count.wait(before, std::memory_order_acquire);
+
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot> s) override {
+            latest = std::move(s);
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    CursorTextFieldModel model;
+    auto backend = prism::Backend{std::make_unique<HoverBackend>(latest_snap, snap_count)};
+    auto& window = backend.create_window({.width = 800, .height = 600});
+    prism::model_app(backend, window, model);
+
+    CHECK(static_cast<prism::HeadlessWindow&>(window).cursor() == prism::CursorShape::Text);
+}
+
 TEST_CASE("model_app setup callback receives scheduler and window") {
     bool setup_called = false;
 
