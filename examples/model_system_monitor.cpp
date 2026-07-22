@@ -1,0 +1,156 @@
+#include <prism/prism.hpp>
+#include <prism/widgets/plot.hpp>
+#include "proc_metrics.hpp"
+#include "process_tree_source.hpp"
+#include "showcase/showcase_common.hpp"
+
+namespace prism::core {} namespace prism::render {} namespace prism::input {}
+namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
+namespace prism {
+using namespace core; using namespace render; using namespace input;
+using namespace ui; using namespace app; using namespace plot;
+}
+
+#if __cpp_impl_reflection
+
+struct ProcessRow {
+    prism::Field<int> pid{0};
+    prism::Field<std::string> name{""};
+    prism::Field<float> cpu_percent{0.f};
+    prism::Field<float> mem_percent{0.f};
+};
+
+struct SystemMonitor {
+    // Background-thread ingest points. Never placed via vb.widget() -- they are read only
+    // through .observe(), which fires during drain via the void drain() opt-in below. A
+    // harmless "not placed by view()" debug-build warning is expected for these two fields.
+    prism::Shared<SystemSample> sys_sample{};
+    prism::Shared<std::vector<ProcessInfo>> proc_list{};
+
+    History cpu_history;
+    History mem_history;
+    History net_history;
+
+    prism::plot::PlotModel cpu_plot;
+    prism::plot::PlotModel mem_plot;
+    prism::plot::PlotModel net_plot;
+
+    prism::Field<SortKey> sort_key{SortKey::CpuPercent};
+    prism::List<ProcessRow> table_rows;
+    FlatProcessTreeSource tree_source;
+    prism::TreeController tree_ctrl{prism::wrap_tree_storage(tree_source)};
+    prism::Field<prism::TabBar<>> tabs;
+
+    prism::Field<float> heartbeat_phase{0.f};
+
+    static void rebuild_plot(prism::plot::PlotModel& plot, const History& h) {
+        std::vector<double> xs(h.values.size());
+        std::vector<double> ys(h.values.begin(), h.values.end());
+        for (size_t i = 0; i < xs.size(); ++i) xs[i] = static_cast<double>(i);
+        auto colors = prism::plot::default_series_colors(prism::default_theme());
+        plot.clear_series();
+        plot.add_series(prism::plot::XYData{std::move(xs), std::move(ys)},
+                        prism::plot::SeriesStyle{colors[0], 2.f});
+        plot.notify();
+    }
+
+    void ingest_system(const SystemSample& s) {
+        cpu_history.push(s.cpu_percent);
+        mem_history.push(static_cast<float>(s.mem_used_mb));
+        net_history.push(static_cast<float>(s.net_rx_kbps));
+        rebuild_plot(cpu_plot, cpu_history);
+        rebuild_plot(mem_plot, mem_history);
+        rebuild_plot(net_plot, net_history);
+    }
+
+    void ingest_processes(const std::vector<ProcessInfo>& processes) {
+        auto sorted = sort_by(processes, sort_key.get());
+
+        while (table_rows.size() > sorted.size())
+            table_rows.erase(table_rows.size() - 1);
+        for (size_t i = 0; i < sorted.size(); ++i) {
+            ProcessRow row{.pid = {sorted[i].pid}, .name = {sorted[i].name},
+                           .cpu_percent = {sorted[i].cpu_percent},
+                           .mem_percent = {sorted[i].mem_percent}};
+            if (i < table_rows.size()) table_rows.set(i, std::move(row));
+            else table_rows.push_back(std::move(row));
+        }
+
+        tree_source.update(processes);
+        tree_ctrl.refresh();
+    }
+
+    void seed_demo_data() {
+        ingest_system(SystemSample{.cpu_percent = 12.5f, .mem_used_mb = 4096.0,
+                                    .mem_total_mb = 16384.0, .net_rx_kbps = 128.0,
+                                    .net_tx_kbps = 32.0});
+        std::vector<ProcessInfo> demo;
+        demo.push_back(ProcessInfo{.pid = 1, .ppid = 0, .name = "init",
+                                    .cpu_percent = 0.1f, .mem_percent = 0.5f});
+        demo.push_back(ProcessInfo{.pid = 42, .ppid = 1, .name = "prism_demo",
+                                    .cpu_percent = 3.2f, .mem_percent = 1.8f});
+        ingest_processes(demo);
+    }
+
+    void drain() {
+        sys_sample.drain_notifications();
+        proc_list.drain_notifications();
+    }
+
+    void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
+        auto& t = *node.theme;
+        float size = 8.f + 4.f * std::sin(heartbeat_phase.get());
+        dl.rounded_rect(
+            prism::Rect{bounds.origin, prism::Size{prism::Width{size}, prism::Height{size}}},
+            t.accent_hover, size * 0.5f);
+    }
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack([&] {
+            vb.canvas(cpu_plot)
+                .depends_on(cpu_plot.x_range).depends_on(cpu_plot.y_range)
+                .depends_on(cpu_plot.view).depends_on(cpu_plot.cursor)
+                .depends_on(cpu_plot.revision);
+            vb.canvas(mem_plot)
+                .depends_on(mem_plot.x_range).depends_on(mem_plot.y_range)
+                .depends_on(mem_plot.view).depends_on(mem_plot.cursor)
+                .depends_on(mem_plot.revision);
+            vb.canvas(net_plot)
+                .depends_on(net_plot.x_range).depends_on(net_plot.y_range)
+                .depends_on(net_plot.view).depends_on(net_plot.cursor)
+                .depends_on(net_plot.revision);
+            vb.handle();
+            vb.widget(sort_key);
+            vb.tabs(tabs, [&] {
+                vb.tab("Table", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                    tvb.table(table_rows).headers({"PID", "Name", "CPU %", "Mem %"});
+                });
+                vb.tab("Tree", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                    tvb.tree(tree_ctrl);
+                });
+            });
+            vb.canvas(*this).depends_on(heartbeat_phase);
+        });
+    }
+};
+
+int main(int argc, char* argv[]) {
+    SystemMonitor app;
+
+    if (argc >= 2) {
+        app.seed_demo_data();
+        return showcase(argc, argv, app, 900, 700);
+    }
+
+    std::cerr << "This build only supports headless SVG snapshot mode so far "
+                 "(pass an output path) -- interactive mode lands in Task 7.\n";
+    return 1;
+}
+
+#else
+int main(int argc, char* argv[]) {
+    if (argc < 2) return 1;
+    std::ofstream(argv[1]) << "<svg xmlns=\"http://www.w3.org/2000/svg\"/>\n";
+    return 0;
+}
+#endif
