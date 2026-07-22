@@ -2,6 +2,7 @@
 
 #include <prism/render/draw_list.hpp>
 #include <prism/ui/context.hpp>
+#include <prism/ui/cursor.hpp>
 
 #include <string_view>
 
@@ -48,6 +49,20 @@ struct WindowChrome {
         }
 
         return HitZone::Client;
+    }
+
+    static CursorShape cursor_for(HitZone zone) {
+        switch (zone) {
+            case HitZone::ResizeN:
+            case HitZone::ResizeS:  return CursorShape::ResizeNS;
+            case HitZone::ResizeE:
+            case HitZone::ResizeW:  return CursorShape::ResizeEW;
+            case HitZone::ResizeNW:
+            case HitZone::ResizeSE: return CursorShape::ResizeNWSE;
+            case HitZone::ResizeNE:
+            case HitZone::ResizeSW: return CursorShape::ResizeNESW;
+            default: return CursorShape::Default;
+        }
     }
 
     static void render(DrawList& dl, int w, std::string_view title, const Theme& t) {

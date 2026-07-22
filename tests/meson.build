@@ -33,6 +33,7 @@ headless_tests = {
   'tabs' : files('test_tabs.cpp'),
   'window' : files('test_window.cpp'),
   'window_registry' : files('test_window_registry.cpp'),
+  'window_chrome' : files('test_window_chrome.cpp'),
   'theme' : files('test_theme.cpp'),
   'svg_export' : files('test_svg_export.cpp'),
   'plot' : files('test_plot.cpp'),
