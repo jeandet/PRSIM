@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/input/input_event.hpp>
+#include <prism/ui/cursor.hpp>
 
 #include <cstdint>
 #include <string_view>
@@ -8,6 +9,7 @@
 
 namespace prism::app {
 using namespace prism::input;
+using namespace prism::ui;
 
 
 using WindowId = uint32_t;
@@ -57,6 +59,8 @@ public:
     virtual void hide() = 0;
 
     virtual void close() = 0;
+
+    virtual void set_cursor(CursorShape shape) = 0;
 };
 
 struct WindowEvent {

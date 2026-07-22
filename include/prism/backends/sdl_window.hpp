@@ -50,6 +50,8 @@ public:
     void hide() override;
     void close() override;
 
+    void set_cursor(CursorShape shape) override;
+
     // Backend-internal access
     SDL_Window* sdl_window() { return sdl_window_; }
     SDL_Renderer* renderer() { return renderer_; }

@@ -165,6 +165,29 @@ void SdlWindow::close() {
     destroy_sdl_window();
 }
 
+namespace {
+
+SDL_Cursor* sdl_cursor_for(CursorShape shape) {
+    static SDL_Cursor* cache[6] = {};
+    static constexpr SDL_SystemCursor system_cursors[] = {
+        SDL_SYSTEM_CURSOR_DEFAULT,     // Default
+        SDL_SYSTEM_CURSOR_TEXT,        // Text
+        SDL_SYSTEM_CURSOR_NS_RESIZE,   // ResizeNS
+        SDL_SYSTEM_CURSOR_EW_RESIZE,   // ResizeEW
+        SDL_SYSTEM_CURSOR_NESW_RESIZE, // ResizeNESW
+        SDL_SYSTEM_CURSOR_NWSE_RESIZE, // ResizeNWSE
+    };
+    auto index = static_cast<size_t>(shape);
+    if (!cache[index]) cache[index] = SDL_CreateSystemCursor(system_cursors[index]);
+    return cache[index];
+}
+
+} // namespace
+
+void SdlWindow::set_cursor(CursorShape shape) {
+    if (auto* c = sdl_cursor_for(shape)) SDL_SetCursor(c);
+}
+
 void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const Theme& theme) {
     if (!renderer_) return;
     SDL_SetRenderDrawColor(renderer_, theme.canvas_bg.r, theme.canvas_bg.g,

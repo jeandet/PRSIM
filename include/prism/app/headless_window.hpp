@@ -36,6 +36,9 @@ public:
     void hide() override {}
     void close() override {}
 
+    void set_cursor(CursorShape shape) override { cursor_ = shape; }
+    CursorShape cursor() const { return cursor_; }
+
 private:
     WindowId id_;
     std::string title_;
@@ -44,6 +47,7 @@ private:
     bool resizable_;
     bool fullscreen_;
     DecorationMode decoration_;
+    CursorShape cursor_ = CursorShape::Default;
 };
 
 } // namespace prism::app

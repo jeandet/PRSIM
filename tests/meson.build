@@ -89,6 +89,12 @@ test_software_backend_request_window = executable('test_software_backend_request
 )
 test('software_backend_request_window', test_software_backend_request_window)
 
+test_sdl_window = executable('test_sdl_window',
+  files('test_sdl_window.cpp'),
+  dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],
+)
+test('sdl_window', test_sdl_window)
+
 # Tests that need a backend (SDL)
 backend_tests = {
   'app' : files('test_app.cpp'),

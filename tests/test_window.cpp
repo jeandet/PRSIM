@@ -111,3 +111,14 @@ TEST_CASE("HeadlessWindow state methods are no-ops") {
     w.hide();
     w.close();
 }
+
+TEST_CASE("HeadlessWindow defaults to Default cursor") {
+    prism::HeadlessWindow w(1, {});
+    CHECK(w.cursor() == prism::CursorShape::Default);
+}
+
+TEST_CASE("HeadlessWindow set_cursor stores the shape") {
+    prism::HeadlessWindow w(1, {});
+    w.set_cursor(prism::CursorShape::Text);
+    CHECK(w.cursor() == prism::CursorShape::Text);
+}
