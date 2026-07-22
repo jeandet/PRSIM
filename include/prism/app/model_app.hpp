@@ -169,10 +169,10 @@ void model_app(Backend& backend, Window& window, Model& model,
                             detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
                         if (auto* ms = std::get_if<MouseScroll>(&ev))
                             detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
-                        if (auto shape = entry->tree->desired_cursor(); shape != entry->last_cursor) {
-                            entry->last_cursor = shape;
-                            entry->window->set_cursor(shape);
-                        }
+                        // SdlWindow::set_cursor dedups against the real OS cursor, so push
+                        // unconditionally — the chrome path (backend thread) can change the
+                        // cursor out from under any copy Entry might otherwise cache.
+                        entry->window->set_cursor(entry->tree->desired_cursor());
                     }
                     if (auto* kp = std::get_if<KeyPress>(&ev)) {
                         if (global_key_handler) global_key_handler(*kp);

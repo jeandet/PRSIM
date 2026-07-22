@@ -1,5 +1,6 @@
 #include <prism/backends/sdl_window.hpp>
 
+#include <array>
 #include <cmath>
 
 namespace prism::backends {
@@ -168,7 +169,6 @@ void SdlWindow::close() {
 namespace {
 
 SDL_Cursor* sdl_cursor_for(CursorShape shape) {
-    static SDL_Cursor* cache[6] = {};
     static constexpr SDL_SystemCursor system_cursors[] = {
         SDL_SYSTEM_CURSOR_DEFAULT,     // Default
         SDL_SYSTEM_CURSOR_TEXT,        // Text
@@ -177,15 +177,25 @@ SDL_Cursor* sdl_cursor_for(CursorShape shape) {
         SDL_SYSTEM_CURSOR_NESW_RESIZE, // ResizeNESW
         SDL_SYSTEM_CURSOR_NWSE_RESIZE, // ResizeNWSE
     };
-    auto index = static_cast<size_t>(shape);
-    if (!cache[index]) cache[index] = SDL_CreateSystemCursor(system_cursors[index]);
-    return cache[index];
+    static_assert(std::size(system_cursors) == 6);
+    // Magic-static: C++11 guarantees thread-safe one-time init, so the whole cache is
+    // built eagerly on first call — no per-index lazy read-modify-write to race on now
+    // that both the app thread and the backend thread can reach this concurrently.
+    static const std::array<SDL_Cursor*, std::size(system_cursors)> cache = [] {
+        std::array<SDL_Cursor*, std::size(system_cursors)> c{};
+        for (size_t i = 0; i < c.size(); ++i) c[i] = SDL_CreateSystemCursor(system_cursors[i]);
+        return c;
+    }();
+    return cache[static_cast<size_t>(shape)];
 }
 
 } // namespace
 
 void SdlWindow::set_cursor(CursorShape shape) {
-    last_cursor_ = shape;
+    // Dedup lives here — the one place that knows the real OS cursor state. model_app pushes
+    // desired_cursor() unconditionally; the chrome path in software_backend pushes resize
+    // shapes directly. Both funnel through this single ground-truth gate.
+    if (last_cursor_.exchange(shape, std::memory_order_relaxed) == shape) return;
     if (auto* c = sdl_cursor_for(shape)) SDL_SetCursor(c);
 }
 

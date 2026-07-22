@@ -102,6 +102,12 @@ test_software_backend_chrome_cursor = executable('test_software_backend_chrome_c
 )
 test('software_backend_chrome_cursor', test_software_backend_chrome_cursor)
 
+test_model_app_chrome_cursor = executable('test_model_app_chrome_cursor',
+  files('test_model_app_chrome_cursor.cpp'),
+  dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],
+)
+test('model_app_chrome_cursor', test_model_app_chrome_cursor)
+
 # Tests that need a backend (SDL)
 backend_tests = {
   'app' : files('test_app.cpp'),

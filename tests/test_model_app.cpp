@@ -203,6 +203,7 @@ TEST_CASE("model_app pushes a hovered TextField's cursor to the window") {
     prism::model_app(backend, window, model);
 
     CHECK(static_cast<prism::HeadlessWindow&>(window).cursor() == prism::CursorShape::Text);
+    CHECK(snap_count.load() >= 2);
 }
 
 TEST_CASE("model_app setup callback receives scheduler and window") {
