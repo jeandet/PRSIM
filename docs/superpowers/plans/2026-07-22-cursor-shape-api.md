@@ -832,15 +832,177 @@ git commit -m "feat(cursor): map WindowChrome hit-zones to cursor shapes"
 ## Task 6: Resize cursors over custom-chrome window edges
 
 **Files:**
-- Modify: `src/backends/software_backend.cpp:150-165` (`SDL_EVENT_MOUSE_MOTION` case)
+- Modify: `include/prism/backends/sdl_window.hpp` (test-hook `cursor()` getter + `last_cursor_` field)
+- Modify: `src/backends/sdl_window.cpp` (`set_cursor` also stores `last_cursor_`)
+- Modify: `src/backends/software_backend.cpp:150-165` (`SDL_EVENT_MOUSE_MOTION` case — the actual behavior change)
+- Test: `tests/test_software_backend_chrome_cursor.cpp` (**new**, standalone SDL-linked executable, mirrors `test_sdl_window`/`test_software_backend_request_window`)
+- Modify: `tests/meson.build`
 
 **Interfaces:**
 - Consumes: `WindowChrome::cursor_for` (Task 5), `SdlWindow::set_cursor` (Task 3).
-- Produces: nothing consumed by later tasks — this is the final integration point.
+- Produces: `SdlWindow::cursor() const -> CursorShape` — a test-only observability hook (SDL exposes no queryable "current cursor," so this is what Step 1's tests assert against); not consumed by production code elsewhere.
 
-This task has no automated test: chrome hit-testing and resize only run inside `SoftwareBackend::run()`'s real SDL event loop, which none of `TestBackend`/`NullBackend`/`CapturingBackend` execute (the same pre-existing gap `begin_resize`/`update_resize` already have — see the spec's Testing section). The change is a small, mechanically-verifiable extension of an already-tested pure function (`WindowChrome::cursor_for`, Task 5) plus an already-established hit-testing call (`WindowChrome::hit_test`, used identically today in the `SDL_EVENT_MOUSE_BUTTON_DOWN` case a few lines below). Steps 1-2 replace the usual failing-test cycle with a build check; do a manual pass afterward (Step 4) if you have a display available.
+`SoftwareBackend::run()`'s real SDL event loop has no existing test seam (`begin_resize`/`update_resize` — chrome resize itself — have none either, for the same reason). This task closes that gap for cursor behavior specifically by injecting real `SDL_Event` structs into the live event queue with `SDL_PushEvent` (documented thread-safe from any thread) while `run()` executes on a background thread, then polling the new `cursor()` hook for the expected shape. This exercises the actual `SDL_WaitEvent` → chrome-hit-test → `set_cursor` path, not a mock of it.
 
-- [ ] **Step 1: Make the change**
+- [ ] **Step 1: Write the failing tests**
+
+Create `tests/test_software_backend_chrome_cursor.cpp`:
+
+```cpp
+#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include <doctest.h>
+
+#include <prism/backends/software_backend.hpp>
+
+#include <SDL3/SDL.h>
+
+#include <atomic>
+#include <chrono>
+#include <thread>
+
+namespace prism::core {} namespace prism::render {} namespace prism::input {}
+namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
+namespace prism {
+using namespace core; using namespace render; using namespace input;
+using namespace ui; using namespace app; using namespace plot;
+}
+
+namespace {
+
+bool wait_for_cursor(prism::backends::SdlWindow& win, prism::CursorShape expected) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (win.cursor() == expected) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return false;
+}
+
+void push_motion(SDL_WindowID window_id, float x, float y) {
+    SDL_Event ev{};
+    ev.type = SDL_EVENT_MOUSE_MOTION;
+    ev.motion.windowID = window_id;
+    ev.motion.x = x;
+    ev.motion.y = y;
+    SDL_PushEvent(&ev);
+}
+
+} // namespace
+
+TEST_CASE("SoftwareBackend sets a resize cursor when the mouse hovers a custom-chrome window edge") {
+    prism::backends::SoftwareBackend backend{{}};
+    auto& window = backend.create_window({.width = 300, .height = 300,
+                                           .decoration = prism::DecorationMode::Custom});
+    auto& sdl_win = static_cast<prism::backends::SdlWindow&>(window);
+
+    std::thread runner([&] { backend.run([](const prism::WindowEvent&) {}); });
+    backend.wait_ready();
+    auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
+
+    push_motion(window_id, 2.f, 150.f); // left edge, well below the title bar
+    CHECK(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
+
+    backend.quit();
+    runner.join();
+}
+
+TEST_CASE("SoftwareBackend sets a diagonal resize cursor when the mouse hovers a corner") {
+    prism::backends::SoftwareBackend backend{{}};
+    auto& window = backend.create_window({.width = 300, .height = 300,
+                                           .decoration = prism::DecorationMode::Custom});
+    auto& sdl_win = static_cast<prism::backends::SdlWindow&>(window);
+
+    std::thread runner([&] { backend.run([](const prism::WindowEvent&) {}); });
+    backend.wait_ready();
+    auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
+
+    push_motion(window_id, 2.f, 2.f); // top-left corner
+    CHECK(wait_for_cursor(sdl_win, prism::CursorShape::ResizeNWSE));
+
+    backend.quit();
+    runner.join();
+}
+
+TEST_CASE("SoftwareBackend forwards MouseMove and leaves the cursor alone when the mouse is over client content") {
+    prism::backends::SoftwareBackend backend{{}};
+    auto& window = backend.create_window({.width = 300, .height = 300,
+                                           .decoration = prism::DecorationMode::Custom});
+    auto& sdl_win = static_cast<prism::backends::SdlWindow&>(window);
+
+    std::atomic<int> mouse_move_count{0};
+    std::thread runner([&] {
+        backend.run([&](const prism::WindowEvent& we) {
+            if (std::holds_alternative<prism::MouseMove>(we.event))
+                mouse_move_count.fetch_add(1, std::memory_order_release);
+        });
+    });
+    backend.wait_ready();
+    auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
+
+    push_motion(window_id, 2.f, 150.f); // left edge — chrome-owned, not forwarded
+    CHECK(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
+
+    push_motion(window_id, 150.f, 150.f); // client area — forwarded, cursor untouched by chrome
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+    while (mouse_move_count.load(std::memory_order_acquire) == 0 &&
+           std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+    CHECK(mouse_move_count.load(std::memory_order_acquire) >= 1);
+    CHECK(sdl_win.cursor() == prism::CursorShape::ResizeEW); // chrome layer never touched it back
+
+    backend.quit();
+    runner.join();
+}
+```
+
+Register it in `tests/meson.build`, right after the `test_sdl_window` block added in Task 3 (same standalone style):
+
+```meson
+test_software_backend_chrome_cursor = executable('test_software_backend_chrome_cursor',
+  files('test_software_backend_chrome_cursor.cpp'),
+  dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],
+)
+test('software_backend_chrome_cursor', test_software_backend_chrome_cursor)
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `meson test -C builddir software_backend_chrome_cursor -v`
+Expected: FAIL to compile — `SdlWindow` has no member `cursor`.
+
+- [ ] **Step 3: Add the test-hook getter to `SdlWindow`**
+
+In `include/prism/backends/sdl_window.hpp`, add the getter near `set_cursor` and the field near the other private members:
+
+```cpp
+    void set_cursor(CursorShape shape) override;
+    CursorShape cursor() const { return last_cursor_; }
+```
+
+```cpp
+    // Manual resize tracking
+    WindowChrome::HitZone resize_zone_ = WindowChrome::HitZone::Client;
+    float resize_start_x_ = 0, resize_start_y_ = 0;
+    int resize_start_w_ = 0, resize_start_h_ = 0;
+    CursorShape last_cursor_ = CursorShape::Default;
+```
+
+In `src/backends/sdl_window.cpp`, update `set_cursor` to record it:
+
+```cpp
+void SdlWindow::set_cursor(CursorShape shape) {
+    last_cursor_ = shape;
+    if (auto* c = sdl_cursor_for(shape)) SDL_SetCursor(c);
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they fail for the right reason**
+
+Run: `meson test -C builddir software_backend_chrome_cursor -v`
+Expected: now compiles, but FAILs on `wait_for_cursor` timing out — the chrome-hit-test behavior itself doesn't exist yet, so `cursor()` never leaves `Default`.
+
+- [ ] **Step 5: Make the behavior change**
 
 In `src/backends/software_backend.cpp`, replace the `SDL_EVENT_MOUSE_MOTION` case:
 
@@ -893,23 +1055,25 @@ with:
 
 This does not change observable app-facing behavior: hovering the title bar/edge strip today already produces a `MouseMove` the app forwards but that hits nothing (coordinates fall outside any widget's rect, since content starts at local Y 0, below the title bar). The only change is that the app no longer receives that pointless event, and in exchange that motion event becomes the sole owner of the cursor for that position. When the mouse re-enters the client area, the very next motion event resumes forwarding and `desired_cursor()` (Task 4) reclaims the cursor — no explicit reset needed.
 
-- [ ] **Step 2: Build**
+- [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `ninja -C builddir`
-Expected: builds cleanly, no errors.
+Run: `meson test -C builddir software_backend_chrome_cursor -v`
+Expected: PASS (3 test cases)
 
-- [ ] **Step 3: Run the full test suite**
+- [ ] **Step 7: Run the full test suite**
 
 Run: `meson test -C builddir`
-Expected: all tests pass, same count as before this task (this task adds no new automated tests) — confirms the change didn't regress anything reachable by the existing suite.
+Expected: all tests pass (read the actual pass/fail count and exit code)
 
-- [ ] **Step 4: Manual verification (if a display is available)**
+- [ ] **Step 8: Manual verification (if a display is available)**
 
-Run any example with `DecorationMode::Custom` (the default — see `WindowConfig`), then hover the outermost ~6px of the window edge and each corner. Expect: edges show a two-headed arrow aligned with that edge (horizontal on left/right, vertical on top/bottom), corners show a diagonal two-headed arrow, and the cursor reverts to the normal pointer/I-beam/etc. as soon as it crosses back onto real window content. If no display is available in this environment, skip this step and note it explicitly rather than claiming it was verified.
+Run any example with `DecorationMode::Custom` (the default — see `WindowConfig`), then hover the outermost ~6px of the window edge and each corner. Expect: edges show a two-headed arrow aligned with that edge (horizontal on left/right, vertical on top/bottom), corners show a diagonal two-headed arrow, and the cursor reverts to the normal pointer/I-beam/etc. as soon as it crosses back onto real window content. If no display is available in this environment, skip this step and note it explicitly rather than claiming it was verified. This step is a supplement to Step 6's real automated coverage, not a substitute for it.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/backends/software_backend.cpp
+git add include/prism/backends/sdl_window.hpp src/backends/sdl_window.cpp \
+        src/backends/software_backend.cpp \
+        tests/test_software_backend_chrome_cursor.cpp tests/meson.build
 git commit -m "feat(cursor): show resize cursors over custom-chrome window edges"
 ```
