@@ -175,3 +175,10 @@ stutter — direct visual evidence during dogfooding, not "trust me."
   use case shows up.
 - Per-core CPU breakdown is captured in `SystemSample` but not plotted in v1 (aggregate only,
   to keep scope small) — a natural follow-up visualization (stacked/heatmap).
+- `schedule_tick` (the animation-driven event-loop tick in `model_app.hpp`) has no frame-rate/
+  vsync throttling — any active `AnimationClock` tick source, including this app's heartbeat,
+  causes the tick loop to re-enqueue itself as fast as the scheduler can process it, pegging a
+  CPU core at roughly 150%. Invisible before this app because no prior animation in the codebase
+  ran long enough to notice (bounded animations settle in under a second); the heartbeat's
+  perpetual nature is what exposed it. A real fix (frame-rate cap / vsync-aware pacing in
+  `schedule_tick`) is a future framework improvement, not something this example works around.

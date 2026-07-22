@@ -277,6 +277,10 @@ inline void poll_system_loop(std::stop_token stop, prism::Shared<SystemSample>& 
     SystemTotals prev = read_system_sample({}, 0.0).totals; // prime the delta baseline
     auto last = std::chrono::steady_clock::now();
     while (!stop.stop_requested()) {
+        // sleep_for is not interruptible by stop_token, so a jthread destructor's
+        // request_stop()+join() can linger up to this sleep's duration on shutdown --
+        // not a hang, just a bounded delay (same caveat applies to poll_processes_loop
+        // below, with its own longer sleep).
         std::this_thread::sleep_for(std::chrono::seconds(1));
         auto now = std::chrono::steady_clock::now();
         double dt = std::chrono::duration<double>(now - last).count();

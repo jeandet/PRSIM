@@ -4,6 +4,8 @@
 #include "process_tree_source.hpp"
 #include "showcase/showcase_common.hpp"
 
+#include <cmath>
+#include <numbers>
 #include <thread>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
@@ -152,7 +154,15 @@ int main(int argc, char* argv[]) {
                       app, [&](prism::AppContext& ctx) {
         ctx.clock().add([&app](prism::AnimationClock::time_point now) {
             double t = std::chrono::duration<double>(now.time_since_epoch()).count();
-            app.heartbeat_phase.set(static_cast<float>(t * 4.0)); // ~4 rad/s
+            // now.time_since_epoch() is steady_clock's time since boot, which on a machine
+            // with real uptime is huge -- wrap into [0, 2pi) with fmod (double precision)
+            // BEFORE casting to float, so the float's ULP stays negligible next to one
+            // frame's phase advance. Casting the huge value straight to float would give
+            // it a ULP larger than a frame's worth of advance, silently freezing
+            // heartbeat_phase.set() (Field<T>::set() no-ops on an unchanged value) and
+            // making the heartbeat visibly stutter.
+            double phase = std::fmod(t * 4.0, 2.0 * std::numbers::pi); // ~4 rad/s
+            app.heartbeat_phase.set(static_cast<float>(phase));
             return true; // never remove -- keeps schedule_tick perpetually re-scheduling,
                          // which is what lets Task 1's fix keep draining Shared<T> with
                          // zero mouse/keyboard input.
