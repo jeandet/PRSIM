@@ -144,3 +144,29 @@ TEST_CASE("sort_by orders by each key without mutating the input") {
     // Original vector must be untouched -- sort_by takes and returns by value.
     CHECK(input[0].pid == 3);
 }
+
+TEST_CASE("poll_system_loop and poll_processes_loop are jthread-invocable with stop_token "
+          "first, and honor jthread-managed cancellation") {
+    // Mirrors Task 7's real call form: std::jthread(poll_system_loop, std::ref(app.sys_sample)).
+    // std::jthread only auto-injects its stop_token when the callable takes it as the FIRST
+    // parameter -- if either function ever regresses to a trailing stop_token, this test fails
+    // to COMPILE (not just fail at runtime), because std::jthread's constructor requires the
+    // remaining args alone to be invocable.
+    prism::Shared<SystemSample> sys_sample;
+    auto t0 = std::chrono::steady_clock::now();
+    {
+        std::jthread t(poll_system_loop, std::ref(sys_sample));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        t.request_stop();
+    }
+    CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(3));
+
+    prism::Shared<std::vector<ProcessInfo>> proc_list;
+    auto t1 = std::chrono::steady_clock::now();
+    {
+        std::jthread t(poll_processes_loop, std::ref(proc_list));
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        t.request_stop();
+    }
+    CHECK(std::chrono::steady_clock::now() - t1 < std::chrono::seconds(3));
+}

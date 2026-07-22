@@ -273,7 +273,7 @@ inline std::vector<ProcessInfo> read_process_list(const std::vector<ProcessInfo>
     return result;
 }
 
-inline void poll_system_loop(prism::Shared<SystemSample>& out, std::stop_token stop) {
+inline void poll_system_loop(std::stop_token stop, prism::Shared<SystemSample>& out) {
     SystemTotals prev = read_system_sample({}, 0.0).totals; // prime the delta baseline
     auto last = std::chrono::steady_clock::now();
     while (!stop.stop_requested()) {
@@ -287,8 +287,8 @@ inline void poll_system_loop(prism::Shared<SystemSample>& out, std::stop_token s
     }
 }
 
-inline void poll_processes_loop(prism::Shared<std::vector<ProcessInfo>>& out,
-                                 std::stop_token stop) {
+inline void poll_processes_loop(std::stop_token stop,
+                                 prism::Shared<std::vector<ProcessInfo>>& out) {
     std::vector<ProcessInfo> prev;
     auto last = std::chrono::steady_clock::now();
     while (!stop.stop_requested()) {
