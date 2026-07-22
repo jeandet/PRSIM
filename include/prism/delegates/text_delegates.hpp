@@ -399,6 +399,7 @@ TextEditState& Widget<TextField<T>>::ensure_edit_state(WidgetNode& node) {
 template <StringLike T>
 void Widget<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
                                     WidgetNode& node) {
+    node.visual_state.cursor = CursorShape::Text;
     detail::text_field_record(dl, field, node,
         [](const std::string& v) { return v; });
 }
@@ -424,6 +425,7 @@ TextEditState& Widget<Password<T>>::ensure_edit_state(WidgetNode& node) {
 template <StringLike T>
 void Widget<Password<T>>::record(DrawList& dl, const Field<Password<T>>& field,
                                     WidgetNode& node) {
+    node.visual_state.cursor = CursorShape::Text;
     detail::text_field_record(dl, field, node,
         [](const std::string& v) { return detail::mask_string(v.size()); });
 }
@@ -449,6 +451,7 @@ TextAreaEditState& Widget<TextArea<T>>::ensure_edit_state(WidgetNode& node) {
 template <StringLike T>
 void Widget<TextArea<T>>::record(DrawList& dl, const Field<TextArea<T>>& field,
                                    WidgetNode& node) {
+    node.visual_state.cursor = CursorShape::Text;
     detail::text_area_record(dl, field, node);
 }
 

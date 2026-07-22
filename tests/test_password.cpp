@@ -137,6 +137,15 @@ TEST_CASE("Password record renders focus ring when focused") {
     CHECK(has_outline);
 }
 
+TEST_CASE("Password record sets Text cursor shape") {
+    prism::Field<prism::Password<>> field{{.value = "abc"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Widget<prism::Password<>>::record(dl, field, node);
+
+    CHECK(node.visual_state.cursor == prism::CursorShape::Text);
+}
+
 // --- handle_input() tests ---
 
 TEST_CASE("Password TextInput inserts text") {

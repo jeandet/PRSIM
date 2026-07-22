@@ -351,6 +351,15 @@ TEST_CASE("TextArea record renders cursor when focused") {
     CHECK(thin_rects >= 1);
 }
 
+TEST_CASE("TextArea record sets Text cursor shape") {
+    prism::Field<prism::TextArea<>> field{{.value = "hello"}};
+    prism::DrawList dl;
+    auto node = make_node();
+    prism::Widget<prism::TextArea<>>::record(dl, field, node);
+
+    CHECK(node.visual_state.cursor == prism::CursorShape::Text);
+}
+
 // --- handle_input() tests ---
 
 TEST_CASE("TextArea: TextInput inserts text at cursor") {
