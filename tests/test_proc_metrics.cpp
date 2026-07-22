@@ -90,3 +90,57 @@ TEST_CASE("History caps at max_points, dropping the oldest") {
     CHECK(h.values.front() == doctest::Approx(10.0f));
     CHECK(h.values.back() == doctest::Approx(129.0f));
 }
+
+TEST_CASE("parse_process_stat extracts pid/ppid/state/name, handling parens in the name") {
+    // comm field is "(my proc (2))" -- deliberately contains parens and a space, which is
+    // why the parser must match the LAST ')' rather than the first.
+    std::string stat_line =
+        "1234 (my proc (2)) S 1 1234 1234 0 -1 4194304 100 0 0 0 500 200 0 0 20 0 1 0 12345 123456789 1234";
+    ProcessInfo info = parse_process_stat(stat_line);
+    CHECK(info.pid == 1234);
+    CHECK(info.ppid == 1);
+    CHECK(info.state == 'S');
+    CHECK(info.name == "my proc (2)");
+    CHECK(info.total_jiffies == 700); // utime(500) + stime(200)
+}
+
+TEST_CASE("parse_status_vmrss_kb reads the VmRSS line") {
+    std::string status =
+        "Name:\tmy proc\nState:\tS (sleeping)\nVmRSS:\t   4096 kB\nThreads:\t1\n";
+    CHECK(parse_status_vmrss_kb(status) == 4096);
+}
+
+TEST_CASE("parse_process_entry computes mem_percent and cpu_percent from prev jiffies") {
+    std::string stat_line =
+        "1234 (worker) S 1 1234 1234 0 -1 4194304 100 0 0 0 500 200 0 0 20 0 1 0 12345 123456789 1234";
+    std::string status = "Name:\tworker\nVmRSS:\t   8192 kB\n";
+
+    // First sample seen (prev_total_jiffies < 0): cpu_percent must be 0, not a bogus delta.
+    ProcessInfo first = parse_process_entry(stat_line, status, -1, 1.0, 16384000.0);
+    CHECK(first.cpu_percent == doctest::Approx(0.0f));
+    CHECK(first.mem_percent == doctest::Approx(0.05f)); // 8192 / 16384000 * 100
+
+    // Second sample: total_jiffies went from 400 to 700 (delta 300 ticks) over 1s @ 100 ticks/s.
+    ProcessInfo second = parse_process_entry(stat_line, status, 400, 1.0, 16384000.0);
+    CHECK(second.cpu_percent == doctest::Approx(300.0f)); // (300/100)/1.0*100
+}
+
+TEST_CASE("sort_by orders by each key without mutating the input") {
+    std::vector<ProcessInfo> input;
+    input.push_back(ProcessInfo{.pid = 3, .name = "c", .cpu_percent = 10.f, .mem_percent = 5.f});
+    input.push_back(ProcessInfo{.pid = 1, .name = "a", .cpu_percent = 30.f, .mem_percent = 1.f});
+    input.push_back(ProcessInfo{.pid = 2, .name = "b", .cpu_percent = 20.f, .mem_percent = 9.f});
+
+    auto by_cpu = sort_by(input, SortKey::CpuPercent);
+    CHECK(by_cpu[0].pid == 1);
+    CHECK(by_cpu[1].pid == 2);
+    CHECK(by_cpu[2].pid == 3);
+
+    auto by_pid = sort_by(input, SortKey::Pid);
+    CHECK(by_pid[0].pid == 1);
+    CHECK(by_pid[1].pid == 2);
+    CHECK(by_pid[2].pid == 3);
+
+    // Original vector must be untouched -- sort_by takes and returns by value.
+    CHECK(input[0].pid == 3);
+}
