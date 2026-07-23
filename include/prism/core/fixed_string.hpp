@@ -7,7 +7,8 @@ namespace prism::core {
 
 // A structural compile-time string, usable as a template non-type parameter.
 // Needed because C++26 annotations ([[=expr]]) must be constants of
-// structural type, and prism::inspector::label/section carry a string.
+// structural type, and prism::core::label/section (see
+// reflect_annotations.hpp) carry a string.
 template <std::size_t N>
 struct fixed_string {
     char data[N]{};

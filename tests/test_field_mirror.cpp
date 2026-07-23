@@ -132,6 +132,18 @@ TEST_CASE("annotation helpers detect skip/readonly and extract label/section tex
     CHECK(true); // presence of this TEST_CASE proves the file compiled with the static_asserts above
 }
 
+struct CoreDirectProbe {
+    [[=prism::core::skip]] int a;
+    [[=prism::core::label<"Direct">]] int b;
+};
+
+TEST_CASE("annotations are directly usable via prism::core, not only prism::inspector") {
+    static_assert(prism::core::has_annotation<^^CoreDirectProbe::a, decltype(prism::core::skip)>());
+    static_assert(prism::core::extract_string_annotation<^^CoreDirectProbe::b,
+                                                           prism::core::label_t>() == "Direct");
+    CHECK(true);
+}
+
 struct DeviceStateWithSkip {
     float voltage;
     [[=prism::inspector::skip]] int internal_version;
