@@ -259,6 +259,19 @@ inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
             if constexpr (requires { c.rect; }) {
                 c.rect.origin.x = X{c.rect.origin.x.raw() + dx.raw()};
                 c.rect.origin.y = Y{c.rect.origin.y.raw() + dy.raw()};
+            } else if constexpr (requires { c.center; c.radius; }) {
+                c.center.x = X{c.center.x.raw() + dx.raw()};
+                c.center.y = Y{c.center.y.raw() + dy.raw()};
+            } else if constexpr (requires { c.points; }) {
+                for (auto& p : c.points) {
+                    p.x = X{p.x.raw() + dx.raw()};
+                    p.y = Y{p.y.raw() + dy.raw()};
+                }
+            } else if constexpr (requires { c.from; c.to; }) {
+                c.from.x = X{c.from.x.raw() + dx.raw()};
+                c.from.y = Y{c.from.y.raw() + dy.raw()};
+                c.to.x = X{c.to.x.raw() + dx.raw()};
+                c.to.y = Y{c.to.y.raw() + dy.raw()};
             } else if constexpr (requires { c.origin; }) {
                 c.origin.x = X{c.origin.x.raw() + dx.raw()};
                 c.origin.y = Y{c.origin.y.raw() + dy.raw()};

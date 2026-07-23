@@ -284,6 +284,63 @@ TEST_CASE("flatten translates draw commands to absolute coordinates") {
     CHECK(fr->rect.origin.y.raw() == 40);
 }
 
+TEST_CASE("flatten translates Line/Polyline/Circle draw commands to absolute coordinates") {
+    // Regression test: translate_draw_list's if-constexpr chain only matched commands with
+    // a .rect or .origin member, silently leaving Line/Polyline/Circle at local coordinates
+    // when a widget sits below another sibling in a Column (nonzero dy). Found via a real
+    // system-monitor app where the 2nd/3rd of three stacked Plot canvases rendered correct
+    // (translated) axis-label text but an invisible (untranslated, clipped-away) polyline.
+    prism::LayoutNode col;
+    col.kind = prism::LayoutNode::Kind::Column;
+
+    prism::LayoutNode a;
+    a.kind = prism::LayoutNode::Kind::Leaf;
+    a.id = 1;
+    a.draws.filled_rect(R(0, 0, 100, 40), prism::Color::rgba(255, 0, 0));
+
+    prism::LayoutNode b;
+    b.kind = prism::LayoutNode::Kind::Leaf;
+    b.id = 2;
+    b.draws.line(prism::Point{prism::X{5}, prism::Y{5}}, prism::Point{prism::X{15}, prism::Y{15}},
+                 prism::Color::rgba(0, 255, 0), 1.f);
+    b.draws.polyline({prism::Point{prism::X{1}, prism::Y{1}}, prism::Point{prism::X{2}, prism::Y{2}}},
+                     prism::Color::rgba(0, 0, 255), 1.f);
+    b.draws.circle(prism::Point{prism::X{3}, prism::Y{3}}, 4.f, prism::Color::rgba(255, 255, 0));
+
+    col.children.push_back(std::move(a));
+    col.children.push_back(std::move(b));
+
+    prism::layout_measure(col, prism::LayoutAxis::Vertical);
+    prism::layout_arrange(col, R(0, 0, 300, 400));
+
+    // b is stacked below a (height 40), so its allocated origin has a nonzero dy -- the
+    // exact condition that exposes the bug (dy=0 for the first child hides it entirely).
+    REQUIRE(col.children[1].allocated.origin.y.raw() == 40);
+
+    prism::SceneSnapshot snap;
+    snap.version = 1;
+    prism::layout_flatten(col, snap);
+
+    REQUIRE(snap.draw_lists.size() == 2);
+    auto& dl = snap.draw_lists[1]; // b's: ClipPush, Line, Polyline, Circle, ClipPop
+    REQUIRE(dl.commands.size() == 5);
+
+    auto* line = std::get_if<prism::Line>(&dl.commands[1]);
+    REQUIRE(line != nullptr);
+    CHECK(line->from.y.raw() == 45);  // 5 + dy(40)
+    CHECK(line->to.y.raw() == 55);    // 15 + dy(40)
+
+    auto* poly = std::get_if<prism::Polyline>(&dl.commands[2]);
+    REQUIRE(poly != nullptr);
+    REQUIRE(poly->points.size() == 2);
+    CHECK(poly->points[0].y.raw() == 41);  // 1 + dy(40)
+    CHECK(poly->points[1].y.raw() == 42);  // 2 + dy(40)
+
+    auto* circ = std::get_if<prism::Circle>(&dl.commands[3]);
+    REQUIRE(circ != nullptr);
+    CHECK(circ->center.y.raw() == 43);  // 3 + dy(40)
+}
+
 TEST_CASE("flatten skips spacers and empty containers") {
     prism::LayoutNode row;
     row.kind = prism::LayoutNode::Kind::Row;
