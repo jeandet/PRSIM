@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <prism/core/reflect_annotations.hpp>
 #include <prism/core/shared.hpp>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
@@ -68,13 +69,13 @@ struct History {
 
 struct ProcessInfo {
     int pid = 0;
-    int ppid = 0;
+    [[=prism::core::skip]] int ppid = 0;
     std::string name;
-    char state = '?';
-    float cpu_percent = 0.f;
-    float mem_percent = 0.f;
-    long rss_kb = 0;
-    long total_jiffies = 0;
+    [[=prism::core::skip]] char state = '?';
+    [[=prism::core::label<"CPU %">]] float cpu_percent = 0.f;
+    [[=prism::core::label<"Mem %">]] float mem_percent = 0.f;
+    [[=prism::core::skip]] long rss_kb = 0;
+    [[=prism::core::skip]] long total_jiffies = 0;
 };
 
 enum class SortKey { CpuPercent, MemPercent, Pid, Name };

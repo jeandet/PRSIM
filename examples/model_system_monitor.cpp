@@ -17,13 +17,6 @@ using namespace ui; using namespace app; using namespace plot;
 
 #if __cpp_impl_reflection
 
-struct ProcessRow {
-    prism::Field<int> pid{0};
-    prism::Field<std::string> name{""};
-    prism::Field<float> cpu_percent{0.f};
-    prism::Field<float> mem_percent{0.f};
-};
-
 struct SystemMonitor {
     // Background-thread ingest points. Never placed via vb.widget() -- they are read only
     // through .observe(), which fires during drain via the void drain() opt-in below. A
@@ -40,7 +33,7 @@ struct SystemMonitor {
     prism::plot::PlotModel net_plot;
 
     prism::Field<SortKey> sort_key{SortKey::CpuPercent};
-    prism::List<ProcessRow> table_rows;
+    prism::List<ProcessInfo> table_rows;
     FlatProcessTreeSource tree_source;
     prism::TreeController tree_ctrl{prism::wrap_tree_storage(tree_source)};
     prism::Field<prism::TabBar<>> tabs;
@@ -68,18 +61,7 @@ struct SystemMonitor {
     }
 
     void ingest_processes(const std::vector<ProcessInfo>& processes) {
-        auto sorted = sort_by(processes, sort_key.get());
-
-        while (table_rows.size() > sorted.size())
-            table_rows.erase(table_rows.size() - 1);
-        for (size_t i = 0; i < sorted.size(); ++i) {
-            ProcessRow row{.pid = {sorted[i].pid}, .name = {sorted[i].name},
-                           .cpu_percent = {sorted[i].cpu_percent},
-                           .mem_percent = {sorted[i].mem_percent}};
-            if (i < table_rows.size()) table_rows.set(i, std::move(row));
-            else table_rows.push_back(std::move(row));
-        }
-
+        table_rows.replace_all(sort_by(processes, sort_key.get()));
         tree_source.update(processes);
         tree_ctrl.refresh();
     }
@@ -112,25 +94,22 @@ struct SystemMonitor {
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.vstack([&] {
             vb.canvas(cpu_plot)
-                .depends_on(cpu_plot.x_range).depends_on(cpu_plot.y_range)
-                .depends_on(cpu_plot.view).depends_on(cpu_plot.cursor)
-                .depends_on(cpu_plot.revision)
+                .depends_on(cpu_plot.x_range, cpu_plot.y_range, cpu_plot.view,
+                            cpu_plot.cursor, cpu_plot.revision)
                 .min_size(prism::Height{120});
             vb.canvas(mem_plot)
-                .depends_on(mem_plot.x_range).depends_on(mem_plot.y_range)
-                .depends_on(mem_plot.view).depends_on(mem_plot.cursor)
-                .depends_on(mem_plot.revision)
+                .depends_on(mem_plot.x_range, mem_plot.y_range, mem_plot.view,
+                            mem_plot.cursor, mem_plot.revision)
                 .min_size(prism::Height{120});
             vb.canvas(net_plot)
-                .depends_on(net_plot.x_range).depends_on(net_plot.y_range)
-                .depends_on(net_plot.view).depends_on(net_plot.cursor)
-                .depends_on(net_plot.revision)
+                .depends_on(net_plot.x_range, net_plot.y_range, net_plot.view,
+                            net_plot.cursor, net_plot.revision)
                 .min_size(prism::Height{120});
             vb.handle();
             vb.widget(sort_key);
             vb.tabs(tabs, [&] {
                 vb.tab("Table", [&](prism::WidgetTree::ViewBuilder& tvb) {
-                    tvb.table(table_rows).headers({"PID", "Name", "CPU %", "Mem %"});
+                    tvb.table(table_rows);
                 });
                 vb.tab("Tree", [&](prism::WidgetTree::ViewBuilder& tvb) {
                     tvb.tree(tree_ctrl);
