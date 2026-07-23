@@ -17,6 +17,14 @@
 #include <prism/core/reflect_annotations.hpp>
 #include <prism/core/shared.hpp>
 
+#if __cpp_impl_reflection
+#define PRISM_SKIP_MEMBER [[=prism::core::skip]]
+#define PRISM_LABEL_MEMBER(s) [[=prism::core::label<s>]]
+#else
+#define PRISM_SKIP_MEMBER
+#define PRISM_LABEL_MEMBER(s)
+#endif
+
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
 namespace prism {
@@ -69,13 +77,13 @@ struct History {
 
 struct ProcessInfo {
     int pid = 0;
-    [[=prism::core::skip]] int ppid = 0;
+    PRISM_SKIP_MEMBER int ppid = 0;
     std::string name;
-    [[=prism::core::skip]] char state = '?';
-    [[=prism::core::label<"CPU %">]] float cpu_percent = 0.f;
-    [[=prism::core::label<"Mem %">]] float mem_percent = 0.f;
-    [[=prism::core::skip]] long rss_kb = 0;
-    [[=prism::core::skip]] long total_jiffies = 0;
+    PRISM_SKIP_MEMBER char state = '?';
+    PRISM_LABEL_MEMBER("CPU %") float cpu_percent = 0.f;
+    PRISM_LABEL_MEMBER("Mem %") float mem_percent = 0.f;
+    PRISM_SKIP_MEMBER long rss_kb = 0;
+    PRISM_SKIP_MEMBER long total_jiffies = 0;
 };
 
 enum class SortKey { CpuPercent, MemPercent, Pid, Name };

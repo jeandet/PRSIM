@@ -206,10 +206,12 @@ concept SoaStorage = !is_list_v<T> && !ColumnStorage<T> && is_soa_struct_v<T>;
 ```
 
 `is_soa_struct_v<T>` is a `consteval` helper using the same
-`nonstatic_data_members_of` walk: true iff every non-`skip`-annotated member
-`m` has a nested `value_type` and `LeafType<typename M::value_type>` holds
-(i.e. `m` is a `vector`-like container of leaves — not a bare leaf itself,
-not a nested class/pointer). `column_count()` counts non-skipped members;
+`nonstatic_data_members_of` walk: true iff at least one non-`skip`-annotated
+member `m` has a nested `value_type` and `LeafType<typename M::value_type>`
+holds (i.e. `m` is a `vector`-like container of leaves — not a bare leaf
+itself, not a nested class/pointer); other non-`skip`-annotated members are
+silently excluded from the column set, matching the row tier's own
+philosophy. `column_count()` counts only those qualifying columns;
 `row_count()` is the first column's `size()` (mismatched column sizes across
 members is a caller-side invariant violation, asserted in debug builds, not
 a validated/thrown runtime error — this is internal state the caller

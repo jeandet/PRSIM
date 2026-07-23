@@ -9,6 +9,7 @@
 #include <prism/ui/widget_node.hpp>
 
 #include <fmt/format.h>
+#include <cassert>
 #include <functional>
 #include <optional>
 #include <string>
@@ -170,6 +171,12 @@ consteval bool has_any_soa_column() {
 template <typename T>
 inline constexpr bool is_soa_struct_v = detail::has_any_soa_column<std::remove_cvref_t<T>>();
 
+// Order matters: !is_list_v<T> must be checked (and short-circuit) before
+// is_soa_struct_v<T>, or a List<T> would have its private items_ member
+// (a std::vector<T>) reflected via access_context::unchecked() and
+// spuriously match IsLeafVector, misclassifying every List<LeafType> as
+// SOA-shaped. Likewise !ColumnStorage<T> must precede is_soa_struct_v so a
+// hand-written ColumnStorage type with vector members isn't reclassified.
 template <typename T>
 concept SoaStorage = !is_list_v<std::remove_cvref_t<T>>
                       && !ColumnStorage<T>
@@ -206,6 +213,7 @@ TableSource wrap_soa_columns(T& data) {
                 using M = std::remove_cvref_t<decltype(member)>;
                 if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
                     if (!found) { n = member.size(); found = true; }
+                    else assert(member.size() == n && "SOA columns must all be the same size");
                 }
             }
             return n;
