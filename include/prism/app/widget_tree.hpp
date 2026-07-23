@@ -76,6 +76,11 @@ public:
                 );
                 return static_cast<Self&>(*this);
             }
+
+            Self& depends_on(auto&... obs) {
+                (depends_on(obs), ...);
+                return static_cast<Self&>(*this);
+            }
         };
 
         struct TableBuilder : DependsOnMixin<TableBuilder> {

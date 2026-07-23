@@ -402,6 +402,38 @@ TEST_CASE("canvas depends_on supports multiple fields") {
     CHECK(tree.any_dirty());
 }
 
+TEST_CASE("canvas depends_on accepts multiple fields in one variadic call") {
+    struct VariadicDepCanvas {
+        prism::Field<int> x{0};
+        prism::Field<int> y{0};
+        prism::Field<int> z{0};
+
+        void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode&) {
+            dl.filled_rect(bounds, prism::Color::rgba(0, 0, 0));
+        }
+
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.canvas(*this).depends_on(x, y, z);
+        }
+    };
+
+    VariadicDepCanvas model;
+    prism::WidgetTree tree(model);
+    CHECK(tree.leaf_count() == 1);
+
+    tree.clear_dirty();
+    model.x.set(1);
+    CHECK(tree.any_dirty());
+
+    tree.clear_dirty();
+    model.y.set(2);
+    CHECK(tree.any_dirty());
+
+    tree.clear_dirty();
+    model.z.set(3);
+    CHECK(tree.any_dirty());
+}
+
 // ── Task 5: canvas input handling ────────────────────────────────────────────
 
 struct InteractiveCanvas {
