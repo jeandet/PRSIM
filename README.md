@@ -218,7 +218,7 @@ struct TreeShowcase {
 
 For data that isn't a plain struct — a filesystem, a database, a custom model — implement
 `TreeSource` by hand (Tier 1), or satisfy the `TreeStorage` concept and adapt it with
-`wrap_tree_storage()` (Tier 2, see `examples/model_tree_browser.cpp` for a filesystem browser).
+`wrap_tree_storage()` (Tier 2, see `examples/model_tree_browser/model_tree_browser.cpp` for a filesystem browser).
 `wrap_struct_tree()` (Tier 3) is the reflection-only fast path shown above.
 
 **Table widget** — virtualized rows with headers and single-row selection. `wrap_row_storage()`

@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include "../examples/file_tree_source.hpp"
+#include "../examples/model_tree_browser/file_tree_source.hpp"
 
 #include <filesystem>
 #include <fstream>

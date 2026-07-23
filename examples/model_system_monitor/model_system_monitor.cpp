@@ -2,7 +2,7 @@
 #include <prism/widgets/plot.hpp>
 #include "proc_metrics.hpp"
 #include "process_tree_source.hpp"
-#include "showcase/showcase_common.hpp"
+#include "../showcase/showcase_common.hpp"
 
 #include <cmath>
 #include <numbers>

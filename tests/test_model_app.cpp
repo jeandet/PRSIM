@@ -770,7 +770,7 @@ TEST_CASE("Ctrl+Shift+I attaches a debug window; pressing it again removes it") 
 }
 
 // Regression test: the debug window must request Custom decoration, same as every other
-// real PRISM window (see examples/model_plot.cpp), because native/server-side decoration
+// real PRISM window (see examples/model_plot/model_plot.cpp), because native/server-side decoration
 // isn't available on this platform (see project-window-chrome memory) — SdlWindow only
 // draws WindowChrome when decoration_mode() == Custom. Requesting the default (Native)
 // leaves the debug window with no title bar, no close button, nothing.

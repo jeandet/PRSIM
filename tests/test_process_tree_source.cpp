@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
-#include "../examples/process_tree_source.hpp"
+#include "../examples/model_system_monitor/process_tree_source.hpp"
 
 TEST_CASE("build_process_tree_index groups children under their parent pid") {
     std::vector<ProcessInfo> procs;
