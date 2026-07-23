@@ -1,5 +1,6 @@
 #include <prism/prism.hpp>
 #include <prism/render/svg_export.hpp>
+#include "../showcase/showcase_common.hpp"
 
 #include <fmt/format.h>
 #include <array>
@@ -237,28 +238,27 @@ static std::string shape_name(WaveShape s) {
     return "?";
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     SignalGenerator app;
     std::vector<prism::Connection> connections;
     prism::Animation<float> export_anim;
     int export_count = 0;
 
-    prism::model_app({.title = "PRISM Signal Generator", .width = 1024, .height = 768,
-                       .decoration = prism::DecorationMode::Custom},
-                     app, [&](prism::AppContext& ctx) {
-        auto sched = ctx.scheduler();
+    // then() callbacks below capture update_stats BY VALUE, not by [&] -- they outlive
+    // the setup lambda that registers them (their Connections live in `connections`,
+    // a main()-scope local), so a reference into setup's frame would dangle.
+    auto update_stats = [&app] {
+        auto sh = app.waveform.shape.get();
+        float amp = static_cast<float>(app.waveform.amplitude.get().value);
+        float freq = static_cast<float>(app.waveform.frequency.get().value);
+        float rms = amp * rms_value(sh);
+        app.waveform.stats.set({fmt::format("Pk-Pk: {:.2f}  RMS: {:.3f}  f={:.1f} Hz",
+                      2.f * amp, rms, freq)});
+    };
+    update_stats();
 
-        // Update stats label when waveform params change.
-        // Note: update_stats is local to this setup closure, so then() callbacks
-        // must capture it BY VALUE — capturing by [&] would dangle after setup returns.
-        auto update_stats = [&app] {
-            auto sh = app.waveform.shape.get();
-            float amp = static_cast<float>(app.waveform.amplitude.get().value);
-            float freq = static_cast<float>(app.waveform.frequency.get().value);
-            float rms = amp * rms_value(sh);
-            app.waveform.stats.set({fmt::format("Pk-Pk: {:.2f}  RMS: {:.3f}  f={:.1f} Hz",
-                          2.f * amp, rms, freq)});
-        };
+    auto setup = [&](prism::AppContext& ctx) {
+        auto sched = ctx.scheduler();
 
         connections.push_back(
             app.waveform.frequency.on_change()
@@ -277,8 +277,6 @@ int main() {
             | prism::on(sched)
             | prism::then([update_stats](const WaveShape&) { update_stats(); })
         );
-
-        update_stats();
 
         // SVG export button: render waveform to SVG file
         connections.push_back(
@@ -326,5 +324,13 @@ int main() {
                       prism::SpringConfig{.spring = {.stiffness = 80.f, .damping = 10.f}});
               })
         );
-    });
+    };
+
+    if (argc >= 2) {
+        return showcase(argc, argv, app, 1024, 768, std::function<void(prism::AppContext&)>(setup));
+    }
+
+    prism::model_app({.title = "PRISM Signal Generator", .width = 1024, .height = 768,
+                       .decoration = prism::DecorationMode::Custom},
+                     app, setup);
 }

@@ -1,5 +1,6 @@
 #include <prism/prism.hpp>
 #include <prism/widgets/plot.hpp>
+#include "../showcase/showcase_common.hpp"
 
 #include <cmath>
 #include <numbers>
@@ -61,16 +62,22 @@ struct PlotDemo {
     }
 };
 
-int main()
+int main(int argc, char* argv[])
 {
     PlotDemo demo;
     demo.update_data();
 
-    prism::model_app({.title = "Plot Demo", .width = 800, .height = 600,
-                       .decoration = prism::DecorationMode::Custom},
-                     demo, [&](prism::AppContext& /*ctx*/) {
+    auto setup = [&](prism::AppContext& /*ctx*/) {
         demo.frequency.observe([&](const prism::Slider<>&) { demo.update_data(); });
         demo.amplitude.observe([&](const prism::Slider<>&) { demo.update_data(); });
         demo.show_cos.observe([&](const prism::Checkbox&) { demo.update_data(); });
-    });
+    };
+
+    if (argc >= 2) {
+        return showcase(argc, argv, demo, 800, 600, std::function<void(prism::AppContext&)>(setup));
+    }
+
+    prism::model_app({.title = "Plot Demo", .width = 800, .height = 600,
+                       .decoration = prism::DecorationMode::Custom},
+                     demo, setup);
 }
