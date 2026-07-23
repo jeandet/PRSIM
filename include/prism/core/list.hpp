@@ -3,6 +3,7 @@
 #include <prism/core/connection.hpp>
 
 #include <cstddef>
+#include <ranges>
 #include <vector>
 
 namespace prism::core {
@@ -24,6 +25,17 @@ public:
     void set(size_t index, T value) {
         items_[index] = std::move(value);
         updated_.emit(index, items_[index]);
+    }
+
+    void replace_all(std::ranges::range auto&& new_values) {
+        size_t n = std::ranges::size(new_values);
+        while (items_.size() > n) erase(items_.size() - 1);
+        size_t i = 0;
+        for (auto&& v : new_values) {
+            if (i < items_.size()) set(i, std::forward<decltype(v)>(v));
+            else push_back(std::forward<decltype(v)>(v));
+            ++i;
+        }
     }
 
     [[nodiscard]] const T& operator[](size_t i) const { return items_[i]; }

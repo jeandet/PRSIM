@@ -89,3 +89,61 @@ TEST_CASE("List connection RAII") {
     list.push_back(2);
     CHECK(calls == 1);
 }
+
+TEST_CASE("List::replace_all shrinks: overlapping indices update, extra rows removed") {
+    prism::List<int> list;
+    list.push_back(1);
+    list.push_back(2);
+    list.push_back(3);
+
+    std::vector<size_t> updated_indices;
+    std::vector<size_t> removed_indices;
+    auto conn_u = list.on_update().connect([&](size_t i, const int&) { updated_indices.push_back(i); });
+    auto conn_r = list.on_remove().connect([&](size_t i) { removed_indices.push_back(i); });
+
+    list.replace_all(std::vector<int>{10, 20});
+
+    CHECK(list.size() == 2);
+    CHECK(list[0] == 10);
+    CHECK(list[1] == 20);
+    CHECK(updated_indices == std::vector<size_t>{0, 1});
+    CHECK(removed_indices == std::vector<size_t>{2}); // only the size delta
+}
+
+TEST_CASE("List::replace_all grows: overlapping indices update, extra rows inserted") {
+    prism::List<int> list;
+    list.push_back(1);
+
+    std::vector<size_t> updated_indices;
+    std::vector<size_t> inserted_indices;
+    auto conn_u = list.on_update().connect([&](size_t i, const int&) { updated_indices.push_back(i); });
+    auto conn_i = list.on_insert().connect([&](size_t i, const int&) { inserted_indices.push_back(i); });
+
+    list.replace_all(std::vector<int>{100, 200, 300});
+
+    CHECK(list.size() == 3);
+    CHECK(list[0] == 100);
+    CHECK(list[1] == 200);
+    CHECK(list[2] == 300);
+    CHECK(updated_indices == std::vector<size_t>{0});
+    CHECK(inserted_indices == std::vector<size_t>{1, 2});
+}
+
+TEST_CASE("List::replace_all with same size only updates, never inserts or removes") {
+    prism::List<std::string> list;
+    list.push_back("a");
+    list.push_back("b");
+
+    int inserts = 0, removes = 0, updates = 0;
+    auto conn_i = list.on_insert().connect([&](size_t, const std::string&) { ++inserts; });
+    auto conn_r = list.on_remove().connect([&](size_t) { ++removes; });
+    auto conn_u = list.on_update().connect([&](size_t, const std::string&) { ++updates; });
+
+    list.replace_all(std::vector<std::string>{"x", "y"});
+
+    CHECK(list[0] == "x");
+    CHECK(list[1] == "y");
+    CHECK(inserts == 0);
+    CHECK(removes == 0);
+    CHECK(updates == 2);
+}
