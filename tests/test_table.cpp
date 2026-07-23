@@ -648,6 +648,8 @@ TEST_CASE("Full table workflow: render, scroll, select, observe") {
 
 #if __cpp_impl_reflection
 #include <prism/core/list.hpp>
+#include <prism/core/reflect_annotations.hpp>
+#include <prism/core/reflect_leaf.hpp>
 
 
 struct TestRow {
@@ -708,5 +710,52 @@ TEST_CASE("RowStorage table updates on List remove") {
 
     model.rows.erase(0);
     CHECK(tree.any_dirty());
+}
+
+struct PlainRow {
+    int id = 0;
+    [[=prism::core::skip]] int hidden = 0;
+    std::string name;
+    [[=prism::core::label<"Score %">]] float score = 0.f;
+};
+
+TEST_CASE("wrap_row_storage supports plain (non-Field) struct rows") {
+    prism::List<PlainRow> rows;
+    rows.push_back(PlainRow{.id = 1, .hidden = 99, .name = "Alpha", .score = 1.5f});
+    rows.push_back(PlainRow{.id = 2, .hidden = 42, .name = "Beta", .score = 2.5f});
+
+    auto src = prism::wrap_row_storage(rows);
+    CHECK(src.column_count() == 3);   // hidden excluded via skip
+    CHECK(src.row_count() == 2);
+    CHECK(src.header(0) == "id");
+    CHECK(src.header(1) == "name");
+    CHECK(src.header(2) == "Score %"); // label override
+    CHECK(src.cell_text(0, 0) == "1");
+    CHECK(src.cell_text(0, 1) == "Alpha");
+    CHECK(src.cell_text(1, 2) == fmt::to_string(2.5f));
+}
+
+struct PlainRowModel {
+    prism::List<PlainRow> rows;
+    PlainRowModel() {
+        rows.push_back(PlainRow{.id = 1, .hidden = 0, .name = "A", .score = 1.f});
+    }
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.table(rows);
+    }
+};
+
+TEST_CASE("ViewBuilder.table() with a plain-struct List still creates a Table node") {
+    PlainRowModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    bool found_header = false;
+    for (auto& dl : snap->draw_lists)
+        for (auto& cmd : dl.commands)
+            if (auto* tc = std::get_if<prism::TextCmd>(&cmd))
+                if (tc->text == "Score %") found_header = true;
+    CHECK(found_header);
 }
 #endif // __cpp_impl_reflection

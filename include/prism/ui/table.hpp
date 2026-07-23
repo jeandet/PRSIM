@@ -4,6 +4,8 @@
 #include <prism/core/list.hpp>
 #include <prism/core/traits.hpp>
 #include <prism/core/types.hpp>
+#include <prism/core/reflect_annotations.hpp>
+#include <prism/core/reflect_leaf.hpp>
 #include <prism/ui/widget_node.hpp>
 
 #include <fmt/format.h>
@@ -69,6 +71,18 @@ std::string field_to_string(const Field<T>& f) {
     else
         return "?";
 }
+
+template <typename Row>
+consteval bool has_any_field_member() {
+    static constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^Row, std::meta::access_context::unchecked()));
+    bool found = false;
+    template for (constexpr auto m : members) {
+        using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
+        if constexpr (is_field_v<M>) found = true;
+    }
+    return found;
+}
 } // namespace detail
 
 template <RowStorage L>
@@ -76,14 +90,23 @@ TableSource wrap_row_storage(L& list) {
     using Row = typename std::remove_cvref_t<L>::value_type;
     static constexpr auto members = std::define_static_array(
         std::meta::nonstatic_data_members_of(^^Row, std::meta::access_context::unchecked()));
+    static constexpr bool any_field_member = detail::has_any_field_member<Row>();
 
     // Build header names at static-init time
     static const auto headers = [] {
         std::vector<std::string> h;
         template for (constexpr auto m : members) {
             using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
-            if constexpr (is_field_v<M>) {
-                h.emplace_back(std::meta::identifier_of(m));
+            if constexpr (any_field_member) {
+                if constexpr (is_field_v<M>) {
+                    h.emplace_back(std::meta::identifier_of(m));
+                }
+            } else if constexpr (!has_annotation<m, decltype(skip)>() && LeafType<M>) {
+                constexpr auto override_label = extract_string_annotation<m, label_t>();
+                if constexpr (!override_label.empty())
+                    h.emplace_back(override_label);
+                else
+                    h.emplace_back(std::meta::identifier_of(m));
             }
         }
         return h;
@@ -99,9 +122,15 @@ TableSource wrap_row_storage(L& list) {
             template for (constexpr auto m : members) {
                 auto& member = r.[:m:];
                 using M = std::remove_cvref_t<decltype(member)>;
-                if constexpr (is_field_v<M>) {
+                if constexpr (any_field_member) {
+                    if constexpr (is_field_v<M>) {
+                        if (idx == col)
+                            result = detail::field_to_string(member);
+                        ++idx;
+                    }
+                } else if constexpr (!has_annotation<m, decltype(skip)>() && LeafType<M>) {
                     if (idx == col)
-                        result = detail::field_to_string(member);
+                        result = format_leaf_value(member);
                     ++idx;
                 }
             }
