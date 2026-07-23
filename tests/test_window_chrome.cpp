@@ -76,6 +76,24 @@ TEST_CASE("resize_from_drag on a diagonal (NW) keeps the opposite corner fixed")
     CHECK(r.y + r.h == 50 + 300);
 }
 
+TEST_CASE("needs_native_resize is true only for zones that would require repositioning") {
+    // Wayland forbids a client from repositioning its own toplevel window at all, so
+    // West/North/NW/NE/SW -- the zones whose opposite edge must stay fixed -- have to
+    // hand off to the platform's native interactive resize instead of PRISM's own
+    // manual begin/update/end_resize tracking, which can only ever change size.
+    CHECK(prism::WindowChrome::needs_native_resize(HZ::ResizeW));
+    CHECK(prism::WindowChrome::needs_native_resize(HZ::ResizeN));
+    CHECK(prism::WindowChrome::needs_native_resize(HZ::ResizeNW));
+    CHECK(prism::WindowChrome::needs_native_resize(HZ::ResizeNE));
+    CHECK(prism::WindowChrome::needs_native_resize(HZ::ResizeSW));
+
+    CHECK_FALSE(prism::WindowChrome::needs_native_resize(HZ::ResizeE));
+    CHECK_FALSE(prism::WindowChrome::needs_native_resize(HZ::ResizeS));
+    CHECK_FALSE(prism::WindowChrome::needs_native_resize(HZ::ResizeSE));
+    CHECK_FALSE(prism::WindowChrome::needs_native_resize(HZ::Client));
+    CHECK_FALSE(prism::WindowChrome::needs_native_resize(HZ::TitleBar));
+}
+
 TEST_CASE("resize_from_drag still keeps the right edge fixed when the West drag clamps at min width") {
     // Drag far past the minimum width -- the position compensation must be
     // derived from the CLAMPED width, not the raw unclamped delta, or the

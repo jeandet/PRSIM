@@ -24,10 +24,26 @@ SDL_HitTestResult sdl_hit_test_callback(SDL_Window* win, const SDL_Point* area, 
     int w, h;
     SDL_GetWindowSize(win, &w, &h);
     auto zone = WindowChrome::hit_test(area->x, area->y, w, h);
-    // Only use SDL hit test for title bar drag — resize is handled manually
-    // in the event loop for reliable live feedback across all compositors.
     if (zone == WindowChrome::HitZone::TitleBar)
         return SDL_HITTEST_DRAGGABLE;
+    // East/South/SE are handled manually in the event loop for reliable live
+    // feedback across all compositors -- they never need to reposition the
+    // window, only resize it. West/North/NW/NE/SW do need to reposition it to
+    // keep the opposite edge fixed, which Wayland forbids a client from ever
+    // doing itself (see WindowChrome::needs_native_resize), so those hand off
+    // to the platform's native interactive resize (SDL swallows the button
+    // press for them entirely; PRISM's begin/update/end_resize never fires).
+    using HZ = WindowChrome::HitZone;
+    if (WindowChrome::needs_native_resize(zone)) {
+        switch (zone) {
+            case HZ::ResizeW:  return SDL_HITTEST_RESIZE_LEFT;
+            case HZ::ResizeN:  return SDL_HITTEST_RESIZE_TOP;
+            case HZ::ResizeNW: return SDL_HITTEST_RESIZE_TOPLEFT;
+            case HZ::ResizeNE: return SDL_HITTEST_RESIZE_TOPRIGHT;
+            case HZ::ResizeSW: return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+            default: break; // unreachable -- needs_native_resize() only true for the above
+        }
+    }
     return SDL_HITTEST_NORMAL;
 }
 

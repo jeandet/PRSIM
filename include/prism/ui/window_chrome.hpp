@@ -68,6 +68,18 @@ struct WindowChrome {
         }
     }
 
+    // Whether dragging this zone requires moving the window's on-screen position
+    // to keep the opposite edge fixed (West/North and their diagonals). Wayland
+    // forbids a client from repositioning its own toplevel window at all, so
+    // these zones can't use PRISM's own manual begin/update/end_resize tracking
+    // (SDL_SetWindowPosition is a hard no-op there) -- they must hand off to the
+    // platform's native interactive resize instead (see sdl_hit_test_callback).
+    // East/South/SE never need repositioning and stay on the manual path.
+    static bool needs_native_resize(HitZone zone) {
+        return zone == HitZone::ResizeW || zone == HitZone::ResizeN ||
+               zone == HitZone::ResizeNW || zone == HitZone::ResizeNE || zone == HitZone::ResizeSW;
+    }
+
     struct ResizeResult { int w, h, x, y; };
 
     // Computes the new window geometry for a resize drag. West/North-involving
