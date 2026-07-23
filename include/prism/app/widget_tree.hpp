@@ -87,6 +87,8 @@ public:
         };
 
         struct CanvasHandle : DependsOnMixin<CanvasHandle> {
+            CanvasHandle& min_size(Height h) { node_ref.canvas_min_height = h.raw(); return *this; }
+            CanvasHandle& min_size(Width w) { node_ref.canvas_min_width = w.raw(); return *this; }
         };
 
     public:
@@ -1078,6 +1080,10 @@ private:
             wn.is_container = false;
             if (node.build_widget)
                 node.build_widget(wn);
+            if (node.layout_kind == LayoutKind::Canvas) {
+                wn.canvas_min_width = node.canvas_min_width;
+                wn.canvas_min_height = node.canvas_min_height;
+            }
         } else {
             wn.is_container = true;
             if (node.layout_kind == LayoutKind::Scroll) {
@@ -1829,6 +1835,8 @@ private:
                 canvas.theme = node.theme;
                 canvas.draws = node.draws;
                 canvas.overlay_draws = node.overlay_draws;
+                canvas.canvas_min_width = node.canvas_min_width;
+                canvas.canvas_min_height = node.canvas_min_height;
                 parent.children.push_back(std::move(canvas));
             } else if (node.layout_kind == LK::Handle) {
                 LayoutNode handle;

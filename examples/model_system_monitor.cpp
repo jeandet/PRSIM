@@ -114,15 +114,18 @@ struct SystemMonitor {
             vb.canvas(cpu_plot)
                 .depends_on(cpu_plot.x_range).depends_on(cpu_plot.y_range)
                 .depends_on(cpu_plot.view).depends_on(cpu_plot.cursor)
-                .depends_on(cpu_plot.revision);
+                .depends_on(cpu_plot.revision)
+                .min_size(prism::Height{120});
             vb.canvas(mem_plot)
                 .depends_on(mem_plot.x_range).depends_on(mem_plot.y_range)
                 .depends_on(mem_plot.view).depends_on(mem_plot.cursor)
-                .depends_on(mem_plot.revision);
+                .depends_on(mem_plot.revision)
+                .min_size(prism::Height{120});
             vb.canvas(net_plot)
                 .depends_on(net_plot.x_range).depends_on(net_plot.y_range)
                 .depends_on(net_plot.view).depends_on(net_plot.cursor)
-                .depends_on(net_plot.revision);
+                .depends_on(net_plot.revision)
+                .min_size(prism::Height{120});
             vb.handle();
             vb.widget(sort_key);
             vb.tabs(tabs, [&] {
@@ -133,7 +136,7 @@ struct SystemMonitor {
                     tvb.tree(tree_ctrl);
                 });
             });
-            vb.canvas(*this).depends_on(heartbeat_phase);
+            vb.canvas(*this).depends_on(heartbeat_phase).min_size(prism::Height{24});
         });
     }
 };

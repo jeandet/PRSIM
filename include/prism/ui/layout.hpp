@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 #include <vector>
 
@@ -61,6 +62,8 @@ struct LayoutNode {
     Height table_header_h{0};
     std::vector<float> split_sizes;  // main-axis size per pane; meaningful only for Kind::Row/Column when split mode is engaged
     const Theme* theme = &detail::layout_default_theme;
+    std::optional<float> canvas_min_width;   // only meaningful for Kind::Canvas
+    std::optional<float> canvas_min_height;  // only meaningful for Kind::Canvas
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
@@ -106,9 +109,17 @@ inline void measure_scrollable(LayoutNode& node) {
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     switch (node.kind) {
     case LayoutNode::Kind::Spacer:
-    case LayoutNode::Kind::Canvas:
         node.hint = {.preferred = 0, .expand = true};
         return;
+    case LayoutNode::Kind::Canvas: {
+        bool horiz = (parent_axis == LayoutAxis::Horizontal);
+        std::optional<float> min_size = horiz ? node.canvas_min_width : node.canvas_min_height;
+        if (min_size.has_value())
+            node.hint = {.preferred = *min_size, .expand = false};
+        else
+            node.hint = {.preferred = 0, .expand = true};
+        return;
+    }
     case LayoutNode::Kind::Leaf: {
         auto bb = node.draws.bounding_box();
         bool horiz = (parent_axis == LayoutAxis::Horizontal);

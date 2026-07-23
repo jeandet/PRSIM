@@ -16,6 +16,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace prism::ui {
@@ -59,6 +60,8 @@ struct WidgetNode {
     Size arranged_extent{Width{0}, Height{0}};  // last-arranged main-axis extent, populated for every node kind
     bool expand = false;
     ExpandAxis expand_axis = ExpandAxis::None;
+    std::optional<float> canvas_min_width;   // only meaningful when layout_kind == Canvas
+    std::optional<float> canvas_min_height;  // only meaningful when layout_kind == Canvas
     const Theme* theme = nullptr;
     bool table_input_wired = false;
     std::shared_ptr<std::vector<std::string>> tab_names;

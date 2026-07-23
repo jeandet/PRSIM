@@ -526,6 +526,55 @@ TEST_CASE("canvas depends_on accepts Derived<T>") {
     CHECK(tree.any_dirty());
 }
 
+struct TwoCanvasModel {
+    void canvas(prism::DrawList&, prism::Rect, const prism::WidgetNode&) {}
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack([&] {
+            vb.canvas(*this).min_size(prism::Height{50});
+            vb.canvas(*this).min_size(prism::Height{50});
+        });
+    }
+};
+
+TEST_CASE("canvas().min_size(Height) gives a fixed main-axis size instead of expand-sharing") {
+    // Regression test: layout_measure's Canvas case unconditionally hardcoded
+    // {preferred=0, expand=true}, so every canvas in a stack got an equal share of
+    // leftover space regardless of its intended content size -- found via a real app
+    // where a ~12px heartbeat icon ended up in a ~120px box because it shared space
+    // equally with three full plots. min_size() opts a canvas out of expand-sharing.
+    TwoCanvasModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(300, 200, 1);
+
+    REQUIRE(snap->geometry.size() == 2);
+    CHECK(snap->geometry[0].second.extent.h.raw() == doctest::Approx(50.0));
+    CHECK(snap->geometry[1].second.extent.h.raw() == doctest::Approx(50.0));
+    // Cross-axis (width) still stretches to fill the container regardless of min_size.
+    CHECK(snap->geometry[0].second.extent.w.raw() == doctest::Approx(300.0));
+}
+
+struct MixedCanvasModel {
+    void canvas(prism::DrawList&, prism::Rect, const prism::WidgetNode&) {}
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack([&] {
+            vb.canvas(*this).min_size(prism::Height{50});  // fixed
+            vb.canvas(*this);                              // expand, gets the rest
+        });
+    }
+};
+
+TEST_CASE("canvas() without min_size still expands into remaining space") {
+    MixedCanvasModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(300, 200, 1);
+
+    REQUIRE(snap->geometry.size() == 2);
+    CHECK(snap->geometry[0].second.extent.h.raw() == doctest::Approx(50.0));
+    CHECK(snap->geometry[1].second.extent.h.raw() == doctest::Approx(150.0));  // 200 - 50
+}
+
 TEST_CASE("hovered_id() reflects the currently hovered widget") {
     SimpleModel model;
     prism::WidgetTree tree(model);

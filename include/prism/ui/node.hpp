@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,11 @@ struct Node {
 
     // Shared<T> drain callback (set for Shared<T> leaf nodes)
     std::function<void()> drain_fn;
+
+    // Opt-in fixed main-axis size for a Canvas node (only meaningful when
+    // layout_kind == Canvas); unset means the canvas keeps the default expand behavior.
+    std::optional<float> canvas_min_width;
+    std::optional<float> canvas_min_height;
 };
 
 } // namespace prism::ui
