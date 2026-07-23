@@ -164,4 +164,23 @@ TEST_CASE("wrap_struct_tree collects enum members as attributes with their under
     CHECK(found);
 }
 
+namespace {
+enum UnscopedColor { Red, Green }; // plain enum, NOT enum class
+}
+
+TEST_CASE("LeafType/format_leaf_value: arithmetic, string, scoped and unscoped enum") {
+    static_assert(prism::LeafType<int>);
+    static_assert(prism::LeafType<double>);
+    static_assert(prism::LeafType<std::string>);
+    static_assert(prism::LeafType<Color>);           // enum class, defined earlier in this file
+    static_assert(prism::LeafType<UnscopedColor>);   // plain enum -- excluded by MirrorLeaf,
+                                                      // included here (matches Tree's prior behavior)
+    static_assert(!prism::LeafType<std::vector<int>>);
+
+    CHECK(prism::format_leaf_value(42) == "42");
+    CHECK(prism::format_leaf_value(std::string("hi")) == "hi");
+    CHECK(prism::format_leaf_value(Color::Green) == "1");
+    CHECK(prism::format_leaf_value(UnscopedColor::Green) == "1");
+}
+
 #endif // __cpp_impl_reflection

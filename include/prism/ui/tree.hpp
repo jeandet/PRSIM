@@ -2,6 +2,7 @@
 
 #include <prism/core/field.hpp>
 #include <prism/core/list.hpp>
+#include <prism/core/reflect_leaf.hpp>
 #include <prism/core/types.hpp>
 #include <prism/input/input_event.hpp>
 #include <prism/ui/delegate.hpp>
@@ -363,13 +364,8 @@ TreeNodeId populate_struct_tree_cache(X& obj, std::string_view label, Cache& cac
                               && !IsVector<M>::value) {
             entry.children.push_back(
                 populate_struct_tree_cache(member, member_name, cache, next_id));
-        } else if constexpr (std::is_arithmetic_v<M>) {
-            entry.attributes.emplace_back(std::string(member_name), fmt::to_string(member));
-        } else if constexpr (std::is_same_v<M, std::string>) {
-            entry.attributes.emplace_back(std::string(member_name), member);
-        } else if constexpr (std::is_enum_v<M>) {
-            entry.attributes.emplace_back(std::string(member_name),
-                                           fmt::to_string(std::to_underlying(member)));
+        } else if constexpr (LeafType<M>) {
+            entry.attributes.emplace_back(std::string(member_name), format_leaf_value(member));
         }
     }
 
