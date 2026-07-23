@@ -368,3 +368,64 @@ TEST_CASE("Dragging a handle in a vstack resizes panes along the Y axis") {
     CHECK(pane0_rect2.extent.h.raw() == doctest::Approx(pane0_h0 + 5.f));
     CHECK(pane1_rect2.extent.h.raw() == doctest::Approx(pane1_h0 - 5.f));
 }
+
+struct ThreeThenHandleColumnModel {
+    Field<int> a{0}, b{0}, c{0}, d{0};
+    WidgetId container_id = 0;
+
+    void view(WidgetTree::ViewBuilder& vb) {
+        container_id = vb.vstack([&] {
+            vb.widget(a);
+            vb.widget(b);
+            vb.widget(c);
+            vb.handle();
+            vb.widget(d);
+        });
+    }
+};
+
+TEST_CASE("Dragging the only handle after 3 stacked panes resizes its real neighbors, not pane 0/1") {
+    // Regression test: wire_split_handles() used to number a handle by how many
+    // Handle children it had seen so far (always 0 for a single handle), while
+    // SplitState::pane_sizes is indexed by how many non-Handle children precede
+    // it. Those two numbering schemes only coincide when exactly one pane sits
+    // before the handle -- true of every other test in this file (and of the
+    // tree widget's row/detail split), but not here: with panes a, b, c before
+    // the single handle, the old code dragged pane_sizes[0]/[1] -- a and b --
+    // instead of the handle's real neighbors, c and d.
+    ThreeThenHandleColumnModel model;
+    WidgetTree tree(model);
+    // Exact fit: 4 widgets * 30px (default_widget_h) + 1 handle (6px) = 126.
+    auto snap = tree.build_snapshot(200, 126, 1);
+    REQUIRE(snap->geometry.size() == 5);
+
+    auto [a_id, a_rect] = snap->geometry[0];
+    auto [b_id, b_rect] = snap->geometry[1];
+    auto [c_id, c_rect] = snap->geometry[2];
+    auto [handle_id, handle_rect] = snap->geometry[3];
+    [[maybe_unused]] auto [d_id, d_rect] = snap->geometry[4];
+    float a_h0 = a_rect.extent.h.raw();
+    float b_h0 = b_rect.extent.h.raw();
+    float c_h0 = c_rect.extent.h.raw();
+    float d_h0 = d_rect.extent.h.raw();
+
+    Point press_pos{X{handle_rect.origin.x.raw() + 5.f}, Y{handle_rect.origin.y.raw() + 2.f}};
+    MouseButton press{press_pos, 1, true};
+    InputEvent press_ev{press};
+    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    CHECK(tree.captured_id() == handle_id);
+
+    MouseMove move{Point{press_pos.x, Y{press_pos.y.raw() + 5.f}}};
+    prism::app::detail::route_mouse_move(tree, *snap, move);
+
+    auto snap2 = tree.build_snapshot(200, 126, 2);
+    auto [a_id2, a_rect2] = snap2->geometry[0];
+    auto [b_id2, b_rect2] = snap2->geometry[1];
+    auto [c_id2, c_rect2] = snap2->geometry[2];
+    auto [d_id2, d_rect2] = snap2->geometry[4];
+
+    CHECK(a_rect2.extent.h.raw() == doctest::Approx(a_h0));
+    CHECK(b_rect2.extent.h.raw() == doctest::Approx(b_h0));
+    CHECK(c_rect2.extent.h.raw() == doctest::Approx(c_h0 + 5.f));
+    CHECK(d_rect2.extent.h.raw() == doctest::Approx(d_h0 - 5.f));
+}

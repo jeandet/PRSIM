@@ -187,11 +187,19 @@ public:
         void wire_split_handles(Node& container) {
             bool vertical = (container.layout_kind == LayoutKind::Column);
             WidgetId container_id = container.id;
-            size_t handle_index = 0;
+            // pane_count tracks non-Handle children seen so far, matching how
+            // SplitState::pane_sizes is built (one entry per non-Handle child, in
+            // order) -- a handle's real "before" pane is pane_count - 1, which is
+            // NOT the same as how many handles precede it whenever more than one
+            // pane sits between two handles (or before the first one).
+            size_t pane_count = 0;
             for (size_t i = 0; i < container.children.size(); ++i) {
                 auto& child = container.children[i];
-                if (child.layout_kind != LayoutKind::Handle) continue;
-                size_t index = handle_index++;
+                if (child.layout_kind != LayoutKind::Handle) {
+                    ++pane_count;
+                    continue;
+                }
+                size_t index = pane_count - 1;
 
                 bool has_left = (i > 0);
                 bool has_right = (i + 1 < container.children.size());
