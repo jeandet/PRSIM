@@ -758,4 +758,69 @@ TEST_CASE("ViewBuilder.table() with a plain-struct List still creates a Table no
                 if (tc->text == "Score %") found_header = true;
     CHECK(found_header);
 }
+
+struct SoaColumns {
+    std::vector<int> id = {1, 2, 3};
+    std::vector<std::string> name = {"a", "b", "c"};
+    [[=prism::core::label<"Score %">]] std::vector<float> score = {1.5f, 2.5f, 3.5f};
+    [[=prism::core::skip]] std::vector<int> hidden = {9, 9, 9};
+    prism::Field<int> revision{0}; // not a vector -- silently excluded, doesn't disqualify the shape
+};
+
+static_assert(prism::SoaStorage<SoaColumns>);
+static_assert(!prism::SoaStorage<prism::List<int>>);
+static_assert(!prism::SoaStorage<PlainRow>); // PlainRow (Task 5) has no vector members at all
+
+TEST_CASE("wrap_soa_columns produces valid TableSource from struct-of-vectors") {
+    SoaColumns cols;
+    auto src = prism::wrap_soa_columns(cols);
+    CHECK(src.column_count() == 3); // hidden excluded via skip, revision isn't a vector column
+    CHECK(src.row_count() == 3);
+    CHECK(src.header(0) == "id");
+    CHECK(src.header(1) == "name");
+    CHECK(src.header(2) == "Score %");
+    CHECK(src.cell_text(1, 1) == "b");
+    CHECK(src.cell_text(2, 2) == fmt::to_string(3.5f));
+}
+
+struct SoaTableModel {
+    SoaColumns cols;
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.table(cols);
+    }
+};
+
+TEST_CASE("ViewBuilder.table() auto-detects a struct-of-vectors and creates a Table node") {
+    SoaTableModel model;
+    prism::WidgetTree tree(model);
+    auto snap = tree.build_snapshot(800, 600, 1);
+    snap = tree.build_snapshot(800, 600, 2);
+
+    auto& root = tree.root();
+    prism::WidgetNode* table_node = nullptr;
+    for (auto& c : root.children)
+        if (c.layout_kind == prism::LayoutKind::Table) table_node = &c;
+    REQUIRE(table_node != nullptr);
+
+    auto* sp = std::any_cast<std::shared_ptr<prism::TableState>>(&table_node->edit_state);
+    REQUIRE(sp);
+    CHECK((*sp)->row_count() == 3);
+}
+
+TEST_CASE("SOA table re-renders on depends_on trigger") {
+    struct RevisionModel {
+        SoaColumns cols;
+        void view(prism::WidgetTree::ViewBuilder& vb) {
+            vb.table(cols).depends_on(cols.revision);
+        }
+    };
+    RevisionModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    (void)tree.build_snapshot(800, 600, 2);
+    tree.clear_dirty();
+
+    model.cols.revision.set(1);
+    CHECK(tree.any_dirty());
+}
 #endif // __cpp_impl_reflection

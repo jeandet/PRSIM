@@ -142,6 +142,94 @@ TableSource wrap_row_storage(L& list) {
     };
 }
 
+namespace detail {
+template <typename T>
+struct IsLeafVector : std::false_type {};
+template <typename X>
+struct IsLeafVector<std::vector<X>> : std::bool_constant<LeafType<X>> {};
+
+template <typename T>
+consteval bool has_any_soa_column() {
+    if constexpr (!std::is_class_v<T>) {
+        return false;
+    } else {
+        static constexpr auto members = std::define_static_array(
+            std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()));
+        bool found = false;
+        template for (constexpr auto m : members) {
+            using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
+            if constexpr (!has_annotation<m, decltype(skip)>() && IsLeafVector<M>::value) {
+                found = true;
+            }
+        }
+        return found;
+    }
+}
+} // namespace detail
+
+template <typename T>
+inline constexpr bool is_soa_struct_v = detail::has_any_soa_column<std::remove_cvref_t<T>>();
+
+template <typename T>
+concept SoaStorage = !is_list_v<std::remove_cvref_t<T>>
+                      && !ColumnStorage<T>
+                      && is_soa_struct_v<T>;
+
+template <SoaStorage T>
+TableSource wrap_soa_columns(T& data) {
+    using Row = std::remove_cvref_t<T>;
+    static constexpr auto members = std::define_static_array(
+        std::meta::nonstatic_data_members_of(^^Row, std::meta::access_context::unchecked()));
+
+    static const auto headers = [] {
+        std::vector<std::string> h;
+        template for (constexpr auto m : members) {
+            using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
+            if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
+                constexpr auto override_label = extract_string_annotation<m, label_t>();
+                if constexpr (!override_label.empty())
+                    h.emplace_back(override_label);
+                else
+                    h.emplace_back(std::meta::identifier_of(m));
+            }
+        }
+        return h;
+    }();
+
+    return TableSource{
+        .column_count = [] { return headers.size(); },
+        .row_count = [&data] {
+            size_t n = 0;
+            bool found = false;
+            template for (constexpr auto m : members) {
+                auto& member = data.[:m:];
+                using M = std::remove_cvref_t<decltype(member)>;
+                if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
+                    if (!found) { n = member.size(); found = true; }
+                }
+            }
+            return n;
+        },
+        .cell_text = [&data](size_t row, size_t col) -> std::string {
+            size_t idx = 0;
+            std::string result;
+            template for (constexpr auto m : members) {
+                auto& member = data.[:m:];
+                using M = std::remove_cvref_t<decltype(member)>;
+                if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
+                    if (idx == col)
+                        result = format_leaf_value(member[row]);
+                    ++idx;
+                }
+            }
+            return result;
+        },
+        .header = [](size_t col) -> std::string_view {
+            return headers[col];
+        },
+    };
+}
+
 #endif // __cpp_impl_reflection
 
 struct TableState {

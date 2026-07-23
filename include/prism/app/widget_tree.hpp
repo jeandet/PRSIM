@@ -477,6 +477,23 @@ public:
             current_parent().children.push_back(std::move(container));
             return TableBuilder{current_parent().children.back(), placed_};
         }
+
+        template <typename T>
+            requires SoaStorage<T>
+        TableBuilder table(T& data) {
+            Node container;
+            container.id = tree_.next_id_++;
+            container.is_leaf = false;
+            container.layout_kind = LayoutKind::Table;
+
+            auto state = std::make_shared<TableState>();
+            state->source = wrap_soa_columns(data);
+            state->column_count = state->source.column_count();
+            container.table_state = state;
+
+            current_parent().children.push_back(std::move(container));
+            return TableBuilder{current_parent().children.back(), placed_};
+        }
 #endif // __cpp_impl_reflection
 
         void tabs(Field<TabBar<>>& field, std::invocable auto&& builder) {
