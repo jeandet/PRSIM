@@ -777,7 +777,7 @@ Expected: FAIL to compile — `prism::SoaStorage`, `prism::wrap_soa_columns`, an
 
 - [ ] **Step 3: Add `SoaStorage`/`wrap_soa_columns` to `table.hpp`**
 
-In `include/prism/ui/table.hpp`, add right after the closing `#endif // __cpp_impl_reflection` of `wrap_row_storage` from Task 5 — i.e. a second `#if __cpp_impl_reflection` block (or extend the existing one; either is fine, put it right before that `#endif` so it's inside the same reflection-gated region):
+In `include/prism/ui/table.hpp`, insert this immediately **before** the `#endif // __cpp_impl_reflection` that currently closes off `wrap_row_storage` (added in Task 5) — extending that same reflection-gated region. Do not add a second `#if __cpp_impl_reflection` block, and do not place this after that `#endif` (it must stay guarded, same as everything else in this block):
 
 ```cpp
 namespace detail {
