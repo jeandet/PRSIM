@@ -406,6 +406,7 @@ bool SdlWindow::begin_resize(int mouse_x, int mouse_y) {
     SDL_GetGlobalMouseState(&resize_start_x_, &resize_start_y_);
     resize_start_w_ = w;
     resize_start_h_ = h;
+    SDL_GetWindowPosition(sdl_window_, &resize_start_pos_x_, &resize_start_pos_y_);
     return true;
 }
 
@@ -415,24 +416,11 @@ bool SdlWindow::update_resize(int /*mouse_x*/, int /*mouse_y*/) {
     SDL_GetGlobalMouseState(&gx, &gy);
     int dx = static_cast<int>(gx - resize_start_x_);
     int dy = static_cast<int>(gy - resize_start_y_);
-    int new_w = resize_start_w_;
-    int new_h = resize_start_h_;
-    using HZ = WindowChrome::HitZone;
-    switch (resize_zone_) {
-        case HZ::ResizeE:  new_w += dx; break;
-        case HZ::ResizeS:  new_h += dy; break;
-        case HZ::ResizeSE: new_w += dx; new_h += dy; break;
-        case HZ::ResizeW:  new_w -= dx; break;
-        case HZ::ResizeN:  new_h -= dy; break;
-        case HZ::ResizeNW: new_w -= dx; new_h -= dy; break;
-        case HZ::ResizeNE: new_w += dx; new_h -= dy; break;
-        case HZ::ResizeSW: new_w -= dx; new_h += dy; break;
-        default: break;
-    }
-    constexpr int min_w = 200, min_h = 100;
-    new_w = std::max(new_w, min_w);
-    new_h = std::max(new_h, min_h);
-    SDL_SetWindowSize(sdl_window_, new_w, new_h);
+
+    auto r = WindowChrome::resize_from_drag(resize_zone_, resize_start_w_, resize_start_h_,
+                                             resize_start_pos_x_, resize_start_pos_y_, dx, dy);
+    SDL_SetWindowSize(sdl_window_, r.w, r.h);
+    SDL_SetWindowPosition(sdl_window_, r.x, r.y);
     return true;
 }
 

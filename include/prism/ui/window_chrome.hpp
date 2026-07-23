@@ -4,6 +4,7 @@
 #include <prism/ui/context.hpp>
 #include <prism/ui/cursor.hpp>
 
+#include <algorithm>
 #include <string_view>
 
 namespace prism::ui {
@@ -14,6 +15,8 @@ struct WindowChrome {
     static constexpr Height title_bar_h{32.f};
     static constexpr float resize_edge = 6.f; // hit_test() is a raw-int SDL boundary function
     static constexpr Width button_w{46.f};
+    static constexpr int min_width = 200;
+    static constexpr int min_height = 100;
 
     enum class HitZone {
         Client,
@@ -63,6 +66,40 @@ struct WindowChrome {
             case HitZone::ResizeSW: return CursorShape::ResizeNESW;
             default: return CursorShape::Default;
         }
+    }
+
+    struct ResizeResult { int w, h, x, y; };
+
+    // Computes the new window geometry for a resize drag. West/North-involving
+    // zones must keep the OPPOSITE edge fixed on screen (like every real window
+    // manager), so their new x/y is derived from that fixed edge and the
+    // (already-clamped) new width/height, not from the raw mouse delta -- deriving
+    // it from the raw delta would keep sliding the position even after the size
+    // clamps at the minimum, visually detaching the window from the mouse.
+    static ResizeResult resize_from_drag(HitZone zone, int start_w, int start_h,
+                                          int start_x, int start_y, int dx, int dy) {
+        int w = start_w, h = start_h;
+        switch (zone) {
+            case HitZone::ResizeE:  w += dx; break;
+            case HitZone::ResizeS:  h += dy; break;
+            case HitZone::ResizeSE: w += dx; h += dy; break;
+            case HitZone::ResizeW:  w -= dx; break;
+            case HitZone::ResizeN:  h -= dy; break;
+            case HitZone::ResizeNW: w -= dx; h -= dy; break;
+            case HitZone::ResizeNE: w += dx; h -= dy; break;
+            case HitZone::ResizeSW: w -= dx; h += dy; break;
+            default: break;
+        }
+        w = std::max(w, min_width);
+        h = std::max(h, min_height);
+
+        int x = start_x, y = start_y;
+        bool anchor_right = zone == HitZone::ResizeW || zone == HitZone::ResizeNW || zone == HitZone::ResizeSW;
+        bool anchor_bottom = zone == HitZone::ResizeN || zone == HitZone::ResizeNW || zone == HitZone::ResizeNE;
+        if (anchor_right) x = (start_x + start_w) - w;
+        if (anchor_bottom) y = (start_y + start_h) - h;
+
+        return {w, h, x, y};
     }
 
     static void render(DrawList& dl, int w, std::string_view title, const Theme& t) {

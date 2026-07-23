@@ -78,8 +78,9 @@ private:
 
     // Manual resize tracking
     WindowChrome::HitZone resize_zone_ = WindowChrome::HitZone::Client;
-    float resize_start_x_ = 0, resize_start_y_ = 0;
-    int resize_start_w_ = 0, resize_start_h_ = 0;
+    float resize_start_x_ = 0, resize_start_y_ = 0;         // global mouse position at drag start
+    int resize_start_w_ = 0, resize_start_h_ = 0;           // window size at drag start
+    int resize_start_pos_x_ = 0, resize_start_pos_y_ = 0;   // window position at drag start
     std::atomic<CursorShape> last_cursor_ = CursorShape::Default;
 
     void create_sdl_window();
