@@ -405,12 +405,21 @@ class PlotGroup {
         }
     }
 
+    // Nested in its own vstack so the whole group is exactly one pane to
+    // whatever outer container places it -- otherwise each panel would be an
+    // independent sibling pane, and an outer split handle would only ever
+    // drag the one panel physically adjacent to it (see wire_split_handles's
+    // per-non-Handle-child pane counting in widget_tree.hpp). Panels have no
+    // min_size, so they expand to fill the group's own allocated height
+    // (whatever that is -- the vstack's default share of remaining space, or
+    // whatever an outer handle drag sets it to), splitting it evenly.
     void view(WidgetTree::ViewBuilder& vb)
     {
-        for (auto& p : panels_) {
-            vb.canvas(*p).depends_on(x_range, x_view, cursor, p->y_range, p->y_view, p->revision)
-              .min_size(Height{120});
-        }
+        vb.vstack([&] {
+            for (auto& p : panels_) {
+                vb.canvas(*p).depends_on(x_range, x_view, cursor, p->y_range, p->y_view, p->revision);
+            }
+        });
     }
 
   private:

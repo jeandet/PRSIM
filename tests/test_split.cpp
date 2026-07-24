@@ -4,6 +4,7 @@
 #include <prism/ui/layout.hpp>
 #include <prism/app/widget_tree.hpp>
 #include <prism/app/event_routing.hpp>
+#include <prism/widgets/plot.hpp>
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
 namespace prism {
@@ -428,4 +429,66 @@ TEST_CASE("Dragging the only handle after 3 stacked panes resizes its real neigh
     CHECK(b_rect2.extent.h.raw() == doctest::Approx(b_h0));
     CHECK(c_rect2.extent.h.raw() == doctest::Approx(c_h0 + 5.f));
     CHECK(d_rect2.extent.h.raw() == doctest::Approx(d_h0 - 5.f));
+}
+
+struct PlotGroupThenHandleModel {
+    prism::plot::PlotGroup group;
+    Field<int> after{0};
+    WidgetId container_id = 0;
+
+    PlotGroupThenHandleModel() {
+        group.add_plot("A");
+        group.add_plot("B");
+    }
+
+    void view(WidgetTree::ViewBuilder& vb) {
+        container_id = vb.vstack([&] {
+            group.view(vb);
+            vb.handle();
+            vb.widget(after);
+        });
+    }
+};
+
+TEST_CASE("Dragging the handle after a PlotGroup resizes every panel together, not just the last one") {
+    // Regression test: PlotGroup::view() used to place its panels as flat
+    // siblings of the handle instead of grouping them into one pane, so
+    // dragging only ever resized the last panel (the one physically adjacent
+    // to the handle) -- exactly the "N panes before a handle" pitfall the
+    // test above documents, but self-inflicted by PlotGroup's own composition
+    // rather than the split system itself.
+    PlotGroupThenHandleModel model;
+    WidgetTree tree(model);
+    // Exact fit for the (buggy) fixed-120-per-panel case too: 2*120 + 6 (handle)
+    // + 30 (default_widget_h) = 276 -- leaves no pre-engage slack to reclaim, so
+    // the drag delta itself is the only thing changing pane sizes below,
+    // whether or not the fix (expand-to-fill panels) is applied.
+    auto snap = tree.build_snapshot(300, 276, 1);
+    REQUIRE(snap->geometry.size() == 4);  // panel A, panel B, handle, after
+
+    auto [a_id, a_rect] = snap->geometry[0];
+    auto [b_id, b_rect] = snap->geometry[1];
+    auto [handle_id, handle_rect] = snap->geometry[2];
+    float a_h0 = a_rect.extent.h.raw();
+    float b_h0 = b_rect.extent.h.raw();
+    CHECK(a_h0 > 100.f);  // filled real leftover space, not a 0px/fallback size
+
+    Point press_pos{X{handle_rect.origin.x.raw() + 2.f}, Y{handle_rect.origin.y.raw() + 2.f}};
+    MouseButton press{press_pos, 1, true};
+    InputEvent press_ev{press};
+    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    CHECK(tree.captured_id() == handle_id);
+
+    MouseMove move{Point{press_pos.x, Y{press_pos.y.raw() + 5.f}}};
+    prism::app::detail::route_mouse_move(tree, *snap, move);
+
+    auto snap2 = tree.build_snapshot(300, 276, 2);
+    auto [a_id2, a_rect2] = snap2->geometry[0];
+    auto [b_id2, b_rect2] = snap2->geometry[1];
+
+    // Both panels grow together -- proving the whole group was resized as one
+    // pane, not just the panel nearest the handle.
+    CHECK(a_rect2.extent.h.raw() > a_h0);
+    CHECK(b_rect2.extent.h.raw() > b_h0);
+    CHECK(a_rect2.extent.h.raw() == doctest::Approx(b_rect2.extent.h.raw()));
 }
