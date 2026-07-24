@@ -1,0 +1,102 @@
+<h2>Table Widget — Layout Structure</h2>
+<p class="subtitle">LayoutKind::Table with fixed header, virtual rows, dual scroll</p>
+
+<div class="mockup">
+  <div class="mockup-header">Table Widget Wireframe</div>
+  <div class="mockup-body" style="padding: 0; background: #1a1a2e; font-family: monospace; font-size: 13px;">
+
+    <!-- Header row -->
+    <div style="display: flex; background: #2a2a4a; border-bottom: 2px solid #4a4a6a; position: sticky; top: 0;">
+      <div style="flex: 0 0 120px; padding: 8px 12px; color: #8888cc; font-weight: bold; border-right: 1px solid #3a3a5a;">Time</div>
+      <div style="flex: 0 0 120px; padding: 8px 12px; color: #8888cc; font-weight: bold; border-right: 1px solid #3a3a5a;">Density</div>
+      <div style="flex: 0 0 120px; padding: 8px 12px; color: #8888cc; font-weight: bold; border-right: 1px solid #3a3a5a;">Velocity</div>
+      <div style="flex: 0 0 120px; padding: 8px 12px; color: #8888cc; font-weight: bold; border-right: 1px solid #3a3a5a;">Label</div>
+      <div style="flex: 0 0 120px; padding: 8px 12px; color: #8888cc; font-weight: bold;">Quality</div>
+    </div>
+
+    <!-- Data rows -->
+    <div style="overflow: hidden;">
+      <!-- Row 0 - selected -->
+      <div style="display: flex; background: rgba(80, 80, 200, 0.25); border-left: 3px solid #6666cc;">
+        <div style="flex: 0 0 117px; padding: 6px 12px; color: #ccccee; border-right: 1px solid #2a2a4a;">0.000</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #ccccee; border-right: 1px solid #2a2a4a;">1.23e+04</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #ccccee; border-right: 1px solid #2a2a4a;">-42.7</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #ccccee; border-right: 1px solid #2a2a4a;">Solar Wind</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #ccccee;">3</div>
+      </div>
+      <!-- Row 1 -->
+      <div style="display: flex; background: #1e1e34;">
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">0.125</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">1.19e+04</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">-38.2</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">Solar Wind</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc;">3</div>
+      </div>
+      <!-- Row 2 -->
+      <div style="display: flex; background: #1a1a2e;">
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">0.250</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">1.15e+04</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">-35.1</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">Magneto</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc;">2</div>
+      </div>
+      <!-- Row 3 -->
+      <div style="display: flex; background: #1e1e34;">
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">0.375</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">9.87e+03</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">-29.4</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">Magneto</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc;">1</div>
+      </div>
+      <!-- Row 4 -->
+      <div style="display: flex; background: #1a1a2e;">
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">0.500</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">8.42e+03</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">-21.8</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc; border-right: 1px solid #2a2a4a;">Bow Shock</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #aaaacc;">4</div>
+      </div>
+      <!-- Row 5 -->
+      <div style="display: flex; background: #1e1e34;">
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #888899; border-right: 1px solid #2a2a4a;">0.625</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #888899; border-right: 1px solid #2a2a4a;">7.11e+03</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #888899; border-right: 1px solid #2a2a4a;">-15.3</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #888899; border-right: 1px solid #2a2a4a;">Bow Shock</div>
+        <div style="flex: 0 0 120px; padding: 6px 12px; color: #888899;">4</div>
+      </div>
+    </div>
+
+    <!-- Scrollbar area -->
+    <div style="display: flex; align-items: center; padding: 4px 8px; background: #1a1a2e; border-top: 1px solid #3a3a5a;">
+      <div style="flex: 1; height: 6px; background: #2a2a4a; border-radius: 3px; position: relative;">
+        <div style="position: absolute; left: 0; width: 40%; height: 100%; background: #5555aa; border-radius: 3px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 24px;">
+  <h3>Layout Structure</h3>
+  <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px;">
+    <div style="flex: 1; min-width: 250px; background: #1a1a2e; border: 1px solid #3a3a5a; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; color: #aaaacc;">
+      <div style="color: #8888cc; margin-bottom: 8px;">Node Tree:</div>
+      <div>TableNode</div>
+      <div style="padding-left: 16px;">├── HeaderRow <span style="color: #666;">(fixed top)</span></div>
+      <div style="padding-left: 32px;">├── Cell[0..N]</div>
+      <div style="padding-left: 16px;">├── ScrollRegion <span style="color: #666;">(V+H scroll)</span></div>
+      <div style="padding-left: 32px;">├── Row[i] <span style="color: #666;">(recycled pool)</span></div>
+      <div style="padding-left: 48px;">├── Cell[0..N]</div>
+      <div style="padding-left: 16px;">└── HScrollbar <span style="color: #666;">(if overflow)</span></div>
+    </div>
+    <div style="flex: 1; min-width: 250px; background: #1a1a2e; border: 1px solid #3a3a5a; border-radius: 8px; padding: 16px; font-family: monospace; font-size: 12px; color: #aaaacc;">
+      <div style="color: #8888cc; margin-bottom: 8px;">Key Properties:</div>
+      <div>• Uniform row height</div>
+      <div>• Equal column widths (v1)</div>
+      <div>• Header scrolls with body (H)</div>
+      <div>• Header stays fixed (V)</div>
+      <div>• Row recycling from pool</div>
+      <div>• Selected row = highlight fill</div>
+      <div>• Alternating row backgrounds</div>
+    </div>
+  </div>
+</div>

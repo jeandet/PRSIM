@@ -1,0 +1,69 @@
+<h2>Plot Widget — Architecture Approaches</h2>
+<p class="subtitle">How to integrate the plot into PRISM's MVB architecture</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Pure Canvas Component</h3>
+      <p>A model struct with <code>canvas()</code> — everything drawn in one <code>DrawList</code>. Axes, grid, data, cursor all in a single draw call. Simplest, follows the dashboard waveform pattern exactly.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Minimal new abstractions</li>
+          <li>Proven pattern (dashboard already does this)</li>
+          <li>One file, one struct</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>All rendering logic in one function — gets big</li>
+          <li>No reusable axis/grid/legend primitives</li>
+          <li>Cursor overlay redraws entire plot</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Layered Canvas Component</h3>
+      <p>Same canvas() approach, but internally decomposed into layers: <strong>background</strong> (grid), <strong>data</strong> (series polylines), <strong>overlay</strong> (cursor/crosshair). Each layer is a pure function <code>(DrawList&, Rect, params) → void</code>. The canvas() call orchestrates them.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Clean separation without new framework concepts</li>
+          <li>Layer functions are testable in isolation</li>
+          <li>Same proven canvas pattern externally</li>
+          <li>Layers can be cached/skipped independently later</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Still redraws everything on cursor move (for now)</li>
+          <li>Slightly more internal structure</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Sentinel Widget (Delegate&lt;Plot&gt;)</h3>
+      <p>A new <code>Plot</code> sentinel type with a dedicated <code>Delegate&lt;Plot&gt;</code> specialization. The plot becomes a first-class widget type like Slider or Table, with its own record() and handle_input().</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>First-class framework citizen</li>
+          <li>Consistent with Slider/Table pattern</li>
+          <li>Can leverage WidgetNode state (hover, focus)</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>More boilerplate (Delegate specialization)</li>
+          <li>Sentinel pattern designed for single-value fields, not multi-series data</li>
+          <li>Harder to compose — plot config doesn't fit Field&lt;T&gt; cleanly</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 2rem; padding: 1.2rem; background: rgba(99,102,241,0.08); border-radius: 8px; border-left: 3px solid #6366f1;">
+  <h3 style="margin-top:0;">Recommendation: B — Layered Canvas</h3>
+  <p style="margin-bottom:0;">It follows the proven canvas pattern (no new framework concepts), keeps the rendering logic clean via pure layer functions, and leaves the door open for per-layer caching when GPU backends arrive in Phase 5. The sentinel approach (C) fights the MVB grain — plots are complex compositions, not single-value widgets.</p>
+</div>

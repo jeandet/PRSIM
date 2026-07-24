@@ -1,0 +1,62 @@
+<h2>Where does the Window abstraction live?</h2>
+<p class="subtitle">The window needs to be a concept in core, but backends create the actual OS window. Who owns what?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Core owns Window, Backend implements it</h3>
+      <p>Core defines a <code>Window</code> interface (abstract class). Each backend provides its own implementation (SDL window, headless window, etc.). The app creates windows through a factory on the backend.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Clean separation — core code can hold Window references</li>
+          <li>Natural for multi-window: each Window has its own WidgetTree</li>
+          <li>Backend polymorphism already established</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Virtual dispatch on window operations</li>
+          <li>Backend must expose a window factory method</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Window is a value type in core, Backend maps it</h3>
+      <p>Core defines <code>WindowConfig</code> (value type with properties) and <code>WindowId</code> (handle). The backend creates OS windows from configs and maps IDs internally. Core never touches the OS window directly.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>No virtual dispatch — WindowId is just an integer</li>
+          <li>Matches the existing pattern (BackendConfig is already a value type)</li>
+          <li>Easy to serialize/send across threads</li>
+          <li>Headless backend just tracks configs, no real windows</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Core can't call window methods directly — must go through backend</li>
+          <li>More indirection for operations like set_title()</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid: WindowHandle in core, owned by Backend</h3>
+      <p>Core defines a thin <code>WindowHandle</code> with non-virtual inline methods that forward to the backend via a stored pointer. The backend creates and owns the actual window objects. The handle is a lightweight view.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4><ul>
+          <li>Ergonomic API: <code>window.set_title("foo")</code></li>
+          <li>No virtual dispatch on the handle itself</li>
+          <li>Backend owns lifetime, handle is just a view</li>
+        </ul></div>
+        <div class="cons"><h4>Cons</h4><ul>
+          <li>Dangling handle risk if backend destroys window</li>
+          <li>More complex than pure value types</li>
+        </ul></div>
+      </div>
+    </div>
+  </div>
+</div>

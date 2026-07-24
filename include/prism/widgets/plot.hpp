@@ -202,9 +202,9 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
             }
         } else if (mb->button == buttons::right && mb->pressed) {
             if (map.plot_area.contains(mb->position)) {
+                view.set(ViewTransform{});
                 x_range.set(AxisRange{});
                 y_range.set(AxisRange{});
-                view.set(ViewTransform{});
             }
         }
 
