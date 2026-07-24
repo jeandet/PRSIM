@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <optional>
 
 namespace prism::backends {
 using namespace prism::core;
@@ -110,6 +111,22 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
     ready_.store(true, std::memory_order_release);
     ready_.notify_one();
 
+    // A fast mouse can queue many SDL_EVENT_MOUSE_MOTION events between two SDL_WaitEvent
+    // wakes; each dispatched MouseMove ultimately triggers a full-tree relayout + rebuild
+    // downstream (see model_app.hpp), so processing every raw motion sample individually
+    // makes rendering fall further and further behind the actual mouse position under a
+    // fast/continuous drag. Only the most recent queued position actually matters, so
+    // consecutive motion events for the same window are buffered and only the last one is
+    // ever dispatched -- flushed whenever a different kind of event (or a motion for a
+    // different window) needs to be delivered first, preserving relative event order.
+    std::optional<WindowEvent> pending_motion;
+    auto flush_pending_motion = [&] {
+        if (pending_motion) {
+            event_cb(*pending_motion);
+            pending_motion.reset();
+        }
+    };
+
     while (running_.load(std::memory_order_relaxed)) {
         SDL_Event ev;
         if (!SDL_WaitEvent(&ev)) continue;
@@ -136,6 +153,9 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             // For single-window case, fall back to first window
             if (wid == 0 && windows_.size() == 1)
                 wid = windows_.begin()->first;
+
+            if (ev.type != SDL_EVENT_MOUSE_MOTION || (pending_motion && pending_motion->window != wid))
+                flush_pending_motion();
 
             switch (ev.type) {
             case SDL_EVENT_QUIT:
@@ -173,7 +193,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom)
                     my -= WindowChrome::title_bar_h.raw();
-                event_cb(WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}});
+                pending_motion = WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}};
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
@@ -265,6 +285,8 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 break;
             }
         } while (SDL_PollEvent(&ev));
+
+        flush_pending_motion(); // the queue's last event is very often a motion event itself
 
         if (!running_.load(std::memory_order_relaxed)) break;
 
