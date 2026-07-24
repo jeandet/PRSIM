@@ -17,6 +17,25 @@ using namespace ui; using namespace app; using namespace plot;
 
 #if __cpp_impl_reflection
 
+// nice_ticks may not always land exactly on 0.0 (floating-point round-off), so "now"
+// is matched within half a sample interval rather than with an exact equality check.
+// Over a short visible span (e.g. right after the app starts, or the 4-point demo
+// dataset) nice_ticks can pick a sub-second step -- rounding every tick to a whole
+// second would then print the same label (e.g. "-0:03") for two different ticks, so
+// a fractional second is kept whenever the tick isn't itself near a whole second.
+std::string format_seconds_ago(double seconds_ago) {
+    if (std::abs(seconds_ago) < History::sample_interval_seconds / 2.0) return "now";
+
+    double whole = std::abs(seconds_ago);
+    long minutes = static_cast<long>(whole) / 60;
+    double secs = whole - static_cast<double>(minutes) * 60.0;
+    const char* sign = seconds_ago < 0.0 ? "-" : "+";
+
+    if (std::abs(secs - std::round(secs)) < 0.05)
+        return fmt::format("{}{}:{:02d}", sign, minutes, static_cast<long>(std::lround(secs)));
+    return fmt::format("{}{}:{:04.1f}", sign, minutes, secs);
+}
+
 struct SystemMonitor {
     // Background-thread ingest points. Never placed via vb.widget() -- they are read only
     // through .observe(), which fires during drain via the void drain() opt-in below. A
@@ -41,10 +60,14 @@ struct SystemMonitor {
 
     prism::Field<float> heartbeat_phase{0.f};
 
+    SystemMonitor() { plot_group.x_tick_format = format_seconds_ago; }
+
     static void rebuild_plot(prism::plot::PlotPanel& plot, const History& h, bool fill = false) {
         std::vector<double> xs(h.values.size());
         std::vector<double> ys(h.values.begin(), h.values.end());
-        for (size_t i = 0; i < xs.size(); ++i) xs[i] = static_cast<double>(i);
+        double newest_index = static_cast<double>(xs.size()) - 1.0;
+        for (size_t i = 0; i < xs.size(); ++i)
+            xs[i] = (static_cast<double>(i) - newest_index) * History::sample_interval_seconds;
         auto colors = prism::plot::default_series_colors(prism::default_theme());
         plot.clear_series();
         plot.add_series(prism::plot::XYData{std::move(xs), std::move(ys)},

@@ -66,7 +66,10 @@ struct MemInfo {
 };
 
 struct History {
-    static constexpr size_t max_points = 120;
+    // Must match poll_system_loop's sleep_for below -- there's no per-sample timestamp,
+    // so the plot's time axis is reconstructed from this fixed interval and the sample index.
+    static constexpr double sample_interval_seconds = 1.0;
+    static constexpr size_t max_points = 600;  // 10 minutes at 1 sample/sec
     std::deque<float> values;
 
     void push(float v) {

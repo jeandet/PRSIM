@@ -6,8 +6,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace prism::plot {
@@ -183,7 +185,8 @@ inline void draw_grid_lines(DrawList& dl, const PlotMapping& map,
 
 inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
                              const TickArrays& ticks, const Theme& t,
-                             bool draw_x_axis = true)
+                             bool draw_x_axis = true,
+                             const std::function<std::string(double)>& x_tick_format = {})
 {
     Width cw = char_width(tick_font_size);
 
@@ -193,8 +196,10 @@ inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
             if (x < map.left() || x > map.right()) continue;
             dl.line(Point{x, map.bottom()},
                     Point{x, map.bottom() + DY{tick_len}}, t.border, 1.f);
-            dl.text(fmt::format("{:.6g}", tx),
-                    Point{x - DX{15.f}, map.bottom() + DY{tick_len + 2.f}},
+            auto label = x_tick_format ? x_tick_format(tx) : fmt::format("{:.6g}", tx);
+            Width label_w = cw * static_cast<float>(label.size());
+            dl.text(std::move(label),
+                    Point{x - DX{label_w.raw() / 2.f}, map.bottom() + DY{tick_len + 2.f}},
                     tick_font_size, t.text_muted);
         }
     }

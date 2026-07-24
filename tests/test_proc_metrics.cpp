@@ -88,7 +88,7 @@ TEST_CASE("History caps at max_points, dropping the oldest") {
         h.push(static_cast<float>(i));
     CHECK(h.values.size() == History::max_points);
     CHECK(h.values.front() == doctest::Approx(10.0f));
-    CHECK(h.values.back() == doctest::Approx(129.0f));
+    CHECK(h.values.back() == doctest::Approx(static_cast<float>(History::max_points) + 9.0f));
 }
 
 TEST_CASE("parse_process_stat extracts pid/ppid/state/name, handling parens in the name") {

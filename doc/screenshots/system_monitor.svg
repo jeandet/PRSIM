@@ -104,19 +104,19 @@
 <polyline points="97.7273,269.365 349.242,283.485 600.758,233.182 852.273,259.657" stroke="rgba(0,140,200,1)" fill="none" stroke-width="2"/>
 </g>
 <line x1="97.7273" y1="286" x2="97.7273" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="82.7273" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0</text>
+<text x="81.2273" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0:03</text>
 <line x1="223.485" y1="286" x2="223.485" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="208.485" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0.5</text>
+<text x="200.385" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0:02.5</text>
 <line x1="349.242" y1="286" x2="349.242" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="334.242" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">1</text>
+<text x="332.742" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0:02</text>
 <line x1="475" y1="286" x2="475" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="460" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">1.5</text>
+<text x="451.9" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0:01.5</text>
 <line x1="600.758" y1="286" x2="600.758" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="585.758" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">2</text>
+<text x="584.258" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0:01</text>
 <line x1="726.515" y1="286" x2="726.515" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="711.515" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">2.5</text>
+<text x="703.415" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0:00.5</text>
 <line x1="852.273" y1="286" x2="852.273" y2="291" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="837.273" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">3</text>
+<text x="842.373" y="293" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">now</text>
 <line x1="55" y1="281.72" x2="60" y2="281.72" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <text x="33.2" y="275.72" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">100</text>
 <line x1="55" y1="272.895" x2="60" y2="272.895" stroke="rgba(90,90,105,1)" stroke-width="1"/>

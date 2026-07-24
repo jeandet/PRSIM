@@ -115,7 +115,8 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
                        const Field<ViewTransform>& view, const Field<C>& cursor,
                        std::span<const Series> series,
                        const std::string& x_label, const std::string& y_label,
-                       bool draw_x_axis)
+                       bool draw_x_axis,
+                       const std::function<std::string(double)>& x_tick_format = {})
 {
     auto& t = *node.theme;
     auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
@@ -143,7 +144,7 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
             draw_series_values_at_cursor(dl, local_map, series, c.data_x, t);
     }
     dl.clip_pop();
-    draw_tick_labels(dl, map, ticks, t, draw_x_axis);
+    draw_tick_labels(dl, map, ticks, t, draw_x_axis, x_tick_format);
     draw_axes_labels(dl, map, x_label, y_label, t, draw_x_axis);
 }
 
@@ -275,6 +276,7 @@ struct PlotModel {
     Field<ViewTransform> view{};
     Field<CursorState> cursor{};
     Field<uint32_t> revision{0};
+    std::function<std::string(double)> x_tick_format;  // empty => plain numeric ticks
 
     // Transient interaction state
     DragMode drag_mode = DragMode::None;
@@ -318,7 +320,8 @@ struct PlotModel {
     void canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
     {
         render_plot_panel(dl, bounds, node, x_range, y_range, view, cursor,
-                          std::span<const Series>(series_), x_label.get(), y_label.get(), true);
+                          std::span<const Series>(series_), x_label.get(), y_label.get(), true,
+                          x_tick_format);
     }
 
     void handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds);
@@ -384,6 +387,7 @@ class PlotGroup {
     Field<ViewTransform> x_view{};
     Field<PlotGroupCursor> cursor{};
     Field<std::string> x_label{""};
+    std::function<std::string(double)> x_tick_format;  // empty => plain numeric ticks
 
     PlotGroup() = default;
     PlotGroup(PlotGroup&&) = delete;
@@ -444,7 +448,8 @@ inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
 
     render_plot_panel(dl, bounds, node, group_->x_range, y_range, merged_view,
                       group_->cursor, std::span<const Series>(series_),
-                      group_->x_label.get(), y_label.get(), draw_x_axis_);
+                      group_->x_label.get(), y_label.get(), draw_x_axis_,
+                      group_->x_tick_format);
 }
 
 inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
