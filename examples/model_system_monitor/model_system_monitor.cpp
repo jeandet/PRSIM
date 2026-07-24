@@ -102,16 +102,21 @@ struct SystemMonitor {
         vb.vstack([&] {
             plot_group.view(vb);
             vb.handle();
-            vb.widget(sort_key);
-            vb.tabs(tabs, [&] {
-                vb.tab("Table", [&](prism::WidgetTree::ViewBuilder& tvb) {
-                    tvb.table(table_rows);
+            // sort_key + tabs + heartbeat nested together so the handle above trades
+            // space with the whole process view as one pane -- otherwise it would only
+            // ever grab sort_key (the first flat sibling after it), never reaching tabs.
+            vb.vstack([&] {
+                vb.widget(sort_key);
+                vb.tabs(tabs, [&] {
+                    vb.tab("Table", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                        tvb.table(table_rows);
+                    });
+                    vb.tab("Tree", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                        tvb.tree(tree_ctrl);
+                    });
                 });
-                vb.tab("Tree", [&](prism::WidgetTree::ViewBuilder& tvb) {
-                    tvb.tree(tree_ctrl);
-                });
+                vb.canvas(*this).depends_on(heartbeat_phase).min_size(prism::Height{24});
             });
-            vb.canvas(*this).depends_on(heartbeat_phase).min_size(prism::Height{24});
         });
     }
 };
