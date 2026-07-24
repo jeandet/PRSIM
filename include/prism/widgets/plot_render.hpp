@@ -141,14 +141,7 @@ concept PlotCursor = requires(C c) {
 
 struct PlotGroupCursor {
     double data_x = 0.0;
-    double data_y = 0.0;
     bool visible = false;
-    // Identifies which panel's own y-range `data_y` was computed against -- panels
-    // share this one cursor (for a synced vertical line), but a value tooltip is only
-    // meaningful on the panel that actually owns the reading. Set to the hovering
-    // PlotPanel's `this` pointer; render_plot_panel only draws the full readout when
-    // its own `self` matches.
-    const void* owner = nullptr;
     bool operator==(const PlotGroupCursor&) const = default;
 };
 
@@ -274,6 +267,44 @@ inline void draw_vertical_cursor(DrawList& dl, const PlotMapping& map,
     auto px = map.to_pixel(data_x, 0.0);
     Color crosshair_color = Color::rgba(t.text_muted.r, t.text_muted.g, t.text_muted.b, 80);
     dl.line(Point{px.x, map.top()}, Point{px.x, map.bottom()}, crosshair_color, 1.f);
+}
+
+// Marks each series' nearest sample to `data_x` with a small dot and its value --
+// used for a shared (x-only) cursor across a PlotGroup, where each panel has its own
+// y-scale and no single mouse-derived y-value would be meaningful across panels.
+template <typename SeriesRange>
+void draw_series_values_at_cursor(DrawList& dl, const PlotMapping& map,
+                                  const SeriesRange& series, double data_x, const Theme& t)
+{
+    Width cw = char_width(label_font_size);
+
+    for (auto& s : series) {
+        if (s.size() == 0) continue;
+
+        size_t nearest = 0;
+        double best_dist = std::abs(s.x(0) - data_x);
+        for (size_t i = 1; i < s.size(); ++i) {
+            double dist = std::abs(s.x(i) - data_x);
+            if (dist < best_dist) { best_dist = dist; nearest = i; }
+        }
+
+        double value = s.y(nearest);
+        auto px = map.to_pixel(s.x(nearest), value);
+        if (px.y < map.top() || px.y > map.bottom()) continue;
+
+        dl.circle(px, 3.f, s.style().color, 0.f);
+
+        auto label = fmt::format("{:.4g}", value);
+        Width label_w = cw * static_cast<float>(label.size());
+        X tx = px.x + DX{8.f};
+        Y ty = px.y - DY{16.f};
+        if (tx + DX{label_w.raw()} + DX{4.f} > map.right())
+            tx = px.x - DX{8.f} - DX{label_w.raw()};
+        if (ty < map.top()) ty = px.y + DY{4.f};
+
+        dl.filled_rect(Rect{Point{tx - DX{2.f}, ty - DY{2.f}}, Size{label_w + Width{4.f}, Height{16.f}}}, t.surface);
+        dl.text(std::move(label), Point{tx, ty}, label_font_size, s.style().color);
+    }
 }
 
 inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,

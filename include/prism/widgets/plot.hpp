@@ -115,7 +115,7 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
                        const Field<ViewTransform>& view, const Field<C>& cursor,
                        std::span<const Series> series,
                        const std::string& x_label, const std::string& y_label,
-                       bool draw_x_axis, const void* self = nullptr)
+                       bool draw_x_axis)
 {
     auto& t = *node.theme;
     auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
@@ -130,19 +130,17 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
     dl.clip_push(map.plot_area.origin, map.plot_area.extent);
     draw_grid_lines(dl, local_map, ticks, t);
     draw_series(dl, local_map, series);
-    if constexpr (requires (C c) { c.owner; }) {
-        // Panels in a PlotGroup share one cursor for a synced vertical line, but
-        // `data_y` is only meaningful in the y-range of whichever panel produced it --
-        // only that panel draws the full crosshair + value readout.
-        auto c = cursor.get();
-        if (c.visible && c.owner != nullptr && c.owner == self)
-            draw_cursor(dl, local_map, CursorState{c.data_x, c.data_y, c.visible}, t);
-        else
-            draw_vertical_cursor(dl, local_map, c.data_x, c.visible, t);
-    } else if constexpr (requires (C c) { c.data_y; }) {
+    if constexpr (requires (C c) { c.data_y; }) {
         draw_cursor(dl, local_map, cursor.get(), t);
     } else {
-        draw_vertical_cursor(dl, local_map, cursor.get().data_x, cursor.get().visible, t);
+        // A PlotGroup's cursor is shared and x-only -- a mouse-derived y-value from
+        // whichever panel is hovered wouldn't mean anything in a sibling panel's own
+        // y-scale. Instead, each panel independently looks up its own series' nearest
+        // sample to the shared data_x and labels that value.
+        auto c = cursor.get();
+        draw_vertical_cursor(dl, local_map, c.data_x, c.visible, t);
+        if (c.visible)
+            draw_series_values_at_cursor(dl, local_map, series, c.data_x, t);
     }
     dl.clip_pop();
     draw_tick_labels(dl, map, ticks, t, draw_x_axis);
@@ -156,7 +154,7 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
                       DragMode& drag_mode, Point& drag_start_pixel,
                       ViewTransform& drag_start_view,
                       std::span<const Series> series,
-                      bool draw_x_axis = true, const void* self = nullptr)
+                      bool draw_x_axis = true)
 {
     auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
 
@@ -193,9 +191,7 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
 
         if (map.plot_area.contains(mm->position)) {
             auto [dx, dy] = map.to_data(mm->position);
-            if constexpr (requires (C c) { c.owner; })
-                cursor.set(C{dx, dy, true, self});
-            else if constexpr (requires (C c) { c.data_y; })
+            if constexpr (requires (C c) { c.data_y; })
                 cursor.set(C{dx, dy, true});
             else
                 cursor.set(C{dx, true});
@@ -203,9 +199,7 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
             auto c = cursor.get();
             if (c.visible) {
                 // `cc` (not `c`) avoids shadowing the already-declared local `c` above.
-                if constexpr (requires (C cc) { cc.owner; })
-                    cursor.set(C{c.data_x, c.data_y, false, c.owner});
-                else if constexpr (requires (C cc) { cc.data_y; })
+                if constexpr (requires (C cc) { cc.data_y; })
                     cursor.set(C{c.data_x, c.data_y, false});
                 else
                     cursor.set(C{c.data_x, false});
@@ -450,7 +444,7 @@ inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
 
     render_plot_panel(dl, bounds, node, group_->x_range, y_range, merged_view,
                       group_->cursor, std::span<const Series>(series_),
-                      group_->x_label.get(), y_label.get(), draw_x_axis_, this);
+                      group_->x_label.get(), y_label.get(), draw_x_axis_);
 }
 
 inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
@@ -463,7 +457,7 @@ inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd,
 
     route_plot_input(ev, nd, bounds, group_->x_range, y_range, merged_view,
                      group_->cursor, drag_mode, drag_start_pixel, drag_start_view,
-                     std::span<const Series>(series_), draw_x_axis_, this);
+                     std::span<const Series>(series_), draw_x_axis_);
 
     auto result = merged_view.get();
 

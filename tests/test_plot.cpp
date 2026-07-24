@@ -438,7 +438,7 @@ TEST_CASE("draw_vertical_cursor emits nothing when not visible")
     CHECK(dl.size() == 0);
 }
 
-TEST_CASE("render_plot_panel with PlotGroupCursor draws no coordinate readout for a non-owning panel")
+TEST_CASE("render_plot_panel with PlotGroupCursor draws no value readout when not visible")
 {
     using namespace prism;
     using namespace prism::plot;
@@ -446,8 +446,7 @@ TEST_CASE("render_plot_panel with PlotGroupCursor draws no coordinate readout fo
     Field<AxisRange> xr{{0.0, 10.0, false}};
     Field<AxisRange> yr{{0.0, 10.0, false}};
     Field<ViewTransform> vt{{}};
-    int owner_tag = 0, other_tag = 0;
-    Field<PlotGroupCursor> cursor{{5.0, 5.0, true, &owner_tag}};
+    Field<PlotGroupCursor> cursor{{5.0, false}};
 
     Series s(XYData{{0.0, 5.0, 10.0}, {0.0, 5.0, 10.0}}, SeriesStyle{});
     std::array<Series, 1> arr = {std::move(s)};
@@ -460,7 +459,7 @@ TEST_CASE("render_plot_panel with PlotGroupCursor draws no coordinate readout fo
     node.canvas_bounds = bounds;
 
     render_plot_panel(dl, bounds, node, xr, yr, vt, cursor,
-                      std::span<const Series>(arr), "X", "Y", true, &other_tag);
+                      std::span<const Series>(arr), "X", "Y", true);
 
     int filled_rect_count = 0;
     for (auto& cmd : dl.commands)
@@ -468,7 +467,7 @@ TEST_CASE("render_plot_panel with PlotGroupCursor draws no coordinate readout fo
     CHECK(filled_rect_count == 1);  // only the plot background -- no readout box behind it
 }
 
-TEST_CASE("render_plot_panel with PlotGroupCursor draws the coordinate readout for the owning panel")
+TEST_CASE("render_plot_panel with PlotGroupCursor labels each series' nearest value")
 {
     using namespace prism;
     using namespace prism::plot;
@@ -476,8 +475,7 @@ TEST_CASE("render_plot_panel with PlotGroupCursor draws the coordinate readout f
     Field<AxisRange> xr{{0.0, 10.0, false}};
     Field<AxisRange> yr{{0.0, 10.0, false}};
     Field<ViewTransform> vt{{}};
-    int owner_tag = 0;
-    Field<PlotGroupCursor> cursor{{5.0, 5.0, true, &owner_tag}};
+    Field<PlotGroupCursor> cursor{{4.0, true}};  // nearest sample is x=5.0, not an exact hit
 
     Series s(XYData{{0.0, 5.0, 10.0}, {0.0, 5.0, 10.0}}, SeriesStyle{});
     std::array<Series, 1> arr = {std::move(s)};
@@ -490,15 +488,23 @@ TEST_CASE("render_plot_panel with PlotGroupCursor draws the coordinate readout f
     node.canvas_bounds = bounds;
 
     render_plot_panel(dl, bounds, node, xr, yr, vt, cursor,
-                      std::span<const Series>(arr), "X", "Y", true, &owner_tag);
+                      std::span<const Series>(arr), "X", "Y", true);
 
     int filled_rect_count = 0;
-    for (auto& cmd : dl.commands)
+    bool has_circle = false;
+    bool has_value_text = false;
+    for (auto& cmd : dl.commands) {
         if (std::holds_alternative<FilledRect>(cmd)) ++filled_rect_count;
-    CHECK(filled_rect_count == 2);  // background + the readout box
+        if (std::holds_alternative<Circle>(cmd)) has_circle = true;
+        if (auto* txt = std::get_if<TextCmd>(&cmd); txt && txt->text == "5")
+            has_value_text = true;
+    }
+    CHECK(filled_rect_count == 2);  // background + the value readout box
+    CHECK(has_circle);             // marker at the nearest sample
+    CHECK(has_value_text);         // nearest sample's y (5.0), not the cursor's own x (4.0)
 }
 
-TEST_CASE("route_plot_input with PlotGroupCursor sets data_x, data_y and owner on hover")
+TEST_CASE("route_plot_input with PlotGroupCursor sets data_x without data_y")
 {
     using namespace prism;
     using namespace prism::plot;
@@ -521,15 +527,12 @@ TEST_CASE("route_plot_input with PlotGroupCursor sets data_x, data_y and owner o
     Point center = map.plot_area.center();
     InputEvent ev = MouseMove{center};
 
-    int self_tag = 0;
     route_plot_input(ev, node, bounds, xr, yr, vt, cursor,
                      drag_mode, drag_start_pixel, drag_start_view,
-                     std::span<const Series>{}, true, &self_tag);
+                     std::span<const Series>{});
 
     CHECK(cursor.get().visible);
     CHECK(cursor.get().data_x == doctest::Approx(5.0));
-    CHECK(cursor.get().data_y == doctest::Approx(5.0));
-    CHECK(cursor.get().owner == &self_tag);
 }
 
 TEST_CASE("PlotModel canvas produces draw commands")
@@ -880,7 +883,7 @@ TEST_CASE("PlotGroup cursor syncs data_x across panels")
     CHECK(group.cursor.get().data_x == doctest::Approx(5.0));
 }
 
-TEST_CASE("PlotGroup shows the value tooltip only on the panel the mouse hovers")
+TEST_CASE("PlotGroup labels every panel's own value at the shared cursor, hovered or not")
 {
     using namespace prism;
     using namespace prism::plot;
@@ -889,10 +892,10 @@ TEST_CASE("PlotGroup shows the value tooltip only on the panel the mouse hovers"
     auto& p1 = group.add_plot("A");
     auto& p2 = group.add_plot("B");
     group.x_range.set({0.0, 10.0, false});
-    p1.y_range.set({0.0, 10.0, false});
+    p1.y_range.set({0.0, 100.0, false});
     p2.y_range.set({0.0, 20.0, false});
-    p1.add_series(XYData{{0.0, 10.0}, {0.0, 10.0}}, SeriesStyle{});
-    p2.add_series(XYData{{0.0, 10.0}, {0.0, 20.0}}, SeriesStyle{});
+    p1.add_series(XYData{{0.0, 5.0, 10.0}, {0.0, 50.0, 100.0}}, SeriesStyle{});
+    p2.add_series(XYData{{0.0, 5.0, 10.0}, {0.0, 15.0, 20.0}}, SeriesStyle{});
 
     Theme t = default_theme();
     WidgetNode node;
@@ -900,26 +903,31 @@ TEST_CASE("PlotGroup shows the value tooltip only on the panel the mouse hovers"
     Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
     node.canvas_bounds = bounds;
 
+    // Hovering p1 alone sets the group's shared (x-only) cursor -- p2 never receives
+    // this MouseMove at all, since event_routing.hpp dispatches it only to the single
+    // hit-tested widget.
     auto map = compute_mapping(bounds, group.x_range, p1.y_range, group.x_view,
                                std::span<const Series>{});
     Point center = map.plot_area.center();
     InputEvent ev = MouseMove{center};
     p1.handle_canvas_input(ev, node, bounds);
+    CHECK(group.cursor.get().data_x == doctest::Approx(5.0));
 
-    auto count_filled_rects = [](const DrawList& dl) {
-        int n = 0;
+    auto has_value_text = [](const DrawList& dl, const std::string& value) {
         for (auto& cmd : dl.commands)
-            if (std::holds_alternative<FilledRect>(cmd)) ++n;
-        return n;
+            if (auto* txt = std::get_if<TextCmd>(&cmd); txt && txt->text == value)
+                return true;
+        return false;
     };
 
     DrawList dl1;
     p1.canvas(dl1, bounds, node);
-    CHECK(count_filled_rects(dl1) == 2);  // background + the value tooltip
+    CHECK(has_value_text(dl1, "50"));  // p1's own series value at x=5.0
 
     DrawList dl2;
     p2.canvas(dl2, bounds, node);
-    CHECK(count_filled_rects(dl2) == 1);  // background only -- vertical line, no bogus readout
+    CHECK(has_value_text(dl2, "15"));  // p2 never got the move event, but still labels
+                                       // its own value at the shared cursor x
 }
 
 TEST_CASE("PlotGroup only the last-added panel draws the x-axis")
