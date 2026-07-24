@@ -184,6 +184,7 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
         } else {
             auto c = cursor.get();
             if (c.visible) {
+                // `cc` (not `c`) avoids shadowing the already-declared local `c` above.
                 if constexpr (requires (C cc) { cc.data_y; })
                     cursor.set(C{c.data_x, c.data_y, false});
                 else
@@ -321,6 +322,8 @@ class PlotGroup;
 class PlotPanel {
   public:
     Field<AxisRange> y_range{};
+    Field<ViewTransform> y_view{};   // this panel's own y pan/zoom (offset_y/scale_y only --
+                                     // x pan/zoom is shared via PlotGroup::x_view instead)
     Field<std::string> y_label{""};
     Field<uint32_t> revision{0};
 
@@ -365,6 +368,10 @@ class PlotGroup {
     Field<PlotGroupCursor> cursor{};
     Field<std::string> x_label{""};
 
+    PlotGroup() = default;
+    PlotGroup(PlotGroup&&) = delete;
+    PlotGroup& operator=(PlotGroup&&) = delete;
+
     // node_canvas() captures &panel by reference into the widget tree for the panel's
     // lifetime, so panels must never move once added -- panels_ stores unique_ptr so the
     // owning vector can grow (on later add_plot() calls) without invalidating references
@@ -383,14 +390,16 @@ class PlotGroup {
     {
         x_view.set(ViewTransform{});
         x_range.set(AxisRange{});
-        for (auto& p : panels_)
+        for (auto& p : panels_) {
             p->y_range.set(AxisRange{});
+            p->y_view.set(ViewTransform{});
+        }
     }
 
     void view(WidgetTree::ViewBuilder& vb)
     {
         for (auto& p : panels_) {
-            vb.canvas(*p).depends_on(x_range, x_view, cursor, p->y_range, p->revision)
+            vb.canvas(*p).depends_on(x_range, x_view, cursor, p->y_range, p->y_view, p->revision)
               .min_size(Height{120});
         }
     }
@@ -401,16 +410,40 @@ class PlotGroup {
 
 inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
 {
-    render_plot_panel(dl, bounds, node, group_->x_range, y_range, group_->x_view,
+    ViewTransform merged = group_->x_view.get();
+    auto yv = y_view.get();
+    merged.offset_y = yv.offset_y;
+    merged.scale_y = yv.scale_y;
+    Field<ViewTransform> merged_view{merged};
+
+    render_plot_panel(dl, bounds, node, group_->x_range, y_range, merged_view,
                       group_->cursor, std::span<const Series>(series_),
                       group_->x_label.get(), y_label.get(), draw_x_axis_);
 }
 
 inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
 {
-    route_plot_input(ev, nd, bounds, group_->x_range, y_range, group_->x_view,
+    ViewTransform merged = group_->x_view.get();
+    auto yv = y_view.get();
+    merged.offset_y = yv.offset_y;
+    merged.scale_y = yv.scale_y;
+    Field<ViewTransform> merged_view{merged};
+
+    route_plot_input(ev, nd, bounds, group_->x_range, y_range, merged_view,
                      group_->cursor, drag_mode, drag_start_pixel, drag_start_view,
                      std::span<const Series>(series_));
+
+    auto result = merged_view.get();
+
+    auto xr = group_->x_view.get();
+    xr.offset_x = result.offset_x;
+    xr.scale_x = result.scale_x;
+    group_->x_view.set(xr);
+
+    auto yr = y_view.get();
+    yr.offset_y = result.offset_y;
+    yr.scale_y = result.scale_y;
+    y_view.set(yr);
 }
 
 } // namespace prism::plot

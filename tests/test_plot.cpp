@@ -717,7 +717,7 @@ TEST_CASE("default_series_colors returns 8 distinct colors")
                    || colors[i].b != colors[j].b));
 }
 
-TEST_CASE("PlotGroup shares x pan across panels, keeps y independent")
+TEST_CASE("PlotGroup shares x pan/zoom across panels, keeps y pan/zoom independent per panel")
 {
     using namespace prism;
     using namespace prism::plot;
@@ -742,15 +742,58 @@ TEST_CASE("PlotGroup shares x pan across panels, keeps y independent")
                                std::span<const Series>{});
     Point center = map.plot_area.center();
 
+    // Diagonal drag on p1: moves both horizontally and vertically.
     InputEvent down = MouseButton{center, 1, true};
     p1.handle_canvas_input(down, node, bounds);
-    Point moved{X{center.x.raw() + 50.f}, center.y};
+    Point moved{X{center.x.raw() + 50.f}, Y{center.y.raw() + 30.f}};
     InputEvent drag = MouseMove{moved};
     p1.handle_canvas_input(drag, node, bounds);
+    InputEvent up = MouseButton{moved, 1, false};
+    p1.handle_canvas_input(up, node, bounds);
 
-    CHECK(group.x_view.get().offset_x != 0.0);
+    CHECK(group.x_view.get().offset_x != 0.0);   // shared x pan moved
+    CHECK(p1.y_view.get().offset_y != 0.0);      // p1's own y pan moved
+    CHECK(p2.y_view.get().offset_y == 0.0);      // p2's y pan untouched
+    CHECK(group.x_view.get().offset_y == 0.0);   // vertical delta never leaks into the shared field
     CHECK(p2.y_range.get().min == 0.0);
     CHECK(p2.y_range.get().max == 20.0);
+
+    // Scroll-zoom on p1, centered in the plot area (zooms both axes by design):
+    InputEvent scroll = MouseScroll{center, DX{0}, DY{3}};
+    p1.handle_canvas_input(scroll, node, bounds);
+
+    CHECK(group.x_view.get().scale_x > 1.0);     // shared x zoom applied
+    CHECK(p1.y_view.get().scale_y > 1.0);        // p1's own y zoom applied
+    CHECK(p2.y_view.get().scale_y == 1.0);       // p2's y zoom untouched
+}
+
+TEST_CASE("PlotGroup reset_view resets shared x-state and every panel's y-state")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotGroup group;
+    auto& p1 = group.add_plot("A");
+    auto& p2 = group.add_plot("B");
+
+    group.x_range.set({0.0, 10.0, false});
+    group.x_view.set(ViewTransform{1.0, 2.0, 3.0, 3.0});
+    p1.y_range.set({0.0, 10.0, false});
+    p1.y_view.set(ViewTransform{0.0, 5.0, 1.0, 2.0});
+    p2.y_range.set({0.0, 20.0, false});
+    p2.y_view.set(ViewTransform{0.0, 7.0, 1.0, 4.0});
+
+    group.reset_view();
+
+    CHECK(group.x_range.get().auto_fit);
+    CHECK(group.x_view.get().offset_x == 0.0);
+    CHECK(group.x_view.get().scale_x == 1.0);
+    CHECK(p1.y_range.get().auto_fit);
+    CHECK(p1.y_view.get().offset_y == 0.0);
+    CHECK(p1.y_view.get().scale_y == 1.0);
+    CHECK(p2.y_range.get().auto_fit);
+    CHECK(p2.y_view.get().offset_y == 0.0);
+    CHECK(p2.y_view.get().scale_y == 1.0);
 }
 
 TEST_CASE("PlotGroup cursor syncs data_x across panels, no data_y")

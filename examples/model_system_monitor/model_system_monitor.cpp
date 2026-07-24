@@ -68,9 +68,15 @@ struct SystemMonitor {
     }
 
     void seed_demo_data() {
-        ingest_system(SystemSample{.cpu_percent = 12.5f, .mem_used_mb = 4096.0,
-                                    .mem_total_mb = 16384.0, .net_rx_kbps = 128.0,
-                                    .net_tx_kbps = 32.0});
+        struct { float cpu; double mem; double net; } samples[] = {
+            {12.5f, 4096.0, 128.0}, {18.0f, 4200.0, 96.0},
+            {9.0f, 4150.0, 210.0}, {22.0f, 4300.0, 150.0},
+        };
+        for (auto& s : samples) {
+            ingest_system(SystemSample{.cpu_percent = s.cpu, .mem_used_mb = s.mem,
+                                        .mem_total_mb = 16384.0, .net_rx_kbps = s.net,
+                                        .net_tx_kbps = 32.0});
+        }
         std::vector<ProcessInfo> demo;
         demo.push_back(ProcessInfo{.pid = 1, .ppid = 0, .name = "init",
                                     .cpu_percent = 0.1f, .mem_percent = 0.5f});
