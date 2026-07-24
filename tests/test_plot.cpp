@@ -154,6 +154,29 @@ using namespace prism::app;
     CHECK(map.plot_area.extent.h.raw() < 300.f);
 }
 
+TEST_CASE("compute_mapping reclaims the bottom margin when draw_x_axis is false")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    Field<AxisRange> xr{{0.0, 10.0, false}};
+    Field<AxisRange> yr{{0.0, 10.0, false}};
+    Field<ViewTransform> vt{{}};
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+
+    auto map_with_axis = compute_mapping(bounds, xr, yr, vt, {}, true);
+    auto map_without_axis = compute_mapping(bounds, xr, yr, vt, {}, false);
+
+    // Suppressing the x-axis must shrink the reserved bottom margin down to the
+    // same size as the top margin (a symmetric, snug box), not leave the old
+    // tick-label-sized margin blank underneath an unlabeled plot.
+    CHECK(map_without_axis.plot_area.extent.h.raw() >
+          map_with_axis.plot_area.extent.h.raw());
+    CHECK(map_without_axis.plot_area.extent.h.raw() ==
+          doctest::Approx(map_with_axis.plot_area.extent.h.raw()
+                           + (margin_bottom.raw() - margin_top.raw())));
+}
+
 TEST_CASE("draw_background emits filled rect and border")
 {
     using namespace prism;

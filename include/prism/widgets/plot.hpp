@@ -82,7 +82,8 @@ inline PlotMapping compute_mapping(Rect bounds,
                                    const Field<AxisRange>& xr,
                                    const Field<AxisRange>& yr,
                                    const Field<ViewTransform>& vt,
-                                   std::span<const Series> series)
+                                   std::span<const Series> series,
+                                   bool draw_x_axis = true)
 {
     AxisRange eff_x = xr.get();
     AxisRange eff_y = yr.get();
@@ -94,11 +95,15 @@ inline PlotMapping compute_mapping(Rect bounds,
     eff_x = PlotMapping::apply_view(eff_x, v.offset_x, v.scale_x);
     eff_y = PlotMapping::apply_view(eff_y, v.offset_y, v.scale_y);
 
+    // With no x-axis to label (a stacked panel that isn't the group's bottom one),
+    // the tick-label-sized bottom margin would otherwise sit empty -- collapse it
+    // to match the top margin instead, so the plot's own box fills the canvas.
+    Height bottom_margin = draw_x_axis ? margin_bottom : margin_top;
     Rect plot_area{
         Point{bounds.origin.x + DX{margin_left.raw()},
               bounds.origin.y + DY{margin_top.raw()}},
         Size{bounds.extent.w - margin_left - margin_right,
-             bounds.extent.h - margin_top - margin_bottom},
+             bounds.extent.h - margin_top - bottom_margin},
     };
 
     return PlotMapping{eff_x, eff_y, plot_area};
@@ -113,7 +118,7 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
                        bool draw_x_axis)
 {
     auto& t = *node.theme;
-    auto map = compute_mapping(bounds, x_range, y_range, view, series);
+    auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
 
     draw_background(dl, map.plot_area, t);
     auto ticks = compute_ticks(map);
@@ -140,9 +145,10 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
                       Field<ViewTransform>& view, Field<C>& cursor,
                       DragMode& drag_mode, Point& drag_start_pixel,
                       ViewTransform& drag_start_view,
-                      std::span<const Series> series)
+                      std::span<const Series> series,
+                      bool draw_x_axis = true)
 {
-    auto map = compute_mapping(bounds, x_range, y_range, view, series);
+    auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
 
     auto freeze_auto_fit = [&] {
         auto xr = x_range.get();
@@ -216,7 +222,10 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
         Y py = ms->position.y;
 
         bool in_plot = map.plot_area.contains(ms->position);
-        bool in_x_axis = (px >= map.left() && px <= map.right()
+        // No visible x-axis strip to hover over when it's suppressed -- no dedicated
+        // x-only-zoom hotspot for a panel whose x-axis isn't drawn.
+        bool in_x_axis = draw_x_axis
+                          && (px >= map.left() && px <= map.right()
                           && py > map.bottom() && py <= map.bottom() + DY{margin_bottom.raw()});
         bool in_y_axis = (py >= map.top() && py <= map.bottom()
                           && px >= map.left() - DX{margin_left.raw()} && px < map.left());
@@ -431,7 +440,7 @@ inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd,
 
     route_plot_input(ev, nd, bounds, group_->x_range, y_range, merged_view,
                      group_->cursor, drag_mode, drag_start_pixel, drag_start_view,
-                     std::span<const Series>(series_));
+                     std::span<const Series>(series_), draw_x_axis_);
 
     auto result = merged_view.get();
 
