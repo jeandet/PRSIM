@@ -382,6 +382,99 @@ using namespace prism::app;
     CHECK(dl.size() == 0);
 }
 
+TEST_CASE("draw_vertical_cursor emits only a vertical line when visible")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    DrawList dl;
+    PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 10.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+
+    draw_vertical_cursor(dl, map, 5.0, true, t);
+    REQUIRE(dl.size() == 1);
+    CHECK(std::holds_alternative<Line>(dl.commands[0]));
+}
+
+TEST_CASE("draw_vertical_cursor emits nothing when not visible")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    DrawList dl;
+    PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 10.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+
+    draw_vertical_cursor(dl, map, 5.0, false, t);
+    CHECK(dl.size() == 0);
+}
+
+TEST_CASE("render_plot_panel with PlotGroupCursor draws no coordinate readout")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    Field<AxisRange> xr{{0.0, 10.0, false}};
+    Field<AxisRange> yr{{0.0, 10.0, false}};
+    Field<ViewTransform> vt{{}};
+    Field<PlotGroupCursor> cursor{{5.0, true}};
+
+    Series s(XYData{{0.0, 5.0, 10.0}, {0.0, 5.0, 10.0}}, SeriesStyle{});
+    std::array<Series, 1> arr = {std::move(s)};
+
+    DrawList dl;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    node.canvas_bounds = bounds;
+
+    render_plot_panel(dl, bounds, node, xr, yr, vt, cursor,
+                      std::span<const Series>(arr), "X", "Y", true);
+
+    int filled_rect_count = 0;
+    for (auto& cmd : dl.commands)
+        if (std::holds_alternative<FilledRect>(cmd)) ++filled_rect_count;
+    CHECK(filled_rect_count == 1);  // only the plot background -- no readout box behind it
+}
+
+TEST_CASE("route_plot_input with PlotGroupCursor sets data_x without data_y")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    Field<AxisRange> xr{{0.0, 10.0, false}};
+    Field<AxisRange> yr{{0.0, 10.0, false}};
+    Field<ViewTransform> vt{{}};
+    Field<PlotGroupCursor> cursor{{}};
+    DragMode drag_mode = DragMode::None;
+    Point drag_start_pixel{};
+    ViewTransform drag_start_view{};
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, xr, yr, vt, std::span<const Series>{});
+    Point center = map.plot_area.center();
+    InputEvent ev = MouseMove{center};
+
+    route_plot_input(ev, node, bounds, xr, yr, vt, cursor,
+                     drag_mode, drag_start_pixel, drag_start_view,
+                     std::span<const Series>{});
+
+    CHECK(cursor.get().visible);
+    CHECK(cursor.get().data_x == doctest::Approx(5.0));
+}
+
 TEST_CASE("PlotModel canvas produces draw commands")
 {
     using namespace prism;

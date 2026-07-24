@@ -139,6 +139,12 @@ concept PlotCursor = requires(C c) {
     { c.visible } -> std::convertible_to<bool>;
 };
 
+struct PlotGroupCursor {
+    double data_x = 0.0;
+    bool visible = false;
+    bool operator==(const PlotGroupCursor&) const = default;
+};
+
 inline void draw_background(DrawList& dl, Rect plot_area, const Theme& t)
 {
     dl.filled_rect(plot_area, t.canvas_bg);
