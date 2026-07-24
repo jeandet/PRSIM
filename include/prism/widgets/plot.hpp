@@ -4,6 +4,7 @@
 #include <prism/input/input_event.hpp>
 #include <prism/ui/widget_node.hpp>
 #include <prism/widgets/plot_render.hpp>
+#include <prism/app/widget_tree.hpp>
 #include <functional>
 #include <vector>
 #include <span>
@@ -15,6 +16,7 @@ using namespace prism::core;
 using namespace prism::render;
 using namespace prism::input;
 using namespace prism::ui;
+using namespace prism::app;
 
 template <typename T>
 concept PlotSource = requires(const T& src, size_t i) {
@@ -311,6 +313,103 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd,
 {
     route_plot_input(ev, nd, bounds, x_range, y_range, view, cursor,
                      drag_mode, drag_start_pixel, drag_start_view,
+                     std::span<const Series>(series_));
+}
+
+class PlotGroup;
+
+class PlotPanel {
+  public:
+    Field<AxisRange> y_range{};
+    Field<std::string> y_label{""};
+    Field<uint32_t> revision{0};
+
+    DragMode drag_mode = DragMode::None;
+    Point drag_start_pixel{};
+    ViewTransform drag_start_view{};
+
+    explicit PlotPanel(std::string label) : y_label(std::move(label)) {}
+
+    template <PlotSource S>
+    void add_series(S source, SeriesStyle style)
+    {
+        series_.emplace_back(std::move(source), style);
+    }
+
+    void add_series(std::vector<double> xs, std::vector<double> ys, SeriesStyle style)
+    {
+        add_series(XYData{std::move(xs), std::move(ys)}, style);
+    }
+
+    void clear_series() { series_.clear(); }
+    void notify() { revision.set(revision.get() + 1); }
+
+    // Fixed 3-arg signatures -- vb.canvas(panel) requires exactly `canvas(dl, r, n)` /
+    // `handle_canvas_input(ev, nd, r)` (see widget_node.hpp's node_canvas()), so the group's
+    // shared x-state can't be passed as a call parameter. PlotPanel reaches it through the
+    // `group_` back-pointer set by PlotGroup::add_plot() instead.
+    void canvas(DrawList& dl, Rect bounds, const WidgetNode& node);
+    void handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds);
+
+  private:
+    friend class PlotGroup;
+    PlotGroup* group_ = nullptr;   // set by PlotGroup::add_plot(); never null once added
+    bool draw_x_axis_ = false;     // true only for the group's current last panel
+    std::vector<Series> series_;
+};
+
+class PlotGroup {
+  public:
+    Field<AxisRange> x_range{};
+    Field<ViewTransform> x_view{};
+    Field<PlotGroupCursor> cursor{};
+    Field<std::string> x_label{""};
+
+    // node_canvas() captures &panel by reference into the widget tree for the panel's
+    // lifetime, so panels must never move once added -- panels_ stores unique_ptr so the
+    // owning vector can grow (on later add_plot() calls) without invalidating references
+    // returned by earlier add_plot() calls or the &panel captures inside the widget tree.
+    PlotPanel& add_plot(std::string y_label = "")
+    {
+        if (!panels_.empty())
+            panels_.back()->draw_x_axis_ = false;
+        panels_.push_back(std::make_unique<PlotPanel>(std::move(y_label)));
+        panels_.back()->group_ = this;
+        panels_.back()->draw_x_axis_ = true;
+        return *panels_.back();
+    }
+
+    void reset_view()
+    {
+        x_view.set(ViewTransform{});
+        x_range.set(AxisRange{});
+        for (auto& p : panels_)
+            p->y_range.set(AxisRange{});
+    }
+
+    void view(WidgetTree::ViewBuilder& vb)
+    {
+        for (auto& p : panels_) {
+            vb.canvas(*p).depends_on(x_range, x_view, cursor, p->y_range, p->revision)
+              .min_size(Height{120});
+        }
+    }
+
+  private:
+    std::vector<std::unique_ptr<PlotPanel>> panels_;
+};
+
+inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
+{
+    render_plot_panel(dl, bounds, node, group_->x_range, y_range, group_->x_view,
+                      group_->cursor, std::span<const Series>(series_),
+                      group_->x_label.get(), y_label.get(), draw_x_axis_);
+}
+
+inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
+{
+    route_plot_input(ev, nd, bounds, group_->x_range, y_range, group_->x_view,
+                     group_->cursor, drag_mode, drag_start_pixel, drag_start_view,
                      std::span<const Series>(series_));
 }
 

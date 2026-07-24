@@ -716,3 +716,129 @@ TEST_CASE("default_series_colors returns 8 distinct colors")
                    || colors[i].g != colors[j].g
                    || colors[i].b != colors[j].b));
 }
+
+TEST_CASE("PlotGroup shares x pan across panels, keeps y independent")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotGroup group;
+    auto& p1 = group.add_plot("A");
+    auto& p2 = group.add_plot("B");
+    p1.add_series(XYData{{0.0, 1.0, 2.0}, {0.0, 1.0, 0.0}}, SeriesStyle{});
+    p2.add_series(XYData{{0.0, 1.0, 2.0}, {0.0, 10.0, 0.0}}, SeriesStyle{});
+
+    group.x_range.set({0.0, 10.0, false});
+    p1.y_range.set({0.0, 10.0, false});
+    p2.y_range.set({0.0, 20.0, false});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, group.x_range, p1.y_range, group.x_view,
+                               std::span<const Series>{});
+    Point center = map.plot_area.center();
+
+    InputEvent down = MouseButton{center, 1, true};
+    p1.handle_canvas_input(down, node, bounds);
+    Point moved{X{center.x.raw() + 50.f}, center.y};
+    InputEvent drag = MouseMove{moved};
+    p1.handle_canvas_input(drag, node, bounds);
+
+    CHECK(group.x_view.get().offset_x != 0.0);
+    CHECK(p2.y_range.get().min == 0.0);
+    CHECK(p2.y_range.get().max == 20.0);
+}
+
+TEST_CASE("PlotGroup cursor syncs data_x across panels, no data_y")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotGroup group;
+    auto& p1 = group.add_plot("A");
+    group.add_plot("B");
+    group.x_range.set({0.0, 10.0, false});
+    p1.y_range.set({0.0, 10.0, false});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto map = compute_mapping(bounds, group.x_range, p1.y_range, group.x_view,
+                               std::span<const Series>{});
+    Point center = map.plot_area.center();
+    InputEvent ev = MouseMove{center};
+    p1.handle_canvas_input(ev, node, bounds);
+
+    CHECK(group.cursor.get().visible);
+    CHECK(group.cursor.get().data_x == doctest::Approx(5.0));
+}
+
+TEST_CASE("PlotGroup only the last-added panel draws the x-axis")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotGroup group;
+    auto& p1 = group.add_plot("A");
+    auto& p2 = group.add_plot("B");
+    group.x_range.set({0.0, 10.0, false});
+    p1.y_range.set({0.0, 10.0, false});
+    p2.y_range.set({0.0, 10.0, false});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    auto count_text = [](const DrawList& dl) {
+        int n = 0;
+        for (auto& cmd : dl.commands) if (std::holds_alternative<TextCmd>(cmd)) ++n;
+        return n;
+    };
+
+    DrawList dl1, dl2;
+    p1.canvas(dl1, bounds, node);
+    p2.canvas(dl2, bounds, node);
+    CHECK(count_text(dl2) > count_text(dl1));  // p2 (last) also has x-tick text
+
+    auto& p3 = group.add_plot("C");
+    p3.y_range.set({0.0, 10.0, false});
+    DrawList dl2_after, dl3;
+    p2.canvas(dl2_after, bounds, node);
+    p3.canvas(dl3, bounds, node);
+    CHECK(count_text(dl2_after) < count_text(dl2));  // p2 lost the x-axis to p3
+    CHECK(count_text(dl3) > count_text(dl2_after));
+}
+
+TEST_CASE("PlotPanel series management")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotGroup group;
+    auto& p = group.add_plot("A");
+    p.add_series(XYData{{1.0, 2.0}, {3.0, 4.0}}, SeriesStyle{});
+    auto r0 = p.revision.get();
+    p.notify();
+    CHECK(p.revision.get() == r0 + 1);
+
+    p.clear_series();
+    DrawList dl;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    p.canvas(dl, bounds, node);
+
+    bool has_polyline = false;
+    for (auto& cmd : dl.commands) if (std::holds_alternative<Polyline>(cmd)) has_polyline = true;
+    CHECK(!has_polyline);
+}
