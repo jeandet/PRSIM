@@ -141,7 +141,14 @@ concept PlotCursor = requires(C c) {
 
 struct PlotGroupCursor {
     double data_x = 0.0;
+    double data_y = 0.0;
     bool visible = false;
+    // Identifies which panel's own y-range `data_y` was computed against -- panels
+    // share this one cursor (for a synced vertical line), but a value tooltip is only
+    // meaningful on the panel that actually owns the reading. Set to the hovering
+    // PlotPanel's `this` pointer; render_plot_panel only draws the full readout when
+    // its own `self` matches.
+    const void* owner = nullptr;
     bool operator==(const PlotGroupCursor&) const = default;
 };
 
