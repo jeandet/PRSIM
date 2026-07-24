@@ -164,3 +164,21 @@ TEST_CASE("SceneSnapshot with z_order and overlay") {
     // Overlay should appear
     CHECK(svg.find("rgba(0,255,0,1)") != std::string::npos);
 }
+
+TEST_CASE("FilledPolygon emits one triangle per 3 consecutive strip points") {
+    prism::DrawList dl;
+    dl.filled_polygon({P(0, 0), P(10, 0), P(5, 10)}, prism::Color::rgba(0, 128, 0, 100));
+    auto svg = prism::to_svg(dl);
+    CHECK(svg.find("<polygon") != std::string::npos);
+    CHECK(svg.find("points=\"0,0 10,0 5,10\"") != std::string::npos);
+    CHECK(svg.find("fill=\"rgba(0,128,0,") != std::string::npos);
+}
+
+TEST_CASE("FilledPolygon strip of 4 points emits two triangles") {
+    prism::DrawList dl;
+    dl.filled_polygon({P(0, 0), P(0, 10), P(10, 0), P(10, 10)}, prism::Color::rgba(255, 0, 0));
+    auto svg = prism::to_svg(dl);
+    size_t count = 0, pos = 0;
+    while ((pos = svg.find("<polygon", pos)) != std::string::npos) { ++count; pos += 8; }
+    CHECK(count == 2);
+}

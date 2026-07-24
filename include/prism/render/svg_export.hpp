@@ -125,6 +125,16 @@ struct SvgEmitter {
         out << "/>\n";
     }
 
+    void emit(const FilledPolygon& c) {
+        for (std::size_t i = 0; i + 2 < c.points.size(); ++i) {
+            out << "<polygon points=\""
+                << fmt_float(c.points[i].x.raw()) << "," << fmt_float(c.points[i].y.raw()) << " "
+                << fmt_float(c.points[i + 1].x.raw()) << "," << fmt_float(c.points[i + 1].y.raw()) << " "
+                << fmt_float(c.points[i + 2].x.raw()) << "," << fmt_float(c.points[i + 2].y.raw())
+                << "\" fill=\"" << fmt_color(c.color) << "\"/>\n";
+        }
+    }
+
     void emit(const ClipPush& c) {
         int id = clip_id++;
         out << "<clipPath id=\"clip-" << id << "\">"

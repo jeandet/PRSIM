@@ -68,8 +68,15 @@ struct Circle {
     float thickness;  // 0 = filled, >0 = stroke only
 };
 
+struct FilledPolygon {
+    // Vertices in triangle-strip order: triangle i is (i, i+1, i+2) for every
+    // i in [0, points.size()-3] -- the same generic primitive as a GPU triangle strip.
+    std::vector<Point> points;
+    Color color;
+};
+
 using DrawCmd = std::variant<FilledRect, RectOutline, TextCmd, ClipPush, ClipPop,
-                             RoundedRect, Line, Polyline, Circle>;
+                             RoundedRect, Line, Polyline, Circle, FilledPolygon>;
 
 struct DrawList {
     std::vector<DrawCmd> commands;
@@ -101,6 +108,14 @@ struct DrawList {
         for (auto& p : pts)
             p = Point{p.x + o.dx, p.y + o.dy};
         commands.emplace_back(Polyline{std::move(pts), c, thickness});
+    }
+
+    void filled_polygon(std::vector<Point> pts, Color c)
+    {
+        auto o = current_offset();
+        for (auto& p : pts)
+            p = Point{p.x + o.dx, p.y + o.dy};
+        commands.emplace_back(FilledPolygon{std::move(pts), c});
     }
 
     void line(Point from, Point to, Color c, float thickness = 1.f)

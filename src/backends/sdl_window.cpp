@@ -409,6 +409,25 @@ void SdlWindow::render_cmd(const Circle& cmd) {
     }
 }
 
+void SdlWindow::render_cmd(const FilledPolygon& cmd) {
+    size_t n = cmd.points.size();
+    if (n < 3) return;
+    SDL_FColor col{cmd.color.r / 255.f, cmd.color.g / 255.f, cmd.color.b / 255.f, cmd.color.a / 255.f};
+    std::vector<SDL_Vertex> verts(n);
+    for (size_t i = 0; i < n; ++i)
+        verts[i] = SDL_Vertex{{cmd.points[i].x.raw(), cmd.points[i].y.raw()}, col, {0.f, 0.f}};
+
+    std::vector<int> indices;
+    indices.reserve((n - 2) * 3);
+    for (size_t i = 0; i + 2 < n; ++i) {
+        indices.push_back(static_cast<int>(i));
+        indices.push_back(static_cast<int>(i + 1));
+        indices.push_back(static_cast<int>(i + 2));
+    }
+    SDL_RenderGeometry(renderer_, nullptr, verts.data(), static_cast<int>(n),
+                      indices.data(), static_cast<int>(indices.size()));
+}
+
 bool SdlWindow::begin_resize(int mouse_x, int mouse_y) {
     if (decoration_ != DecorationMode::Custom || !sdl_window_) return false;
     int w, h;

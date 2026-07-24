@@ -317,3 +317,38 @@ TEST_CASE("bounding_box includes circle") {
     CHECK(bb.extent.w.raw() == 40.f);
     CHECK(bb.extent.h.raw() == 40.f);
 }
+
+TEST_CASE("DrawList filled_polygon command") {
+    prism::DrawList dl;
+    std::vector<prism::Point> pts = {P(0, 0), P(0, 10), P(10, 0), P(10, 10)};
+    dl.filled_polygon(pts, prism::Color::rgba(0, 128, 255));
+    REQUIRE(dl.size() == 1);
+    auto& fp = std::get<prism::FilledPolygon>(dl.commands[0]);
+    CHECK(fp.points.size() == 4);
+    CHECK(fp.points[2].x.raw() == 10.f);
+    CHECK(fp.color.b == 255);
+}
+
+TEST_CASE("clip_push offsets filled_polygon points") {
+    prism::DrawList dl;
+    dl.clip_push(P(5.f, 10.f), S(200.f, 200.f));
+    std::vector<prism::Point> pts = {P(0, 0), P(20, 30)};
+    dl.filled_polygon(pts, prism::Color::rgba(0, 0, 0));
+    dl.clip_pop();
+    auto& fp = std::get<prism::FilledPolygon>(dl.commands[1]);
+    CHECK(fp.points[0].x.raw() == 5.f);
+    CHECK(fp.points[0].y.raw() == 10.f);
+    CHECK(fp.points[1].x.raw() == 25.f);
+    CHECK(fp.points[1].y.raw() == 40.f);
+}
+
+TEST_CASE("bounding_box includes all filled_polygon points") {
+    prism::DrawList dl;
+    std::vector<prism::Point> pts = {P(10, 50), P(90, 10), P(50, 80)};
+    dl.filled_polygon(pts, prism::Color::rgba(0, 0, 0));
+    auto bb = dl.bounding_box();
+    CHECK(bb.origin.x.raw() == 10.f);
+    CHECK(bb.origin.y.raw() == 10.f);
+    CHECK(bb.extent.w.raw() == 80.f);
+    CHECK(bb.extent.h.raw() == 70.f);
+}

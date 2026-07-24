@@ -96,6 +96,7 @@ private:
     void render_cmd(const Line& cmd);
     void render_cmd(const Polyline& cmd);
     void render_cmd(const Circle& cmd);
+    void render_cmd(const FilledPolygon& cmd);
 };
 
 } // namespace prism::backends
