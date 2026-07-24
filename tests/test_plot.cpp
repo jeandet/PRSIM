@@ -233,6 +233,45 @@ using namespace prism::app;
     CHECK(poly.points.size() == 3);
 }
 
+TEST_CASE("draw_series emits a filled polygon under the curve when fill is set")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    DrawList dl;
+    PlotMapping map{
+        .x_range = {0.0, 2.0},
+        .y_range = {-1.0, 4.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+
+    Series s(XYData{{0.0, 1.0, 2.0}, {0.0, 2.0, 4.0}},
+             SeriesStyle{Color::rgba(255, 0, 0), 2.f, /*fill=*/true, /*baseline=*/0.0});
+    std::array<Series, 1> arr = {std::move(s)};
+
+    draw_series(dl, map, arr);
+    REQUIRE(dl.size() == 2);
+    CHECK(std::holds_alternative<FilledPolygon>(dl.commands[0]));
+    CHECK(std::holds_alternative<Polyline>(dl.commands[1]));
+
+    auto& fp = std::get<FilledPolygon>(dl.commands[0]);
+    CHECK(fp.points.size() == 6);  // 3 data points x (curve, baseline)
+
+    // First strip pair: curve point at x=0,y=0 and its baseline projection (x=0, y=baseline=0)
+    auto expected_curve0 = map.to_pixel(0.0, 0.0);
+    auto expected_base0 = map.to_pixel(0.0, 0.0);
+    CHECK(fp.points[0].x.raw() == doctest::Approx(expected_curve0.x.raw()));
+    CHECK(fp.points[0].y.raw() == doctest::Approx(expected_curve0.y.raw()));
+    CHECK(fp.points[1].y.raw() == doctest::Approx(expected_base0.y.raw()));
+
+    // Series without fill emits only the Polyline
+    DrawList dl2;
+    Series s2(XYData{{0.0, 1.0}, {0.0, 1.0}}, SeriesStyle{});
+    std::array<Series, 1> arr2 = {std::move(s2)};
+    draw_series(dl2, map, arr2);
+    CHECK(dl2.size() == 1);
+    CHECK(std::holds_alternative<Polyline>(dl2.commands[0]));
+}
+
 TEST_CASE("draw_cursor emits crosshair when visible")
 {
     using namespace prism;

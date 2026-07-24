@@ -202,6 +202,18 @@ void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series
 {
     for (auto& s : series) {
         if (s.size() < 2) continue;
+
+        if (s.style().fill) {
+            std::vector<Point> strip;
+            strip.reserve(s.size() * 2);
+            for (size_t i = 0; i < s.size(); ++i) {
+                strip.push_back(map.to_pixel(s.x(i), s.y(i)));
+                strip.push_back(map.to_pixel(s.x(i), s.style().baseline));
+            }
+            Color c = s.style().color;
+            dl.filled_polygon(std::move(strip), Color::rgba(c.r, c.g, c.b, 40));
+        }
+
         std::vector<Point> pts;
         pts.reserve(s.size());
         for (size_t i = 0; i < s.size(); ++i)

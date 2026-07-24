@@ -34,6 +34,8 @@ struct XYData {
 struct SeriesStyle {
     Color color = Color::rgba(0, 140, 200);
     float thickness = 2.f;
+    bool fill = false;
+    double baseline = 0.0;
 };
 
 class Series {
