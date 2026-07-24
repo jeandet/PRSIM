@@ -102,6 +102,150 @@ inline PlotMapping compute_mapping(Rect bounds,
     return PlotMapping{eff_x, eff_y, plot_area};
 }
 
+template <PlotCursor C>
+void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
+                       const Field<AxisRange>& x_range, const Field<AxisRange>& y_range,
+                       const Field<ViewTransform>& view, const Field<C>& cursor,
+                       std::span<const Series> series,
+                       const std::string& x_label, const std::string& y_label,
+                       bool draw_x_axis)
+{
+    auto& t = *node.theme;
+    auto map = compute_mapping(bounds, x_range, y_range, view, series);
+
+    draw_background(dl, map.plot_area, t);
+    auto ticks = compute_ticks(map);
+
+    // Inside clip_push, coordinates are local (origin = {0,0})
+    PlotMapping local_map = map;
+    local_map.plot_area.origin = Point{X{0}, Y{0}};
+
+    dl.clip_push(map.plot_area.origin, map.plot_area.extent);
+    draw_grid_lines(dl, local_map, ticks, t);
+    draw_series(dl, local_map, series);
+    if constexpr (requires (C c) { c.data_y; })
+        draw_cursor(dl, local_map, cursor.get(), t);
+    else
+        draw_vertical_cursor(dl, local_map, cursor.get().data_x, cursor.get().visible, t);
+    dl.clip_pop();
+    draw_tick_labels(dl, map, ticks, t, draw_x_axis);
+    draw_axes_labels(dl, map, x_label, y_label, t, draw_x_axis);
+}
+
+template <PlotCursor C>
+void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
+                      Field<AxisRange>& x_range, Field<AxisRange>& y_range,
+                      Field<ViewTransform>& view, Field<C>& cursor,
+                      DragMode& drag_mode, Point& drag_start_pixel,
+                      ViewTransform& drag_start_view,
+                      std::span<const Series> series)
+{
+    auto map = compute_mapping(bounds, x_range, y_range, view, series);
+
+    auto freeze_auto_fit = [&] {
+        auto xr = x_range.get();
+        auto yr = y_range.get();
+        if (xr.auto_fit) {
+            xr = auto_fit_range(series, Axis::X);
+            xr.auto_fit = false;
+            x_range.set(xr);
+        }
+        if (yr.auto_fit) {
+            yr = auto_fit_range(series, Axis::Y);
+            yr.auto_fit = false;
+            y_range.set(yr);
+        }
+    };
+
+    if (auto* mm = std::get_if<MouseMove>(&ev)) {
+        if (drag_mode == DragMode::Pan) {
+            float dx_px = mm->position.x.raw() - drag_start_pixel.x.raw();
+            float dy_px = mm->position.y.raw() - drag_start_pixel.y.raw();
+
+            double data_dx = dx_px / map.plot_area.extent.w.raw()
+                             * (map.x_range.max - map.x_range.min);
+            double data_dy = -(dy_px / map.plot_area.extent.h.raw()
+                               * (map.y_range.max - map.y_range.min));
+
+            auto v = drag_start_view;
+            v.offset_x -= data_dx;
+            v.offset_y -= data_dy;
+            view.set(v);
+        }
+
+        if (map.plot_area.contains(mm->position)) {
+            auto [dx, dy] = map.to_data(mm->position);
+            if constexpr (requires (C c) { c.data_y; })
+                cursor.set(C{dx, dy, true});
+            else
+                cursor.set(C{dx, true});
+        } else {
+            auto c = cursor.get();
+            if (c.visible) {
+                if constexpr (requires (C cc) { cc.data_y; })
+                    cursor.set(C{c.data_x, c.data_y, false});
+                else
+                    cursor.set(C{c.data_x, false});
+            }
+        }
+
+    } else if (auto* mb = std::get_if<MouseButton>(&ev)) {
+        if (mb->button == buttons::left) {
+            if (mb->pressed) {
+                drag_mode = DragMode::Pan;
+                drag_start_pixel = mb->position;
+                drag_start_view = view.get();
+
+                freeze_auto_fit();
+            } else {
+                drag_mode = DragMode::None;
+            }
+        } else if (mb->button == buttons::right && mb->pressed) {
+            if (map.plot_area.contains(mb->position)) {
+                x_range.set(AxisRange{});
+                y_range.set(AxisRange{});
+                view.set(ViewTransform{});
+            }
+        }
+
+    } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
+        X px = ms->position.x;
+        Y py = ms->position.y;
+
+        bool in_plot = map.plot_area.contains(ms->position);
+        bool in_x_axis = (px >= map.left() && px <= map.right()
+                          && py > map.bottom() && py <= map.bottom() + DY{margin_bottom.raw()});
+        bool in_y_axis = (py >= map.top() && py <= map.bottom()
+                          && px >= map.left() - DX{margin_left.raw()} && px < map.left());
+
+        if (!in_plot && !in_x_axis && !in_y_axis) return;
+
+        freeze_auto_fit();
+
+        double factor = std::pow(zoom_base, ms->dy.raw());
+        Point clamp_pt{std::clamp(px, map.left(), map.right()),
+                       std::clamp(py, map.top(), map.bottom())};
+        auto [data_x, data_y] = map.to_data(clamp_pt);
+
+        auto zoom_axis = [factor](double& scale, double& offset,
+                                  double data_anchor, AxisRange base) {
+            double old = scale;
+            scale *= factor;
+            double center = (base.min + base.max) / 2.0;
+            offset = data_anchor - center
+                     + (center + offset - data_anchor) * old / scale;
+        };
+
+        auto v = view.get();
+        if (in_plot || in_x_axis)
+            zoom_axis(v.scale_x, v.offset_x, data_x, x_range.get());
+        if (in_plot || in_y_axis)
+            zoom_axis(v.scale_y, v.offset_y, data_y, y_range.get());
+
+        view.set(v);
+    }
+}
+
 struct PlotModel {
     // Reactive state
     Field<AxisRange> x_range{};
@@ -153,24 +297,8 @@ struct PlotModel {
     // Canvas interface
     void canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
     {
-        auto& t = *node.theme;
-        auto map = compute_mapping(bounds, x_range, y_range, view,
-                                   std::span<const Series>(series_));
-
-        draw_background(dl, map.plot_area, t);
-        auto ticks = compute_ticks(map);
-
-        // Inside clip_push, coordinates are local (origin = {0,0})
-        PlotMapping local_map = map;
-        local_map.plot_area.origin = Point{X{0}, Y{0}};
-
-        dl.clip_push(map.plot_area.origin, map.plot_area.extent);
-        draw_grid_lines(dl, local_map, ticks, t);
-        draw_series(dl, local_map, std::span<const Series>(series_));
-        draw_cursor(dl, local_map, cursor.get(), t);
-        dl.clip_pop();
-        draw_tick_labels(dl, map, ticks, t);
-        draw_axes_labels(dl, map, x_label.get(), y_label.get(), t);
+        render_plot_panel(dl, bounds, node, x_range, y_range, view, cursor,
+                          std::span<const Series>(series_), x_label.get(), y_label.get(), true);
     }
 
     void handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds);
@@ -179,102 +307,11 @@ struct PlotModel {
     std::vector<Series> series_;
 };
 
-inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds)
+inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
 {
-    auto series_span = std::span<const Series>(series_);
-    auto map = compute_mapping(bounds, x_range, y_range, view, series_span);
-
-    auto freeze_auto_fit = [&] {
-        auto xr = x_range.get();
-        auto yr = y_range.get();
-        if (xr.auto_fit) {
-            xr = auto_fit_range(series_span, Axis::X);
-            xr.auto_fit = false;
-            x_range.set(xr);
-        }
-        if (yr.auto_fit) {
-            yr = auto_fit_range(series_span, Axis::Y);
-            yr.auto_fit = false;
-            y_range.set(yr);
-        }
-    };
-
-    if (auto* mm = std::get_if<MouseMove>(&ev)) {
-        if (drag_mode == DragMode::Pan) {
-            float dx_px = mm->position.x.raw() - drag_start_pixel.x.raw();
-            float dy_px = mm->position.y.raw() - drag_start_pixel.y.raw();
-
-            double data_dx = dx_px / map.plot_area.extent.w.raw()
-                             * (map.x_range.max - map.x_range.min);
-            double data_dy = -(dy_px / map.plot_area.extent.h.raw()
-                               * (map.y_range.max - map.y_range.min));
-
-            auto v = drag_start_view;
-            v.offset_x -= data_dx;
-            v.offset_y -= data_dy;
-            view.set(v);
-        }
-
-        if (map.plot_area.contains(mm->position)) {
-            auto [dx, dy] = map.to_data(mm->position);
-            cursor.set(CursorState{dx, dy, true});
-        } else {
-            auto c = cursor.get();
-            if (c.visible) cursor.set(CursorState{c.data_x, c.data_y, false});
-        }
-
-    } else if (auto* mb = std::get_if<MouseButton>(&ev)) {
-        if (mb->button == buttons::left) {
-            if (mb->pressed) {
-                drag_mode = DragMode::Pan;
-                drag_start_pixel = mb->position;
-                drag_start_view = view.get();
-
-                freeze_auto_fit();
-            } else {
-                drag_mode = DragMode::None;
-            }
-        } else if (mb->button == buttons::right && mb->pressed) {
-            if (map.plot_area.contains(mb->position))
-                reset_view();
-        }
-
-    } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
-        X px = ms->position.x;
-        Y py = ms->position.y;
-
-        bool in_plot = map.plot_area.contains(ms->position);
-        bool in_x_axis = (px >= map.left() && px <= map.right()
-                          && py > map.bottom() && py <= map.bottom() + DY{margin_bottom.raw()});
-        bool in_y_axis = (py >= map.top() && py <= map.bottom()
-                          && px >= map.left() - DX{margin_left.raw()} && px < map.left());
-
-        if (!in_plot && !in_x_axis && !in_y_axis) return;
-
-        freeze_auto_fit();
-
-        double factor = std::pow(zoom_base, ms->dy.raw());
-        Point clamp_pt{std::clamp(px, map.left(), map.right()),
-                       std::clamp(py, map.top(), map.bottom())};
-        auto [data_x, data_y] = map.to_data(clamp_pt);
-
-        auto zoom_axis = [factor](double& scale, double& offset,
-                                  double data_anchor, AxisRange base) {
-            double old = scale;
-            scale *= factor;
-            double center = (base.min + base.max) / 2.0;
-            offset = data_anchor - center
-                     + (center + offset - data_anchor) * old / scale;
-        };
-
-        auto v = view.get();
-        if (in_plot || in_x_axis)
-            zoom_axis(v.scale_x, v.offset_x, data_x, x_range.get());
-        if (in_plot || in_y_axis)
-            zoom_axis(v.scale_y, v.offset_y, data_y, y_range.get());
-
-        view.set(v);
-    }
+    route_plot_input(ev, nd, bounds, x_range, y_range, view, cursor,
+                     drag_mode, drag_start_pixel, drag_start_view,
+                     std::span<const Series>(series_));
 }
 
 } // namespace prism::plot

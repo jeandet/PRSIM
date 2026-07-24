@@ -133,6 +133,12 @@ struct CursorState {
     bool operator==(const CursorState&) const = default;
 };
 
+template <typename C>
+concept PlotCursor = requires(C c) {
+    { c.data_x } -> std::convertible_to<double>;
+    { c.visible } -> std::convertible_to<bool>;
+};
+
 inline void draw_background(DrawList& dl, Rect plot_area, const Theme& t)
 {
     dl.filled_rect(plot_area, t.canvas_bg);
@@ -170,18 +176,21 @@ inline void draw_grid_lines(DrawList& dl, const PlotMapping& map,
 }
 
 inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
-                             const TickArrays& ticks, const Theme& t)
+                             const TickArrays& ticks, const Theme& t,
+                             bool draw_x_axis = true)
 {
     Width cw = char_width(tick_font_size);
 
-    for (double tx : ticks.x) {
-        X x = map.to_pixel(tx, 0.0).x;
-        if (x < map.left() || x > map.right()) continue;
-        dl.line(Point{x, map.bottom()},
-                Point{x, map.bottom() + DY{tick_len}}, t.border, 1.f);
-        dl.text(fmt::format("{:.6g}", tx),
-                Point{x - DX{15.f}, map.bottom() + DY{tick_len + 2.f}},
-                tick_font_size, t.text_muted);
+    if (draw_x_axis) {
+        for (double tx : ticks.x) {
+            X x = map.to_pixel(tx, 0.0).x;
+            if (x < map.left() || x > map.right()) continue;
+            dl.line(Point{x, map.bottom()},
+                    Point{x, map.bottom() + DY{tick_len}}, t.border, 1.f);
+            dl.text(fmt::format("{:.6g}", tx),
+                    Point{x - DX{15.f}, map.bottom() + DY{tick_len + 2.f}},
+                    tick_font_size, t.text_muted);
+        }
     }
 
     for (double ty : ticks.y) {
@@ -245,15 +254,24 @@ inline void draw_cursor(DrawList& dl, const PlotMapping& map,
     dl.text(std::move(label), Point{tx, ty}, label_font_size, t.text);
 }
 
+inline void draw_vertical_cursor(DrawList& dl, const PlotMapping& map,
+                                 double data_x, bool visible, const Theme& t)
+{
+    if (!visible) return;
+    auto px = map.to_pixel(data_x, 0.0);
+    Color crosshair_color = Color::rgba(t.text_muted.r, t.text_muted.g, t.text_muted.b, 80);
+    dl.line(Point{px.x, map.top()}, Point{px.x, map.bottom()}, crosshair_color, 1.f);
+}
+
 inline void draw_axes_labels(DrawList& dl, const PlotMapping& map,
                              const std::string& x_label, const std::string& y_label,
-                             const Theme& t)
+                             const Theme& t, bool draw_x_axis = true)
 {
     // X+X has no defined result (adding two absolute positions is meaningless),
     // so the midpoint is computed via the algebraically valid a + (b-a)/2 form.
     X cx = map.left() + (map.right() - map.left()) / 2.f;
 
-    if (!x_label.empty())
+    if (draw_x_axis && !x_label.empty())
         dl.text(x_label, Point{cx - DX{30.f}, map.bottom() + DY{18.f}}, label_font_size, t.text);
 
     if (!y_label.empty()) {

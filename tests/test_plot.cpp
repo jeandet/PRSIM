@@ -205,6 +205,50 @@ using namespace prism::app;
     CHECK(has_text);
 }
 
+TEST_CASE("draw_tick_labels suppresses x-axis output when draw_x_axis is false")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 100.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+    auto ticks = compute_ticks(map);
+
+    DrawList with_x;
+    draw_tick_labels(with_x, map, ticks, t);
+    DrawList without_x;
+    draw_tick_labels(without_x, map, ticks, t, false);
+
+    CHECK(without_x.size() < with_x.size());
+
+    bool has_y_text = false;
+    for (auto& cmd : without_x.commands)
+        if (std::holds_alternative<TextCmd>(cmd)) has_y_text = true;
+    CHECK(has_y_text);
+}
+
+TEST_CASE("draw_axes_labels suppresses x_label when draw_x_axis is false")
+{
+    using namespace prism;
+    using namespace prism::plot;
+    PlotMapping map{
+        .x_range = {0.0, 10.0},
+        .y_range = {0.0, 100.0},
+        .plot_area = Rect{Point{X{60}, Y{10}}, Size{Width{300}, Height{200}}},
+    };
+    Theme t = default_theme();
+
+    DrawList dl;
+    draw_axes_labels(dl, map, "Time", "Value", t, false);
+
+    REQUIRE(dl.size() == 1);
+    auto& txt = std::get<TextCmd>(dl.commands[0]);
+    CHECK(txt.angle == 90.f);  // only the rotated y_label remains; x_label suppressed
+}
+
 TEST_CASE("draw_series emits polylines for each series")
 {
     using namespace prism;
