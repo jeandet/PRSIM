@@ -20,16 +20,6 @@
 <line x1="60" y1="10" x2="60" y2="75" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <line x1="60" y1="75" x2="890" y2="75" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 </g>
-<line x1="173.182" y1="75" x2="173.182" y2="80" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="158.182" y="82" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0.4</text>
-<line x1="324.091" y1="75" x2="324.091" y2="80" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="309.091" y="82" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0.2</text>
-<line x1="475" y1="75" x2="475" y2="80" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="460" y="82" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0</text>
-<line x1="625.909" y1="75" x2="625.909" y2="80" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="610.909" y="82" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0.2</text>
-<line x1="776.818" y1="75" x2="776.818" y2="80" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="761.818" y="82" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0.4</text>
 <line x1="55" y1="72.0455" x2="60" y2="72.0455" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <text x="39.8" y="66.0455" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">12</text>
 <line x1="55" y1="60.2273" x2="60" y2="60.2273" stroke="rgba(90,90,105,1)" stroke-width="1"/>
@@ -42,6 +32,7 @@
 <text x="26.6" y="18.7727" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">12.8</text>
 <line x1="55" y1="12.9545" x2="60" y2="12.9545" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <text x="39.8" y="6.95455" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">13</text>
+<text x="10" y="42.5" font-family="monospace" font-size="12" fill="rgba(220,220,220,1)" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 10 42.5)">CPU %</text>
 </g>
 <clipPath id="clip-2"><rect x="0" y="120" width="900" height="120"/></clipPath>
 <g clip-path="url(#clip-2)">
@@ -62,16 +53,6 @@
 <line x1="60" y1="130" x2="60" y2="195" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <line x1="60" y1="195" x2="890" y2="195" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 </g>
-<line x1="173.182" y1="195" x2="173.182" y2="200" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="158.182" y="202" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0.4</text>
-<line x1="324.091" y1="195" x2="324.091" y2="200" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="309.091" y="202" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0.2</text>
-<line x1="475" y1="195" x2="475" y2="200" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="460" y="202" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0</text>
-<line x1="625.909" y1="195" x2="625.909" y2="200" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="610.909" y="202" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0.2</text>
-<line x1="776.818" y1="195" x2="776.818" y2="200" stroke="rgba(90,90,105,1)" stroke-width="1"/>
-<text x="761.818" y="202" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0.4</text>
 <line x1="55" y1="186.136" x2="60" y2="186.136" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <text x="13.4" y="180.136" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">4095.6</text>
 <line x1="55" y1="174.318" x2="60" y2="174.318" stroke="rgba(90,90,105,1)" stroke-width="1"/>
@@ -82,6 +63,7 @@
 <text x="13.4" y="144.682" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">4096.2</text>
 <line x1="55" y1="138.864" x2="60" y2="138.864" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <text x="13.4" y="132.864" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">4096.4</text>
+<text x="10" y="162.5" font-family="monospace" font-size="12" fill="rgba(220,220,220,1)" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 10 162.5)">Mem (MB)</text>
 </g>
 <clipPath id="clip-4"><rect x="0" y="240" width="900" height="120"/></clipPath>
 <g clip-path="url(#clip-4)">
@@ -122,6 +104,7 @@
 <text x="20" y="264.682" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">128.2</text>
 <line x1="55" y1="258.864" x2="60" y2="258.864" stroke="rgba(90,90,105,1)" stroke-width="1"/>
 <text x="20" y="252.864" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">128.4</text>
+<text x="10" y="282.5" font-family="monospace" font-size="12" fill="rgba(220,220,220,1)" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 10 282.5)">Net (KB/s)</text>
 </g>
 <clipPath id="clip-6"><rect x="0" y="360" width="900" height="6"/></clipPath>
 <g clip-path="url(#clip-6)">

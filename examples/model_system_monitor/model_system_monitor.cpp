@@ -28,9 +28,10 @@ struct SystemMonitor {
     History mem_history;
     History net_history;
 
-    prism::plot::PlotModel cpu_plot;
-    prism::plot::PlotModel mem_plot;
-    prism::plot::PlotModel net_plot;
+    prism::plot::PlotGroup plot_group;
+    prism::plot::PlotPanel* cpu_plot = &plot_group.add_plot("CPU %");
+    prism::plot::PlotPanel* mem_plot = &plot_group.add_plot("Mem (MB)");
+    prism::plot::PlotPanel* net_plot = &plot_group.add_plot("Net (KB/s)");
 
     prism::Field<SortKey> sort_key{SortKey::CpuPercent};
     prism::List<ProcessInfo> table_rows;
@@ -40,14 +41,14 @@ struct SystemMonitor {
 
     prism::Field<float> heartbeat_phase{0.f};
 
-    static void rebuild_plot(prism::plot::PlotModel& plot, const History& h) {
+    static void rebuild_plot(prism::plot::PlotPanel& plot, const History& h, bool fill = false) {
         std::vector<double> xs(h.values.size());
         std::vector<double> ys(h.values.begin(), h.values.end());
         for (size_t i = 0; i < xs.size(); ++i) xs[i] = static_cast<double>(i);
         auto colors = prism::plot::default_series_colors(prism::default_theme());
         plot.clear_series();
         plot.add_series(prism::plot::XYData{std::move(xs), std::move(ys)},
-                        prism::plot::SeriesStyle{colors[0], 2.f});
+                        prism::plot::SeriesStyle{colors[0], 2.f, fill, 0.0});
         plot.notify();
     }
 
@@ -55,9 +56,9 @@ struct SystemMonitor {
         cpu_history.push(s.cpu_percent);
         mem_history.push(static_cast<float>(s.mem_used_mb));
         net_history.push(static_cast<float>(s.net_rx_kbps));
-        rebuild_plot(cpu_plot, cpu_history);
-        rebuild_plot(mem_plot, mem_history);
-        rebuild_plot(net_plot, net_history);
+        rebuild_plot(*cpu_plot, cpu_history, /*fill=*/true);
+        rebuild_plot(*mem_plot, mem_history);
+        rebuild_plot(*net_plot, net_history);
     }
 
     void ingest_processes(const std::vector<ProcessInfo>& processes) {
@@ -93,18 +94,7 @@ struct SystemMonitor {
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.vstack([&] {
-            vb.canvas(cpu_plot)
-                .depends_on(cpu_plot.x_range, cpu_plot.y_range, cpu_plot.view,
-                            cpu_plot.cursor, cpu_plot.revision)
-                .min_size(prism::Height{120});
-            vb.canvas(mem_plot)
-                .depends_on(mem_plot.x_range, mem_plot.y_range, mem_plot.view,
-                            mem_plot.cursor, mem_plot.revision)
-                .min_size(prism::Height{120});
-            vb.canvas(net_plot)
-                .depends_on(net_plot.x_range, net_plot.y_range, net_plot.view,
-                            net_plot.cursor, net_plot.revision)
-                .min_size(prism::Height{120});
+            plot_group.view(vb);
             vb.handle();
             vb.widget(sort_key);
             vb.tabs(tabs, [&] {
