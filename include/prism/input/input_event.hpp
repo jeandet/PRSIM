@@ -41,6 +41,7 @@ namespace keys {
     inline constexpr int32_t page_up   = 0x4000'004B;  // matches SDLK_PAGEUP
     inline constexpr int32_t page_down = 0x4000'004E;  // matches SDLK_PAGEDOWN
     inline constexpr int32_t i         = 0x69;         // matches SDLK_I
+    inline constexpr int32_t m         = 0x6D;         // matches SDLK_M
 }
 
 namespace mods {

@@ -786,6 +786,52 @@ using namespace prism::app;
     CHECK(plot.view.get().scale_x == 1.0);
 }
 
+TEST_CASE("PlotModel 'm' key resets view like right-click does")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.y_range.set({0.0, 10.0, false});
+    plot.view.set(ViewTransform{1.0, 2.0, 2.0, 2.0});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    InputEvent ev = KeyPress{keys::m, 0};
+    plot.handle_canvas_input(ev, node, bounds);
+
+    CHECK(plot.x_range.get().auto_fit);
+    CHECK(plot.y_range.get().auto_fit);
+    CHECK(plot.view.get().scale_x == 1.0);
+}
+
+TEST_CASE("PlotModel ignores keys other than 'm'")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotModel plot;
+    plot.x_range.set({0.0, 10.0, false});
+    plot.view.set(ViewTransform{1.0, 2.0, 2.0, 2.0});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    InputEvent ev = KeyPress{keys::i, 0};
+    plot.handle_canvas_input(ev, node, bounds);
+
+    CHECK_FALSE(plot.x_range.get().auto_fit);
+    CHECK(plot.view.get().scale_x == 2.0);
+}
+
 TEST_CASE("default_series_colors returns 8 distinct colors")
 {
     auto colors = prism::plot::default_series_colors(prism::default_theme());
@@ -877,6 +923,41 @@ TEST_CASE("PlotGroup reset_view resets shared x-state and every panel's y-state"
     CHECK(p1.y_view.get().scale_y == 1.0);
     CHECK(p2.y_range.get().auto_fit);
     CHECK(p2.y_view.get().offset_y == 0.0);
+    CHECK(p2.y_view.get().scale_y == 1.0);
+}
+
+TEST_CASE("PlotGroup 'm' key on one panel resets the whole group, not just that panel")
+{
+    using namespace prism;
+    using namespace prism::plot;
+
+    PlotGroup group;
+    auto& p1 = group.add_plot("A");
+    auto& p2 = group.add_plot("B");
+
+    group.x_range.set({0.0, 10.0, false});
+    group.x_view.set(ViewTransform{1.0, 2.0, 3.0, 3.0});
+    p1.y_range.set({0.0, 10.0, false});
+    p1.y_view.set(ViewTransform{0.0, 5.0, 1.0, 2.0});
+    p2.y_range.set({0.0, 20.0, false});
+    p2.y_view.set(ViewTransform{0.0, 7.0, 1.0, 4.0});
+
+    Theme t = default_theme();
+    WidgetNode node;
+    node.theme = &t;
+    Rect bounds{Point{X{0}, Y{0}}, Size{Width{400}, Height{300}}};
+    node.canvas_bounds = bounds;
+
+    // The shortcut reaches only p1 (the panel that has focus) -- p2 never receives this
+    // KeyPress at all, same one-widget dispatch as PlotGroup's mouse-cursor tests above.
+    InputEvent ev = KeyPress{keys::m, 0};
+    p1.handle_canvas_input(ev, node, bounds);
+
+    CHECK(group.x_range.get().auto_fit);
+    CHECK(group.x_view.get().scale_x == 1.0);
+    CHECK(p1.y_range.get().auto_fit);
+    CHECK(p1.y_view.get().scale_y == 1.0);
+    CHECK(p2.y_range.get().auto_fit);   // p2 reset too, even though it got no event
     CHECK(p2.y_view.get().scale_y == 1.0);
 }
 

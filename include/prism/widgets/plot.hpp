@@ -155,9 +155,21 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
                       DragMode& drag_mode, Point& drag_start_pixel,
                       ViewTransform& drag_start_view,
                       std::span<const Series> series,
-                      bool draw_x_axis = true)
+                      bool draw_x_axis = true,
+                      const std::function<void()>& on_reset_view = {})
 {
     auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
+
+    // A PlotPanel needs to reset every sibling panel in its PlotGroup (shared x-axis,
+    // per-panel y-axes), not just the fields this call was handed -- on_reset_view lets
+    // the caller supply that wider reset; PlotModel (a single, ungrouped plot) has
+    // nothing wider to reset, so it leaves on_reset_view unset and falls back here.
+    auto reset_view = [&] {
+        if (on_reset_view) { on_reset_view(); return; }
+        view.set(ViewTransform{});
+        x_range.set(AxisRange{});
+        y_range.set(AxisRange{});
+    };
 
     auto freeze_auto_fit = [&] {
         auto xr = x_range.get();
@@ -219,11 +231,8 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
                 drag_mode = DragMode::None;
             }
         } else if (mb->button == buttons::right && mb->pressed) {
-            if (map.plot_area.contains(mb->position)) {
-                view.set(ViewTransform{});
-                x_range.set(AxisRange{});
-                y_range.set(AxisRange{});
-            }
+            if (map.plot_area.contains(mb->position))
+                reset_view();
         }
 
     } else if (auto* ms = std::get_if<MouseScroll>(&ev)) {
@@ -264,6 +273,9 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
             zoom_axis(v.scale_y, v.offset_y, data_y, y_range.get());
 
         view.set(v);
+
+    } else if (auto* kp = std::get_if<KeyPress>(&ev)) {
+        if (kp->key == keys::m) reset_view();
     }
 }
 
@@ -460,9 +472,19 @@ inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd,
     merged.scale_y = yv.scale_y;
     Field<ViewTransform> merged_view{merged};
 
+    // Resets the whole group (shared x-axis + every panel's own y-axis), not just this
+    // panel's fields -- merged_view is reset to identity too so the split-back below
+    // (which runs unconditionally after route_plot_input returns) re-writes the same
+    // already-reset values instead of clobbering them with merged_view's stale pre-reset
+    // state.
+    auto reset_whole_group = [this, &merged_view] {
+        group_->reset_view();
+        merged_view.set(ViewTransform{});
+    };
+
     route_plot_input(ev, nd, bounds, group_->x_range, y_range, merged_view,
                      group_->cursor, drag_mode, drag_start_pixel, drag_start_view,
-                     std::span<const Series>(series_), draw_x_axis_);
+                     std::span<const Series>(series_), draw_x_axis_, reset_whole_group);
 
     auto result = merged_view.get();
 
