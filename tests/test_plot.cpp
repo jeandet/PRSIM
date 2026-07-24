@@ -263,6 +263,23 @@ TEST_CASE("draw_series emits a filled polygon under the curve when fill is set")
     CHECK(fp.points[0].y.raw() == doctest::Approx(expected_curve0.y.raw()));
     CHECK(fp.points[1].y.raw() == doctest::Approx(expected_base0.y.raw()));
 
+    // Second strip pair: curve point at x=1,y=2 vs its baseline projection at x=1,y=0 --
+    // these must differ, proving the baseline substitution actually happened (the first
+    // pair's curve/baseline coincide at (0,0), which wouldn't catch a dropped substitution).
+    auto expected_curve1 = map.to_pixel(1.0, 2.0);
+    auto expected_base1 = map.to_pixel(1.0, 0.0);
+    CHECK(fp.points[2].x.raw() == doctest::Approx(expected_curve1.x.raw()));
+    CHECK(fp.points[2].y.raw() == doctest::Approx(expected_curve1.y.raw()));
+    CHECK(fp.points[3].x.raw() == doctest::Approx(expected_base1.x.raw()));
+    CHECK(fp.points[3].y.raw() == doctest::Approx(expected_base1.y.raw()));
+    CHECK(fp.points[2].y.raw() != doctest::Approx(fp.points[3].y.raw()));
+
+    // Fill color reuses the series color at a fixed reduced alpha
+    CHECK(fp.color.r == 255);
+    CHECK(fp.color.g == 0);
+    CHECK(fp.color.b == 0);
+    CHECK(fp.color.a == 40);
+
     // Series without fill emits only the Polyline
     DrawList dl2;
     Series s2(XYData{{0.0, 1.0}, {0.0, 1.0}}, SeriesStyle{});
