@@ -13,6 +13,7 @@ class TestBackend final : public BackendBase {
     std::unordered_map<WindowId, HeadlessWindow> windows_;
     WindowId next_id_ = 0;
     WindowId primary_id_ = 0;
+    std::vector<std::shared_ptr<const SceneSnapshot>> submitted_;
 
 public:
     explicit TestBackend(std::vector<InputEvent> events)
@@ -40,9 +41,17 @@ public:
         event_cb(WindowEvent{primary_id_, WindowClose{}});
     }
 
-    void submit(WindowId, std::shared_ptr<const SceneSnapshot>) override {}
+    void submit(WindowId, std::shared_ptr<const SceneSnapshot> s) override {
+        submitted_.push_back(std::move(s));
+    }
     void wake() override {}
     void quit() override {}
+
+    // Every snapshot submit() received, in publish order -- for tests that need to inspect
+    // what the app thread actually produced while replaying `events`, not just that it ran.
+    [[nodiscard]] const std::vector<std::shared_ptr<const SceneSnapshot>>& submitted() const {
+        return submitted_;
+    }
 };
 
 } // namespace prism::app

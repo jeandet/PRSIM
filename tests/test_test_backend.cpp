@@ -99,3 +99,19 @@ TEST_CASE("TestBackend::close_window on an unknown id is a safe no-op") {
     tb.close_window(9999);
     CHECK(true); // must not crash
 }
+
+TEST_CASE("TestBackend records every submitted snapshot in order") {
+    prism::TestBackend tb{{}};
+    tb.create_window({});
+    CHECK(tb.submitted().empty());
+
+    prism::SceneSnapshot a, b;
+    a.version = 1;
+    b.version = 2;
+    tb.submit(1, std::make_shared<const prism::SceneSnapshot>(std::move(a)));
+    tb.submit(1, std::make_shared<const prism::SceneSnapshot>(std::move(b)));
+
+    REQUIRE(tb.submitted().size() == 2);
+    CHECK(tb.submitted()[0]->version == 1);
+    CHECK(tb.submitted()[1]->version == 2);
+}
