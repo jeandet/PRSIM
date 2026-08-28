@@ -172,18 +172,24 @@ struct TreeInspectorModel {
     List<NodeRow> rows;
     Field<std::optional<WidgetId>> selected;
     Field<std::optional<NodeRow>> detail;
+    // Snapshot instrumentation summary (see TreeInspectorController::update_stats),
+    // a plain read-only line -- the default Widget<StringLike> is display-only.
+    Field<std::string> stats;
     std::function<void(size_t, const NodeRow&)> on_click;
 
     void view(WidgetTree::ViewBuilder& vb) {
-        vb.hstack([&] {
-            // Explicit template argument: deducing T from both `rows` (a
-            // List<NodeRow>&) and this lambda (not itself a std::function)
-            // fails template argument deduction, so T is pinned here and the
-            // lambda converts to std::function normally.
-            vb.list<NodeRow>(rows, [this](size_t index, const NodeRow& row) {
-                if (on_click) on_click(index, row);
+        vb.vstack([&] {
+            vb.widget(stats);
+            vb.hstack([&] {
+                // Explicit template argument: deducing T from both `rows` (a
+                // List<NodeRow>&) and this lambda (not itself a std::function)
+                // fails template argument deduction, so T is pinned here and the
+                // lambda converts to std::function normally.
+                vb.list<NodeRow>(rows, [this](size_t index, const NodeRow& row) {
+                    if (on_click) on_click(index, row);
+                });
+                vb.widget(detail);
             });
-            vb.widget(detail);
         });
     }
 };
@@ -206,12 +212,15 @@ public:
     TreeInspectorController(WidgetTree& main_tree, WidgetTree& debug_tree, TreeInspectorModel& debug_model)
         : main_tree_(&main_tree), debug_tree_(&debug_tree), debug_model_(&debug_model) {
         expanded_.insert(main_tree_->root().id);
-        // TreeInspectorModel::view() is a single top-level vb.hstack(...) call, so
-        // ViewBuilder::finalize()'s single-child Row hoist fires: debug_tree_->root() becomes
-        // the hstack's Row node itself, with the list container and the detail pane spliced
-        // directly onto it as its two children, in the order view() adds them. The list is
-        // added first, so it's still children.front() regardless of the hoist.
-        list_container_id_ = debug_tree_->root().children.front().id;
+        // TreeInspectorModel::view() is a single top-level vb.vstack(...) call, so
+        // ViewBuilder::finalize()'s single-child Column hoist fires: debug_tree_->root()
+        // becomes that vstack's Column node itself, with [stats field, hstack Row] spliced
+        // directly onto it as its two children (view()-add order). The list container is
+        // nested one level deeper, as the hstack Row's first child (list is added before
+        // detail there). Verified empirically against the actual tree shape, not assumed --
+        // see "TreeInspectorModel::view places the list and detail pane side by side" in
+        // test_tree_inspector_model.cpp for the same check on the nested hstack.
+        list_container_id_ = debug_tree_->root().children[1].children.front().id;
         debug_model_->on_click = [this](size_t index, const NodeRow& row) {
             on_row_clicked(index, row);
         };
@@ -259,6 +268,15 @@ public:
                 debug_model_->detail.set(std::nullopt);
             }
         }
+    }
+
+    // Summarizes the main tree's most recently published snapshot -- called by model_app's
+    // publish_entry after each primary-window publish.
+    void update_stats(const render::SceneSnapshot& snap) {
+        debug_model_->stats.set(fmt::format(
+            "build {:.2f}ms | draws {} | dirty {} | ~{}KB | v{}",
+            snap.build_time_ms, snap.draw_command_count, snap.dirty_widget_count,
+            snap.approx_bytes / 1024, snap.version));
     }
 
     void on_row_clicked(size_t, const NodeRow& row) {

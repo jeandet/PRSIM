@@ -104,6 +104,10 @@ void model_app(Backend& backend, Window& window, Model& model,
         backend.submit(id, entry.current_snap);
         backend.wake();
         entry.tree->clear_dirty();
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+        if (id == primary_id && debug_controller)
+            debug_controller->update_stats(*entry.current_snap);
+#endif
     };
 
     auto publish_dirty = [&] {

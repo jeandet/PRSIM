@@ -204,6 +204,22 @@ struct DrawList {
                 Size{Width{max_x - min_x}, Height{max_y - min_y}}};
     }
 
+    // Rough heap footprint: command storage plus the string/point payloads
+    // commands own. Deliberately approximate (uses capacity, not size, and
+    // ignores variant/allocator overhead) -- good enough to compare snapshots
+    // relatively, not a precise allocator accounting.
+    [[nodiscard]] std::size_t approx_bytes() const {
+        std::size_t total = commands.capacity() * sizeof(DrawCmd);
+        for (const auto& cmd : commands) {
+            std::visit([&](const auto& c) {
+                if constexpr (requires { c.text; }) total += c.text.capacity();
+                if constexpr (requires { c.points; })
+                    total += c.points.capacity() * sizeof(Point);
+            }, cmd);
+        }
+        return total;
+    }
+
   private:
     std::vector<Offset> origin_stack_;
 

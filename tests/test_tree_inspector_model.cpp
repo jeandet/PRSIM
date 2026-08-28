@@ -26,9 +26,12 @@ TEST_CASE("TreeInspectorModel row click invokes on_click with the row's index an
     tree.clear_dirty();
 
     REQUIRE(!snap->geometry.empty());
+    // Widget<NodeRow>::row_h (22px) is strictly less than the stats line's default
+    // widget height (30px, see delegate.hpp's default_widget_h) -- tight enough to
+    // pick the row leaf and skip the stats field that now sits above it in view().
     prism::WidgetId row_leaf_id = 0;
     for (auto& [id, rect] : snap->geometry) {
-        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) { row_leaf_id = id; break; }
+        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 25) { row_leaf_id = id; break; }
     }
     REQUIRE(row_leaf_id != 0);
 
@@ -49,7 +52,7 @@ TEST_CASE("TreeInspectorModel with no on_click set does not crash on row click")
 
     prism::WidgetId row_leaf_id = 0;
     for (auto& [id, rect] : snap->geometry)
-        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 50) { row_leaf_id = id; break; }
+        if (id != 0 && rect.extent.h.raw() > 0 && rect.extent.h.raw() < 25) { row_leaf_id = id; break; }
     REQUIRE(row_leaf_id != 0);
 
     tree.dispatch(row_leaf_id, prism::MouseButton{prism::Point{prism::X{0}, prism::Y{0}}, 1, true});
@@ -133,12 +136,14 @@ TEST_CASE("Widget<std::optional<NodeRow>> renders every field when populated") {
 TEST_CASE("TreeInspectorModel::view places the list and detail pane side by side") {
     prism::debug::TreeInspectorModel model;
     prism::WidgetTree tree(model);
-    // ViewBuilder::finalize()'s single-child Row/Column hoist fires here: view()'s top level is
-    // now a single hstack (Row) call, so tree.root() itself becomes that Row, and its two
-    // children (list, detail) are spliced directly onto it — verify this empirically rather
-    // than assuming it holds after the view() change below (this exact codebase has twice
-    // shipped a wrong WidgetTree-traversal assumption baked into a test before — see this
-    // plan's Global Constraints).
+    // ViewBuilder::finalize()'s single-child Column hoist fires here: view()'s top level is
+    // now a single vstack (Column) call — the stats line, then the hstack (Row) of list +
+    // detail — so tree.root() itself becomes that Column, with two children. The hstack Row
+    // is the second one, and it in turn holds [list, detail] — verify this empirically rather
+    // than assuming it holds (this exact codebase has twice shipped a wrong WidgetTree-
+    // traversal assumption baked into a test before — see this plan's Global Constraints).
     REQUIRE(tree.root().children.size() == 2);
-    CHECK(tree.root().children[0].layout_kind == prism::LayoutKind::VirtualList);
+    auto& row = tree.root().children[1];
+    REQUIRE(row.children.size() == 2);
+    CHECK(row.children[0].layout_kind == prism::LayoutKind::VirtualList);
 }

@@ -19,6 +19,13 @@ struct SceneSnapshot {
     std::vector<uint16_t> z_order;
     DrawList overlay;  // rendered last, on top of everything, no clip
     std::vector<std::pair<WidgetId, Rect>> overlay_geometry;  // hit-test regions for overlays
+
+    // Instrumentation, populated by WidgetTree::build_snapshot(). Not part of the
+    // rendered scene -- for the debug tree inspector / perf overlay.
+    double build_time_ms = 0.0;
+    std::size_t dirty_widget_count = 0;
+    std::size_t draw_command_count = 0;
+    std::size_t approx_bytes = 0;
 };
 
 // Pre-intersect all ClipPush rects so backends receive final clip regions.

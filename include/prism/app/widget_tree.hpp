@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <memory>
 #include <set>
@@ -681,6 +682,7 @@ public:
 
     [[nodiscard]] size_t leaf_count() const { return count_leaves(root_); }
     [[nodiscard]] bool any_dirty() const { return check_dirty(root_); }
+    [[nodiscard]] std::size_t dirty_count() const { return count_dirty(root_); }
 
     void clear_dirty() { clear_dirty_impl(root_); }
 
@@ -969,6 +971,11 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<SceneSnapshot> build_snapshot(float w, float h, uint64_t version) {
+        auto build_start = std::chrono::steady_clock::now();
+        // Counted before refresh_dirty() runs record() -- record() never touches the
+        // dirty flag itself (only clear_dirty(), called by the caller after publish,
+        // does), so this reflects exactly what changed since the last publish.
+        std::size_t dirty_widgets = count_dirty(root_);
         refresh_dirty(root_);
         materialize_all_virtual_lists(root_);
 
@@ -1021,6 +1028,16 @@ public:
                 }
             }
         }
+
+        snap->dirty_widget_count = dirty_widgets;
+        snap->draw_command_count = snap->overlay.size();
+        snap->approx_bytes = snap->overlay.approx_bytes();
+        for (auto& dl : snap->draw_lists) {
+            snap->draw_command_count += dl.size();
+            snap->approx_bytes += dl.approx_bytes();
+        }
+        snap->build_time_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - build_start).count();
         return snap;
     }
 
@@ -1408,6 +1425,12 @@ private:
         for (auto& c : node.children)
             if (check_dirty(c)) return true;
         return false;
+    }
+
+    static std::size_t count_dirty(const WidgetNode& node) {
+        std::size_t n = node.dirty ? 1 : 0;
+        for (auto& c : node.children) n += count_dirty(c);
+        return n;
     }
 
     void propagate_theme(WidgetNode& node) {

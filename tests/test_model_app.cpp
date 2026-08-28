@@ -877,14 +877,16 @@ TEST_CASE("Ctrl+Shift+I fires with a realistic single-side modifier combination"
 // removed from registry before shutdown.
 namespace {
 // Debug-window rows render as ~22px-tall leaf widgets (Widget<NodeRow>::row_h); the
-// surrounding VirtualList viewport/container geometry is much taller. Filtering by
-// height isolates just the per-row rects, in ascending row-index order (mirrors
-// tests/test_virtual_list.cpp's row_ids() helper — duplicated here since these are
-// two independent test binaries with no shared test-support header).
+// surrounding VirtualList viewport/container geometry is much taller, and the stats
+// summary line above it (TreeInspectorModel::stats) is 30px (default_widget_h) — the
+// <25 bound isolates just the per-row rects and excludes both, in ascending
+// row-index order (mirrors tests/test_virtual_list.cpp's row_ids() helper —
+// duplicated here since these are two independent test binaries with no shared
+// test-support header).
 std::vector<std::pair<prism::WidgetId, prism::Rect>> debug_row_rects(const prism::SceneSnapshot& snap) {
     std::vector<std::pair<prism::WidgetId, prism::Rect>> rows;
     for (auto& [id, rect] : snap.geometry)
-        if (id != 0 && rect.extent.h.raw() > 0.f && rect.extent.h.raw() < 50.f)
+        if (id != 0 && rect.extent.h.raw() > 0.f && rect.extent.h.raw() < 25.f)
             rows.emplace_back(id, rect);
     return rows;
 }
