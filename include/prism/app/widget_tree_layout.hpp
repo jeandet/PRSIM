@@ -11,7 +11,7 @@
 
 namespace prism {
 namespace app {
-namespace detail {
+namespace widget_detail {
 using namespace prism::core;
 using namespace prism::ui;
 
@@ -167,6 +167,6 @@ inline void build_layout(WidgetNode& node, LayoutNode& parent) {
     }
 }
 
-} // namespace detail
+} // namespace widget_detail
 } // namespace app
 } // namespace prism

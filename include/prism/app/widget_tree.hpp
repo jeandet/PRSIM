@@ -28,12 +28,7 @@
 namespace prism::app {
 using namespace prism::core;
 using namespace prism::ui;
-using prism::app::detail::ensure_scroll_state;
-using prism::app::detail::get_table_state;
-using prism::app::detail::get_vlist_state;
-using prism::app::detail::get_tabs_state_ptr;
-using prism::app::detail::get_scroll_view;
-using prism::app::detail::build_layout;
+using namespace prism::app::widget_detail;
 
 
 // index_ stores raw pointers into the tree -- valid only because the tree
