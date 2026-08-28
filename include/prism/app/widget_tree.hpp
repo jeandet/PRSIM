@@ -1585,14 +1585,27 @@ private:
             }
         }
 
-        // Re-record all leaf/canvas/handle widgets after layout so delegates
-        // can use their allocated size instead of hardcoded minimums.
+        // Re-record leaf/canvas/handle widgets after layout so delegates can use their
+        // allocated size instead of a pre-layout guess -- but only when that size actually
+        // differs from wn->canvas_bounds (the size wn->draws was last produced at, whether
+        // by refresh_dirty()'s pre-layout call this same build_snapshot(), or by this same
+        // re-record last frame). No widget here sizes its own record() output from its field
+        // value independent of allocated size (bounding_box() never measures text/points by
+        // content, see draw_list.hpp), so if the size didn't move, the currently-held draws
+        // are still correct -- skipping avoids a second full record() for every leaf/canvas/
+        // handle in the window on every publish, including ones untouched by whatever else
+        // made the window dirty (see benchmarks/stall_latency.cpp's
+        // untouched_sibling_record_calls, and tests/test_record_reuse.cpp).
         if (layout_node.kind == LayoutNode::Kind::Leaf ||
             layout_node.kind == LayoutNode::Kind::Canvas ||
             layout_node.kind == LayoutNode::Kind::Handle) {
             auto it = index_.find(layout_node.id);
             auto* wn = (it != index_.end()) ? it->second : nullptr;
-            if (wn && wn->record) {
+            // build_layout() already copied wn->draws/overlay_draws (as of refresh_dirty()'s
+            // output) into layout_node -- nothing between there and here touches wn->draws,
+            // so when we skip re-recording, layout_node's copy is already correct and doesn't
+            // need refreshing.
+            if (wn && wn->record && wn->canvas_bounds.extent != layout_node.allocated.extent) {
                 wn->canvas_bounds = Rect{
                     Point{X{0}, Y{0}},
                     layout_node.allocated.extent

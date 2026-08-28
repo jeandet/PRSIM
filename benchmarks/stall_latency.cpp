@@ -17,17 +17,19 @@
 // record() sleeps for a configurable duration before drawing. That isolates exactly the
 // app-thread-busy scenario without needing a real expensive workload.
 //
-// Building this surfaced a second, unplanned finding: WidgetTree::build_snapshot() calls a
-// dirty widget's record() twice per publish, not once -- refresh_dirty() runs it once
-// pre-layout (its output sizes the widget for measurement), and update_canvas_bounds() then
-// unconditionally re-runs it post-layout for every Leaf/Canvas/Handle node in the whole
+// Building this surfaced a second, unplanned finding, since fixed: WidgetTree::build_snapshot()
+// was calling a dirty widget's record() twice per publish, not once -- refresh_dirty() runs it
+// once pre-layout (its output sizes the widget for measurement), and update_canvas_bounds() was
+// then unconditionally re-running it post-layout for every Leaf/Canvas/Handle node in the whole
 // window, dirty or not, so delegates can draw at their real allocated size instead of a
-// pre-layout guess. That second pass has no dirty check at all: a StaticSibling widget that
-// is never mutated still gets one record() call on every publish this window makes, purely
-// because something else in the same window was dirty. See untouched_sibling_record_calls
-// below -- always 1, never 0. Confirmed to matter architecturally (not just for this
-// benchmark's own artificial sleep): any real record() with nontrivial cost pays for a
-// second, usually-redundant pass on every window-wide republish it's merely a bystander to.
+// pre-layout guess. That second pass had no dirty check at all: a StaticSibling widget that is
+// never mutated still got one record() call on every publish the window made, purely because
+// something else in the same window was dirty -- see untouched_sibling_record_calls below,
+// which this benchmark's own assertions now expect to be 0. update_canvas_bounds() now only
+// re-records when the widget's resolved allocated size actually differs from what its current
+// draws were produced at (see its comment in widget_tree.hpp, and tests/test_record_reuse.cpp);
+// no widget in this codebase sizes its record() output from field content independent of
+// allocated size, so that's a safe, precise gate rather than a heuristic.
 
 #include <prism/app/model_app.hpp>
 #include <prism/app/headless_window.hpp>
@@ -173,6 +175,19 @@ struct BenchBackend final : public prism::BackendBase {
                     "latency %.2fms is LESS than the stall it should include (stall_ms=%d) -- "
                     "the stall isn't actually blocking the app thread's publish path\n",
                     latency_ms, stall_ms);
+                std::exit(1);
+            }
+            if (record_after - record_before != 1) {
+                std::fprintf(stderr,
+                    "trigger's record() ran %d times, not 1 (stall_ms=%d) -- the "
+                    "update_canvas_bounds double-record regression is back\n",
+                    record_after - record_before, stall_ms);
+                std::exit(1);
+            }
+            if (static_after != static_before) {
+                std::fprintf(stderr,
+                    "untouched sibling's record() ran (stall_ms=%d) -- the "
+                    "update_canvas_bounds double-record regression is back\n", stall_ms);
                 std::exit(1);
             }
         }
