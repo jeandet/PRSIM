@@ -3,6 +3,7 @@
 #include <prism/render/draw_list.hpp>
 #include <prism/ui/context.hpp>
 #include <prism/render/scene_snapshot.hpp>
+#include <prism/ui/widget_node.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -64,6 +65,10 @@ struct LayoutNode {
     const Theme* theme = &detail::layout_default_theme;
     std::optional<float> canvas_min_width;   // only meaningful for Kind::Canvas
     std::optional<float> canvas_min_height;  // only meaningful for Kind::Canvas
+    // Set by WidgetTree::build_layout() for Leaf/Canvas/Handle nodes -- lets
+    // layout_flatten() read/update that widget's snapshot-assembly cache directly,
+    // without threading a WidgetId->WidgetNode* lookup through this free function.
+    WidgetNode* widget = nullptr;
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
@@ -299,12 +304,16 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
 
 } // namespace detail
 
-inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
+// `clipped_by_ancestor`: true when some ancestor (Scroll/VirtualList/Table) already wraps
+// this node in a ClipPush/ClipPop pair. Leaf/Canvas DrawLists are only cached and shared
+// across frames (see LayoutNode::widget below) when this is false -- see the comment at
+// that cache check for why.
+inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_by_ancestor = false) {
     if (node.kind == LayoutNode::Kind::Spacer) return;
 
     if (node.kind == LayoutNode::Kind::Tabs) {
         for (auto& child : node.children)
-            layout_flatten(child, snap);
+            layout_flatten(child, snap, clipped_by_ancestor);
         return;
     }
 
@@ -342,7 +351,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
             header_dl.commands.push_back(std::move(translated));
         }
         header_dl.clip_pop();
-        snap.draw_lists.push_back(std::move(header_dl));
+        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(header_dl)));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
 
         // Body region (clipped, scrollable)
@@ -353,7 +362,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         DrawList body_clip;
         body_clip.clip_push(body_rect.origin, body_rect.extent);
         snap.geometry.push_back({0, body_rect});
-        snap.draw_lists.push_back(std::move(body_clip));
+        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip)));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
 
         // Flatten visible children with scroll offset only
@@ -362,14 +371,14 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         DY neg_scroll{-scroll_dy.raw()};
         for (auto& child : node.children) {
             detail::offset_subtree_y(child, neg_scroll);
-            layout_flatten(child, snap);
+            layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
             detail::offset_subtree_y(child, DY{scroll_dy.raw()});
         }
 
         DrawList body_clip_pop;
         body_clip_pop.clip_pop();
         snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
-        snap.draw_lists.push_back(std::move(body_clip_pop));
+        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip_pop)));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
 
         // Vertical scrollbar
@@ -398,7 +407,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         DrawList clip_dl;
         clip_dl.clip_push(node.allocated.origin, node.allocated.extent);
         snap.geometry.push_back({node.id, node.allocated});
-        snap.draw_lists.push_back(std::move(clip_dl));
+        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_dl)));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
 
         // Flatten visible children with scroll offset applied to entire subtree
@@ -414,7 +423,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
                 continue;
 
             detail::offset_subtree_y(child, neg_scroll);
-            layout_flatten(child, snap);
+            layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
             DY restore{scroll_dy.raw()};
             detail::offset_subtree_y(child, restore);
         }
@@ -423,7 +432,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
         DrawList clip_pop_dl;
         clip_pop_dl.clip_pop();
         snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
-        snap.draw_lists.push_back(std::move(clip_pop_dl));
+        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_pop_dl)));
         snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
 
         // Scrollbar overlay (if content exceeds viewport)
@@ -449,23 +458,52 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     }
 
     if (!node.draws.empty() || node.kind == LayoutNode::Kind::Canvas) {
-        DX dx{node.allocated.origin.x.raw()};
-        DY dy{node.allocated.origin.y.raw()};
-        detail::translate_draw_list(node.draws, dx, dy);
-        // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
-        auto hit_rect = (node.kind == LayoutNode::Kind::Canvas)
-            ? node.allocated : node.draws.bounding_box();
+        // Reuse last frame's already-translated+clipped DrawList when this widget's content
+        // didn't change (!dirty) AND it's still at the same screen rect -- a widget can be
+        // clean but still relocate (a sibling resized, the window resized, ...), which would
+        // make a stale translated copy wrong. Restricted to !clipped_by_ancestor: resolve_clips
+        // only ever mutates a ClipPush rect in place when an outer clip is already active on
+        // its stack, and that can only happen for entries reached with clipped_by_ancestor
+        // true -- so an entry eligible for reuse here is guaranteed to never be mutated after
+        // publication, which is what makes sharing it across snapshots (and across the render
+        // thread) safe. Rows inside Scroll/VirtualList/Table therefore never get this reuse --
+        // simplify: recycled-row identity would need its own invalidation story; revisit if
+        // profiling shows scrolled/tabular content dominates snapshot-build cost.
+        bool cache_hit = !clipped_by_ancestor && node.widget && !node.widget->dirty
+            && node.widget->cached_snapshot_draws
+            && node.widget->cached_screen_rect == node.allocated;
 
-        DrawList clipped;
-        clipped.clip_push(node.allocated.origin, node.allocated.extent);
-        clipped.commands.insert(clipped.commands.end(),
-            std::make_move_iterator(node.draws.commands.begin()),
-            std::make_move_iterator(node.draws.commands.end()));
-        clipped.clip_pop();
+        Rect hit_rect;
+        std::shared_ptr<const DrawList> entry;
+        if (cache_hit) {
+            entry = node.widget->cached_snapshot_draws;
+            hit_rect = node.widget->cached_hit_rect;
+        } else {
+            DX dx{node.allocated.origin.x.raw()};
+            DY dy{node.allocated.origin.y.raw()};
+            detail::translate_draw_list(node.draws, dx, dy);
+            // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
+            hit_rect = (node.kind == LayoutNode::Kind::Canvas)
+                ? node.allocated : node.draws.bounding_box();
+
+            auto clipped = std::make_shared<DrawList>();
+            clipped->clip_push(node.allocated.origin, node.allocated.extent);
+            clipped->commands.insert(clipped->commands.end(),
+                std::make_move_iterator(node.draws.commands.begin()),
+                std::make_move_iterator(node.draws.commands.end()));
+            clipped->clip_pop();
+
+            if (!clipped_by_ancestor && node.widget) {
+                node.widget->cached_screen_rect = node.allocated;
+                node.widget->cached_hit_rect = hit_rect;
+                node.widget->cached_snapshot_draws = clipped;
+            }
+            entry = std::move(clipped);
+        }
 
         auto idx = static_cast<uint16_t>(snap.geometry.size());
         snap.geometry.push_back({node.id, hit_rect});
-        snap.draw_lists.push_back(std::move(clipped));
+        snap.draw_lists.push_back(std::move(entry));
         snap.z_order.push_back(idx);
     }
 
@@ -479,7 +517,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap) {
     }
 
     for (auto& child : node.children) {
-        layout_flatten(child, snap);
+        layout_flatten(child, snap, clipped_by_ancestor);
     }
 }
 

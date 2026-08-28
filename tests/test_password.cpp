@@ -250,7 +250,7 @@ TEST_CASE("Password snapshot renders masked text") {
     bool has_actual = false;
     bool has_bullets = false;
     for (auto& dl : snap->draw_lists) {
-        for (auto& cmd : dl.commands) {
+        for (auto& cmd : dl->commands) {
             if (auto* t = std::get_if<prism::TextCmd>(&cmd)) {
                 if (t->text == "pass") has_actual = true;
                 if (t->text.find("\xe2\x97\x8f") != std::string::npos) has_bullets = true;

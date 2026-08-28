@@ -100,7 +100,7 @@ TEST_CASE("tree detail panel draws to fill its full allocated height, not a fixe
     for (size_t i = 0; i < snap->geometry.size(); ++i) {
         if (snap->geometry[i].first != detail_id) continue;
         float drawn_h = 0.f;
-        for (auto& cmd : snap->draw_lists[i].commands) {
+        for (auto& cmd : snap->draw_lists[i]->commands) {
             if (auto* fr = std::get_if<prism::FilledRect>(&cmd))
                 drawn_h = std::max(drawn_h, fr->rect.extent.h.raw());
         }
@@ -247,8 +247,8 @@ TEST_CASE("Down arrow moves the rendered row highlight, not just ctrl.selected")
     auto row_bg = [](const prism::SceneSnapshot& snap, size_t idx) {
         // Each row's own DrawList is [ClipPush, FilledRect, TextCmd, ClipPop] (verified via a
         // throwaway dump, mirroring the empirical-verification pattern already used above).
-        REQUIRE(snap.draw_lists[idx].commands.size() > 1);
-        return std::get<prism::FilledRect>(snap.draw_lists[idx].commands[1]).color;
+        REQUIRE(snap.draw_lists[idx]->commands.size() > 1);
+        return std::get<prism::FilledRect>(snap.draw_lists[idx]->commands[1]).color;
     };
     auto n1_bg_before = row_bg(*before, 1); // highlighted (selected)
     auto n2_bg_before = row_bg(*before, 2); // not highlighted
@@ -311,7 +311,7 @@ TEST_CASE("keyboard navigation scrolls the newly selected row into view") {
     auto snap = tree.build_snapshot(300, 80, 2);
     bool found = false;
     for (auto& dl : snap->draw_lists)
-        for (auto& cmd : dl.commands)
+        for (auto& cmd : dl->commands)
             if (auto* t = std::get_if<prism::TextCmd>(&cmd))
                 if (t->text.find("n219") != std::string_view::npos) found = true;
     CHECK(found); // scroll_row_into_view should have brought it into the materialized range

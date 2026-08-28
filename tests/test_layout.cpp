@@ -276,7 +276,7 @@ TEST_CASE("flatten translates draw commands to absolute coordinates") {
     CHECK(snap.geometry[0].second.origin.y.raw() == 40);
 
     // The draw commands are: ClipPush (allocation clip), FilledRect, ClipPop
-    auto& dl = snap.draw_lists[0];
+    auto& dl = *snap.draw_lists[0];
     CHECK(dl.commands.size() == 3);
     auto* fr = std::get_if<prism::FilledRect>(&dl.commands[1]);
     REQUIRE(fr != nullptr);
@@ -322,7 +322,7 @@ TEST_CASE("flatten translates Line/Polyline/Circle draw commands to absolute coo
     prism::layout_flatten(col, snap);
 
     REQUIRE(snap.draw_lists.size() == 2);
-    auto& dl = snap.draw_lists[1]; // b's: ClipPush, Line, Polyline, Circle, ClipPop
+    auto& dl = *snap.draw_lists[1]; // b's: ClipPush, Line, Polyline, Circle, ClipPop
     REQUIRE(dl.commands.size() == 5);
 
     auto* line = std::get_if<prism::Line>(&dl.commands[1]);

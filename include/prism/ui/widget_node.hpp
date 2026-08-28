@@ -58,6 +58,16 @@ struct WidgetNode {
     LayoutKind layout_kind = LayoutKind::Default;
     Rect canvas_bounds{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
     Size arranged_extent{Width{0}, Height{0}};  // last-arranged main-axis extent, populated for every node kind
+
+    // Snapshot-assembly cache (see layout_flatten): the absolute screen rect and the
+    // already-translated+clipped DrawList last computed for this widget. Reused when the
+    // widget is still not dirty AND still at the same allocated rect, to skip re-copying
+    // and re-translating its draw commands -- which can be large (polylines, wide tables)
+    // -- on frames where neither its content nor its screen position changed.
+    Rect cached_screen_rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
+    Rect cached_hit_rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
+    std::shared_ptr<const DrawList> cached_snapshot_draws;
+
     bool expand = false;
     ExpandAxis expand_axis = ExpandAxis::None;
     std::optional<float> canvas_min_width;   // only meaningful when layout_kind == Canvas

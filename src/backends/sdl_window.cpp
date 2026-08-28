@@ -231,7 +231,7 @@ void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const
     }
 
     for (uint16_t idx : snap.z_order) {
-        render_draw_list(snap.draw_lists[idx], font);
+        render_draw_list(*snap.draw_lists[idx], font);
     }
     if (!snap.overlay.empty()) {
         SDL_SetRenderClipRect(renderer_, nullptr);

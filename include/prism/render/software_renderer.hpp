@@ -15,7 +15,7 @@ public:
     void render_frame(const SceneSnapshot& snap) {
         buf_.clear();
         for (uint16_t idx : snap.z_order) {
-            rasterise_draw_list(snap.draw_lists[idx]);
+            rasterise_draw_list(*snap.draw_lists[idx]);
         }
     }
 

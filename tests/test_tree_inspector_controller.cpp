@@ -123,7 +123,7 @@ namespace {
 // direct, scroll-specific signal instead.
 bool debug_tree_shows_text(const prism::render::SceneSnapshot& snap, std::string_view needle) {
     for (auto& dl : snap.draw_lists)
-        for (auto& cmd : dl.commands)
+        for (auto& cmd : dl->commands)
             if (auto* t = std::get_if<prism::TextCmd>(&cmd))
                 if (t->text.find(needle) != std::string_view::npos) return true;
     return false;

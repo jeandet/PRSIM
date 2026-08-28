@@ -1033,8 +1033,8 @@ public:
         snap->draw_command_count = snap->overlay.size();
         snap->approx_bytes = snap->overlay.approx_bytes();
         for (auto& dl : snap->draw_lists) {
-            snap->draw_command_count += dl.size();
-            snap->approx_bytes += dl.approx_bytes();
+            snap->draw_command_count += dl->size();
+            snap->approx_bytes += dl->approx_bytes();
         }
         snap->build_time_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - build_start).count();
@@ -1890,6 +1890,7 @@ private:
                 canvas.overlay_draws = node.overlay_draws;
                 canvas.canvas_min_width = node.canvas_min_width;
                 canvas.canvas_min_height = node.canvas_min_height;
+                canvas.widget = &node;
                 parent.children.push_back(std::move(canvas));
             } else if (node.layout_kind == LK::Handle) {
                 LayoutNode handle;
@@ -1898,6 +1899,7 @@ private:
                 handle.theme = node.theme;
                 handle.draws = node.draws;
                 handle.overlay_draws = node.overlay_draws;
+                handle.widget = &node;
                 parent.children.push_back(std::move(handle));
             } else {
                 LayoutNode leaf;
@@ -1908,6 +1910,7 @@ private:
                 leaf.overlay_draws = node.overlay_draws;
                 leaf.hint.expand = node.expand;
                 leaf.hint.expand_axis = node.expand_axis;
+                leaf.widget = &node;
                 parent.children.push_back(std::move(leaf));
             }
         } else if (node.layout_kind == LK::Scroll) {

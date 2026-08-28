@@ -3,6 +3,7 @@
 #include <prism/render/draw_list.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace prism::render {
@@ -15,7 +16,10 @@ using WidgetId = uint64_t;
 struct SceneSnapshot {
     uint64_t version = 0;
     std::vector<std::pair<WidgetId, Rect>> geometry;
-    std::vector<DrawList> draw_lists;
+    // Per-widget entries may be shared with a previous snapshot (see layout_flatten's
+    // per-widget DrawList cache) -- const so nothing downstream can mutate a shared entry
+    // out from under another snapshot still holding it.
+    std::vector<std::shared_ptr<const DrawList>> draw_lists;
     std::vector<uint16_t> z_order;
     DrawList overlay;  // rendered last, on top of everything, no clip
     std::vector<std::pair<WidgetId, Rect>> overlay_geometry;  // hit-test regions for overlays
@@ -33,7 +37,14 @@ struct SceneSnapshot {
 inline void resolve_clips(SceneSnapshot& snap) {
     std::vector<Rect> stack;
     for (uint16_t idx : snap.z_order) {
-        for (auto& cmd : snap.draw_lists[idx].commands) {
+        // Entries below are only ever mutated while a clip is already active on `stack`.
+        // layout_flatten() only shares/caches a widget's DrawList across snapshots when it
+        // has no clipping ancestor (see its clipped_by_ancestor parameter), so any entry
+        // reached here with a non-empty stack was freshly built this call and isn't aliased
+        // by any other snapshot -- the const_pointer_cast reflects that invariant, not
+        // general license to mutate a published snapshot.
+        auto& dl = *std::const_pointer_cast<DrawList>(snap.draw_lists[idx]);
+        for (auto& cmd : dl.commands) {
             if (auto* cp = std::get_if<ClipPush>(&cmd)) {
                 if (!stack.empty())
                     cp->rect = stack.back().intersect(cp->rect);

@@ -149,8 +149,8 @@ TEST_CASE("SceneSnapshot with z_order and overlay") {
 
     snap.geometry.push_back({0, R(0, 0, 50, 50)});
     snap.geometry.push_back({1, R(50, 50, 50, 50)});
-    snap.draw_lists.push_back(std::move(dl0));
-    snap.draw_lists.push_back(std::move(dl1));
+    snap.draw_lists.push_back(std::make_shared<prism::DrawList>(std::move(dl0)));
+    snap.draw_lists.push_back(std::make_shared<prism::DrawList>(std::move(dl1)));
     snap.z_order = {1, 0};
 
     snap.overlay.filled_rect(R(25, 25, 20, 20), prism::Color::rgba(0, 255, 0));

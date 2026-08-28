@@ -99,7 +99,7 @@ TEST_CASE("Table header text appears in draw commands") {
 
     bool found_x = false, found_name = false;
     for (auto& dl : snap->draw_lists) {
-        for (auto& cmd : dl.commands) {
+        for (auto& cmd : dl->commands) {
             if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
                 if (tc->text == "X") found_x = true;
                 if (tc->text == "Name") found_name = true;
@@ -137,7 +137,7 @@ TEST_CASE("Table in column layout: no overlap with sibling") {
 
     // Dump all text commands with their Y positions
     for (auto& dl : snap->draw_lists) {
-        for (auto& cmd : dl.commands) {
+        for (auto& cmd : dl->commands) {
             if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
                 MESSAGE("text '", tc->text, "' at y=", tc->origin.y.raw());
             }
@@ -152,7 +152,7 @@ TEST_CASE("Table in column layout: no overlap with sibling") {
     // The scroll gets ~100px (1/3 of 300), so table starts at ~100
     float third = 100.f;
     for (auto& dl : snap->draw_lists) {
-        for (auto& cmd : dl.commands) {
+        for (auto& cmd : dl->commands) {
             if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
                 // Table cell text should not be in the scroll area
                 if (tc->text == "a" || tc->text == "b" || tc->text == "c") {
@@ -286,7 +286,7 @@ TEST_CASE("Cell text position is relative inside clip") {
     // Find a cell text command for column 1 (Name) — should be inside
     // its column's clip rect, not double-offset
     for (auto& dl : snap->draw_lists) {
-        for (auto& cmd : dl.commands) {
+        for (auto& cmd : dl->commands) {
             if (auto* tc = std::get_if<prism::TextCmd>(&cmd)) {
                 if (tc->text == "a" || tc->text == "b" || tc->text == "c") {
                     // Text x should be within a reasonable range
@@ -753,7 +753,7 @@ TEST_CASE("ViewBuilder.table() with a plain-struct List still creates a Table no
 
     bool found_header = false;
     for (auto& dl : snap->draw_lists)
-        for (auto& cmd : dl.commands)
+        for (auto& cmd : dl->commands)
             if (auto* tc = std::get_if<prism::TextCmd>(&cmd))
                 if (tc->text == "Score %") found_header = true;
     CHECK(found_header);

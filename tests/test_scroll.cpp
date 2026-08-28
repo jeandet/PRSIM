@@ -86,7 +86,7 @@ TEST_CASE("Scroll flatten clips to viewport") {
     CHECK(snap.geometry.size() >= 1);
     bool has_clip = false;
     for (auto& dl : snap.draw_lists) {
-        for (auto& cmd : dl.commands) {
+        for (auto& cmd : dl->commands) {
             if (std::holds_alternative<ClipPush>(cmd)) has_clip = true;
         }
     }

@@ -48,7 +48,7 @@ private:
         snap->version = version;
         if (!dl_.empty()) {
             snap->geometry.push_back({0, {Point{X{0}, Y{0}}, Size{Width{static_cast<float>(width_)}, Height{static_cast<float>(height_)}}}});
-            snap->draw_lists.push_back(std::move(dl_));
+            snap->draw_lists.push_back(std::make_shared<DrawList>(std::move(dl_)));
             snap->z_order.push_back(0);
         }
         dl_.clear();

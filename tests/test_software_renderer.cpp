@@ -21,8 +21,9 @@ TEST_CASE("render_frame rasterises a FilledRect") {
     prism::SceneSnapshot snap;
     snap.version = 1;
     snap.geometry.push_back({1, R(2.0f, 1.0f, 3.0f, 2.0f)});
-    snap.draw_lists.emplace_back();
-    snap.draw_lists[0].filled_rect(R(2.0f, 1.0f, 3.0f, 2.0f), prism::Color::rgba(255, 0, 0));
+    auto dl0 = std::make_shared<prism::DrawList>();
+    dl0->filled_rect(R(2.0f, 1.0f, 3.0f, 2.0f), prism::Color::rgba(255, 0, 0));
+    snap.draw_lists.push_back(dl0);
     snap.z_order.push_back(0);
 
     renderer.render_frame(snap);
@@ -41,8 +42,9 @@ TEST_CASE("render_frame clears before drawing") {
     prism::SceneSnapshot snap1;
     snap1.version = 1;
     snap1.geometry.push_back({1, R(0.0f, 0.0f, 10.0f, 10.0f)});
-    snap1.draw_lists.emplace_back();
-    snap1.draw_lists[0].filled_rect(R(0.0f, 0.0f, 10.0f, 10.0f), prism::Color::rgba(255, 0, 0));
+    auto dl1 = std::make_shared<prism::DrawList>();
+    dl1->filled_rect(R(0.0f, 0.0f, 10.0f, 10.0f), prism::Color::rgba(255, 0, 0));
+    snap1.draw_lists.push_back(dl1);
     snap1.z_order.push_back(0);
     renderer.render_frame(snap1);
 
@@ -61,12 +63,14 @@ TEST_CASE("render_frame respects z_order") {
     snap.version = 1;
     // Widget 0: blue background
     snap.geometry.push_back({0, R(0.0f, 0.0f, 10.0f, 10.0f)});
-    snap.draw_lists.emplace_back();
-    snap.draw_lists[0].filled_rect(R(0.0f, 0.0f, 10.0f, 10.0f), prism::Color::rgba(0, 0, 255));
+    auto dl0 = std::make_shared<prism::DrawList>();
+    dl0->filled_rect(R(0.0f, 0.0f, 10.0f, 10.0f), prism::Color::rgba(0, 0, 255));
+    snap.draw_lists.push_back(dl0);
     // Widget 1: red foreground (overlapping)
     snap.geometry.push_back({1, R(3.0f, 3.0f, 4.0f, 4.0f)});
-    snap.draw_lists.emplace_back();
-    snap.draw_lists[1].filled_rect(R(3.0f, 3.0f, 4.0f, 4.0f), prism::Color::rgba(255, 0, 0));
+    auto dl1 = std::make_shared<prism::DrawList>();
+    dl1->filled_rect(R(3.0f, 3.0f, 4.0f, 4.0f), prism::Color::rgba(255, 0, 0));
+    snap.draw_lists.push_back(dl1);
     // z_order: 0 first (back), 1 second (front)
     snap.z_order = {0, 1};
 

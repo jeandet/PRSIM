@@ -350,7 +350,7 @@ TEST_CASE("canvas record() receives allocated bounds from layout") {
     auto snap = tree.build_snapshot(400, 300, 1);
     REQUIRE(snap->geometry.size() == 2);
 
-    auto& canvas_draws = snap->draw_lists[1];
+    auto& canvas_draws = *snap->draw_lists[1];
     REQUIRE_FALSE(canvas_draws.empty());
 
     // First command is ClipPush (allocation clip), actual draw follows

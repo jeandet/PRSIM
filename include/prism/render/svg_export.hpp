@@ -201,7 +201,7 @@ inline std::string to_svg(const SceneSnapshot& snap) {
           << detail::fmt_float(max_y - min_y) << "\">\n";
 
     for (uint16_t idx : snap.z_order)
-        e.emit_commands(snap.draw_lists[idx]);
+        e.emit_commands(*snap.draw_lists[idx]);
 
     if (!snap.overlay.empty())
         e.emit_commands(snap.overlay);
@@ -224,7 +224,7 @@ inline std::string to_svg(const SceneSnapshot& snap, float width, float height,
           << "\" fill=\"" << detail::fmt_color(bg) << "\"/>\n";
 
     for (uint16_t idx : snap.z_order)
-        e.emit_commands(snap.draw_lists[idx]);
+        e.emit_commands(*snap.draw_lists[idx]);
 
     if (!snap.overlay.empty())
         e.emit_commands(snap.overlay);
