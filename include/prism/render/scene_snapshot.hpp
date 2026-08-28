@@ -20,7 +20,7 @@ struct SceneSnapshot {
     // per-widget DrawList cache) -- const so nothing downstream can mutate a shared entry
     // out from under another snapshot still holding it.
     std::vector<std::shared_ptr<const DrawList>> draw_lists;
-    std::vector<uint16_t> z_order;
+    std::vector<uint32_t> z_order; // uint32_t: a uint16_t silently wraps past 65535 entries
     DrawList overlay;  // rendered last, on top of everything, no clip
     std::vector<std::pair<WidgetId, Rect>> overlay_geometry;  // hit-test regions for overlays
 
@@ -36,7 +36,7 @@ struct SceneSnapshot {
 // Must be called after layout_flatten, before handing the snapshot to any backend.
 inline void resolve_clips(SceneSnapshot& snap) {
     std::vector<Rect> stack;
-    for (uint16_t idx : snap.z_order) {
+    for (uint32_t idx : snap.z_order) {
         // Entries below are only ever mutated while a clip is already active on `stack`.
         // layout_flatten() only shares/caches a widget's DrawList across snapshots when it
         // has no clipping ancestor (see its clipped_by_ancestor parameter), so any entry

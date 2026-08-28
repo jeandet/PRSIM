@@ -442,3 +442,32 @@ TEST_CASE("Row measure uses split_sizes for panes when engaged, ignoring content
     CHECK_FALSE(row.children[0].hint.expand);
     CHECK_FALSE(row.children[2].hint.expand);
 }
+
+TEST_CASE("z_order supports more than 65536 draw-list entries without wrapping") {
+    // A uint16_t z_order silently wraps back to 0 past 65535 entries -- a large-scene
+    // regression (a wide table, a dense dashboard) that only shows up in production, not
+    // in any small hand-built test tree.
+    prism::LayoutNode row;
+    row.kind = prism::LayoutNode::Kind::Row;
+    row.id = 0;
+
+    constexpr int N = 70000;
+    row.children.reserve(N);
+    for (int i = 0; i < N; ++i) {
+        prism::LayoutNode leaf;
+        leaf.kind = prism::LayoutNode::Kind::Leaf;
+        leaf.id = static_cast<prism::WidgetId>(i + 1);
+        leaf.draws.filled_rect(R(0, 0, 1, 1), prism::Color::rgba(0, 0, 0));
+        row.children.push_back(std::move(leaf));
+    }
+
+    prism::layout_measure(row, prism::LayoutAxis::Horizontal);
+    prism::layout_arrange(row, R(0, 0, static_cast<float>(N), 10));
+
+    prism::SceneSnapshot snap;
+    snap.version = 1;
+    prism::layout_flatten(row, snap);
+
+    REQUIRE(snap.z_order.size() == static_cast<size_t>(N));
+    CHECK(snap.z_order[N - 1] == static_cast<uint32_t>(N - 1));
+}

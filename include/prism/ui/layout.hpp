@@ -352,7 +352,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         }
         header_dl.clip_pop();
         snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(header_dl)));
-        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
 
         // Body region (clipped, scrollable)
         Rect body_rect{
@@ -363,7 +363,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         body_clip.clip_push(body_rect.origin, body_rect.extent);
         snap.geometry.push_back({0, body_rect});
         snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip)));
-        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
 
         // Flatten visible children with scroll offset only
         // (header offset already applied during layout_arrange)
@@ -379,7 +379,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         body_clip_pop.clip_pop();
         snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
         snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip_pop)));
-        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
 
         // Vertical scrollbar
         if (node.scroll_content_h.raw() > body_rect.extent.h.raw()) {
@@ -408,7 +408,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         clip_dl.clip_push(node.allocated.origin, node.allocated.extent);
         snap.geometry.push_back({node.id, node.allocated});
         snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_dl)));
-        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
 
         // Flatten visible children with scroll offset applied to entire subtree
         DY scroll_dy = node.scroll_offset;
@@ -433,7 +433,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         clip_pop_dl.clip_pop();
         snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
         snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_pop_dl)));
-        snap.z_order.push_back(static_cast<uint16_t>(snap.geometry.size() - 1));
+        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
 
         // Scrollbar overlay (if content exceeds viewport)
         if (node.scroll_content_h.raw() > node.allocated.extent.h.raw()) {
@@ -501,7 +501,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
             entry = std::move(clipped);
         }
 
-        auto idx = static_cast<uint16_t>(snap.geometry.size());
+        auto idx = static_cast<uint32_t>(snap.geometry.size());
         snap.geometry.push_back({node.id, hit_rect});
         snap.draw_lists.push_back(std::move(entry));
         snap.z_order.push_back(idx);
