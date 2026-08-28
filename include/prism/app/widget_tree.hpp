@@ -1004,14 +1004,26 @@ public:
             return layout;
         };
 
-        LayoutNode layout = do_layout();
+        std::vector<std::pair<WidgetId, Height>> viewports_before;
+        collect_viewport_heights(root_, viewports_before);
 
-        // Tables and virtual lists depend on viewport sizes set by update_scroll_state.
-        // On the first frame those are zero, producing wrong cell positions.
-        // Re-materialize and re-layout once viewport sizes are known.
-        if (check_dirty(root_)) {
+        LayoutNode layout = do_layout();
+        std::size_t layout_passes = 1;
+
+        // Tables and virtual lists depend on viewport sizes set by update_scroll_state,
+        // itself only known after this arrange pass -- on the first frame (or any real
+        // resize) they were materialized against a stale/zero viewport, producing wrong
+        // cell positions. Re-materialize and re-layout only when a viewport actually
+        // changed, not on any unrelated dirty flag elsewhere in the tree: every publish
+        // that touches a VirtualList/Table freshly rebinds its visible rows (marking them
+        // dirty regardless of whether their viewport moved), so gating on check_dirty()
+        // reran this whole second pass on every single publish for any app using one.
+        std::vector<std::pair<WidgetId, Height>> viewports_after;
+        collect_viewport_heights(root_, viewports_after);
+        if (viewports_before != viewports_after) {
             materialize_all_virtual_lists(root_);
             layout = do_layout();
+            ++layout_passes;
         }
 
         update_canvas_bounds(layout, Height{h});
@@ -1030,6 +1042,7 @@ public:
         }
 
         snap->dirty_widget_count = dirty_widgets;
+        snap->layout_pass_count = layout_passes;
         snap->draw_command_count = snap->overlay.size();
         snap->approx_bytes = snap->overlay.approx_bytes();
         for (auto& dl : snap->draw_lists) {
@@ -1431,6 +1444,18 @@ private:
         std::size_t n = node.dirty ? 1 : 0;
         for (auto& c : node.children) n += count_dirty(c);
         return n;
+    }
+
+    // VirtualList/Table viewport heights, keyed by widget id in a stable tree-order walk --
+    // used by build_snapshot() to detect whether a materialization pass actually needs
+    // redoing (see its comment), rather than re-running on any unrelated dirty flag.
+    static void collect_viewport_heights(WidgetNode& node, std::vector<std::pair<WidgetId, Height>>& out) {
+        if (node.layout_kind == LayoutKind::VirtualList) {
+            if (auto* vls = get_vlist_state(node)) out.push_back({node.id, vls->viewport_h});
+        } else if (node.layout_kind == LayoutKind::Table) {
+            if (auto* ts = get_table_state(node)) out.push_back({node.id, ts->viewport_h});
+        }
+        for (auto& c : node.children) collect_viewport_heights(c, out);
     }
 
     void propagate_theme(WidgetNode& node) {

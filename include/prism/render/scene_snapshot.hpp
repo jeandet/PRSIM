@@ -30,6 +30,7 @@ struct SceneSnapshot {
     std::size_t dirty_widget_count = 0;
     std::size_t draw_command_count = 0;
     std::size_t approx_bytes = 0;
+    std::size_t layout_pass_count = 0;  // 1 normally, 2 when a VirtualList/Table viewport changed
 };
 
 // Pre-intersect all ClipPush rects so backends receive final clip regions.

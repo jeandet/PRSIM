@@ -3,6 +3,9 @@
 
 #include <prism/app/widget_tree.hpp>
 #include <prism/core/field.hpp>
+#include <prism/core/list.hpp>
+
+#include <fmt/format.h>
 
 #include <string>
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
@@ -18,6 +21,13 @@ struct SimpleModel {
 
     void view(prism::WidgetTree::ViewBuilder& vb) {
         vb.vstack(count, name);
+    }
+};
+
+struct StringListModel {
+    prism::List<std::string> items;
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.list(items);
     }
 };
 
@@ -129,4 +139,41 @@ TEST_CASE("build_snapshot recomputes a scrolled widget's DrawList even though it
     // visible in both frames -- unlike its siblings further down, which scroll out of
     // view -- but its screen position shifts with the scroll offset.
     CHECK(snap1->draw_lists[1].get() != snap2->draw_lists[1].get());
+}
+
+TEST_CASE("build_snapshot lays out twice on the first frame of a VirtualList") {
+    StringListModel model;
+    for (int i = 0; i < 20; ++i) model.items.push_back(fmt::format("item {}", i));
+    prism::WidgetTree tree(model);
+
+    // Viewport height starts at 0 until the first arrange pass resolves it, so the list
+    // is materialized against a stale range and must be redone once it's known.
+    auto snap = tree.build_snapshot(400, 100, 1);
+    CHECK(snap->layout_pass_count == 2);
+}
+
+TEST_CASE("build_snapshot lays out once on a stable frame with an unrelated dirty widget") {
+    StringListModel model;
+    for (int i = 0; i < 20; ++i) model.items.push_back(fmt::format("item {}", i));
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(400, 100, 1); // settle the viewport height
+    tree.clear_dirty();
+
+    // A VirtualList always freshly rebinds its visible rows on every build_snapshot call
+    // (marking them dirty regardless of whether anything actually moved) -- gating the
+    // second layout pass on "is anything dirty" would always be true here and redo the
+    // whole pass for no reason. The viewport itself hasn't changed, so one pass suffices.
+    auto snap = tree.build_snapshot(400, 100, 2);
+    CHECK(snap->layout_pass_count == 1);
+}
+
+TEST_CASE("build_snapshot lays out twice again when the viewport actually resizes") {
+    StringListModel model;
+    for (int i = 0; i < 20; ++i) model.items.push_back(fmt::format("item {}", i));
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(400, 100, 1);
+    tree.clear_dirty();
+
+    auto snap = tree.build_snapshot(400, 250, 2); // genuine viewport resize
+    CHECK(snap->layout_pass_count == 2);
 }

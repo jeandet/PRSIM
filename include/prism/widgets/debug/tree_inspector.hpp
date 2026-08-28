@@ -274,9 +274,9 @@ public:
     // publish_entry after each primary-window publish.
     void update_stats(const render::SceneSnapshot& snap) {
         debug_model_->stats.set(fmt::format(
-            "build {:.2f}ms | draws {} | dirty {} | ~{}KB | v{}",
+            "build {:.2f}ms | draws {} | dirty {} | ~{}KB | layout x{} | v{}",
             snap.build_time_ms, snap.draw_command_count, snap.dirty_widget_count,
-            snap.approx_bytes / 1024, snap.version));
+            snap.approx_bytes / 1024, snap.layout_pass_count, snap.version));
     }
 
     void on_row_clicked(size_t, const NodeRow& row) {
