@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include <prism/core/channel.hpp>
 #include <prism/core/reflect_annotations.hpp>
 #include <prism/core/shared.hpp>
 
@@ -90,6 +91,30 @@ struct ProcessInfo {
 };
 
 enum class SortKey { CpuPercent, MemPercent, Pid, Name };
+
+struct ProcessEvent {
+    int pid = 0;
+    std::string name;
+    bool started = true;
+};
+
+// Diffs two process snapshots by pid: a pid in current but not prev started, a pid in prev
+// but not current stopped. Pure function so it's testable without a live /proc.
+inline std::vector<ProcessEvent> diff_process_events(const std::vector<ProcessInfo>& prev,
+                                                       const std::vector<ProcessInfo>& current) {
+    std::vector<ProcessEvent> events;
+    for (auto& p : current) {
+        bool existed = std::any_of(prev.begin(), prev.end(),
+                                    [&](auto& q) { return q.pid == p.pid; });
+        if (!existed) events.push_back({.pid = p.pid, .name = p.name, .started = true});
+    }
+    for (auto& p : prev) {
+        bool remains = std::any_of(current.begin(), current.end(),
+                                    [&](auto& q) { return q.pid == p.pid; });
+        if (!remains) events.push_back({.pid = p.pid, .name = p.name, .started = false});
+    }
+    return events;
+}
 
 inline ProcessInfo parse_process_stat(std::string_view stat_text) {
     ProcessInfo info;
@@ -304,7 +329,8 @@ inline void poll_system_loop(std::stop_token stop, prism::Shared<SystemSample>& 
 }
 
 inline void poll_processes_loop(std::stop_token stop,
-                                 prism::Shared<std::vector<ProcessInfo>>& out) {
+                                 prism::Shared<std::vector<ProcessInfo>>& out,
+                                 prism::Channel<ProcessEvent>& events) {
     std::vector<ProcessInfo> prev;
     auto last = std::chrono::steady_clock::now();
     while (!stop.stop_requested()) {
@@ -313,6 +339,8 @@ inline void poll_processes_loop(std::stop_token stop,
         double dt = std::chrono::duration<double>(now - last).count();
         last = now;
         auto current = read_process_list(prev, dt);
+        for (auto& e : diff_process_events(prev, current))
+            events.send(std::move(e));
         prev = current;
         out.set(std::move(current));
     }

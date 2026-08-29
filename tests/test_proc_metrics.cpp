@@ -145,6 +145,59 @@ TEST_CASE("sort_by orders by each key without mutating the input") {
     CHECK(input[0].pid == 3);
 }
 
+TEST_CASE("diff_process_events reports newly-appeared pids as started") {
+    std::vector<ProcessInfo> prev = {{.pid = 1, .name = "init"}};
+    std::vector<ProcessInfo> current = {{.pid = 1, .name = "init"}, {.pid = 42, .name = "sh"}};
+
+    auto events = diff_process_events(prev, current);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].pid == 42);
+    CHECK(events[0].name == "sh");
+    CHECK(events[0].started);
+}
+
+TEST_CASE("diff_process_events reports vanished pids as stopped") {
+    std::vector<ProcessInfo> prev = {{.pid = 1, .name = "init"}, {.pid = 42, .name = "sh"}};
+    std::vector<ProcessInfo> current = {{.pid = 1, .name = "init"}};
+
+    auto events = diff_process_events(prev, current);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].pid == 42);
+    CHECK(events[0].name == "sh");
+    CHECK_FALSE(events[0].started);
+}
+
+TEST_CASE("diff_process_events reports both starts and stops in one call") {
+    std::vector<ProcessInfo> prev = {{.pid = 1, .name = "init"}, {.pid = 2, .name = "old"}};
+    std::vector<ProcessInfo> current = {{.pid = 1, .name = "init"}, {.pid = 3, .name = "new"}};
+
+    auto events = diff_process_events(prev, current);
+    REQUIRE(events.size() == 2);
+    bool saw_stop_2 = false, saw_start_3 = false;
+    for (auto& e : events) {
+        if (e.pid == 2 && !e.started) saw_stop_2 = true;
+        if (e.pid == 3 && e.started) saw_start_3 = true;
+    }
+    CHECK(saw_stop_2);
+    CHECK(saw_start_3);
+}
+
+TEST_CASE("diff_process_events is empty when the process set is unchanged") {
+    std::vector<ProcessInfo> prev = {{.pid = 1, .name = "init"}, {.pid = 2, .name = "sh"}};
+    std::vector<ProcessInfo> current = prev;
+
+    CHECK(diff_process_events(prev, current).empty());
+}
+
+TEST_CASE("diff_process_events on an empty prev reports every current pid as started") {
+    std::vector<ProcessInfo> prev;
+    std::vector<ProcessInfo> current = {{.pid = 1, .name = "init"}, {.pid = 2, .name = "sh"}};
+
+    auto events = diff_process_events(prev, current);
+    CHECK(events.size() == 2);
+    for (auto& e : events) CHECK(e.started);
+}
+
 TEST_CASE("poll_system_loop and poll_processes_loop are jthread-invocable with stop_token "
           "first, and honor jthread-managed cancellation") {
     // Mirrors Task 7's real call form: std::jthread(poll_system_loop, std::ref(app.sys_sample)).
@@ -162,9 +215,10 @@ TEST_CASE("poll_system_loop and poll_processes_loop are jthread-invocable with s
     CHECK(std::chrono::steady_clock::now() - t0 < std::chrono::seconds(3));
 
     prism::Shared<std::vector<ProcessInfo>> proc_list;
+    prism::Channel<ProcessEvent> process_events;
     auto t1 = std::chrono::steady_clock::now();
     {
-        std::jthread t(poll_processes_loop, std::ref(proc_list));
+        std::jthread t(poll_processes_loop, std::ref(proc_list), std::ref(process_events));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         t.request_stop();
     }

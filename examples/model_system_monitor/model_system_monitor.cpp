@@ -39,9 +39,13 @@ std::string format_seconds_ago(double seconds_ago) {
 struct SystemMonitor {
     // Background-thread ingest points. Never placed via vb.widget() -- they are read only
     // through .observe(), which fires during drain via the void drain() opt-in below. A
-    // harmless "not placed by view()" debug-build warning is expected for these two fields.
+    // harmless "not placed by view()" debug-build warning is expected for these fields.
     prism::Shared<SystemSample> sys_sample{};
     prism::Shared<std::vector<ProcessInfo>> proc_list{};
+    // Ordered/lossless, unlike the two Shared<T> above: every process start/stop between two
+    // drains must show up in the log, not just the latest one -- the reason this is a
+    // Channel<T> rather than another Shared<T>.
+    prism::Channel<ProcessEvent> process_events{};
 
     History cpu_history;
     History mem_history;
@@ -57,6 +61,9 @@ struct SystemMonitor {
     FlatProcessTreeSource tree_source;
     prism::TreeController tree_ctrl{prism::wrap_tree_storage(tree_source)};
     prism::Field<prism::TabBar<>> tabs;
+
+    static constexpr size_t max_event_log_lines = 200;
+    prism::List<std::string> event_log;
 
     prism::Field<float> heartbeat_phase{0.f};
 
@@ -90,6 +97,11 @@ struct SystemMonitor {
         tree_ctrl.refresh();
     }
 
+    void ingest_process_event(const ProcessEvent& e) {
+        event_log.push_back(fmt::format("{} pid {} {}", e.started ? "[+]" : "[-]", e.pid, e.name));
+        if (event_log.size() > max_event_log_lines) event_log.erase(0);
+    }
+
     void seed_demo_data() {
         struct { float cpu; double mem; double net; } samples[] = {
             {12.5f, 4096.0, 128.0}, {18.0f, 4200.0, 96.0},
@@ -106,11 +118,15 @@ struct SystemMonitor {
         demo.push_back(ProcessInfo{.pid = 42, .ppid = 1, .name = "prism_demo",
                                     .cpu_percent = 3.2f, .mem_percent = 1.8f});
         ingest_processes(demo);
+        ingest_process_event(ProcessEvent{.pid = 1, .name = "init", .started = true});
+        ingest_process_event(ProcessEvent{.pid = 42, .name = "prism_demo", .started = true});
+        ingest_process_event(ProcessEvent{.pid = 17, .name = "old_task", .started = false});
     }
 
     void drain() {
         sys_sample.drain_notifications();
         proc_list.drain_notifications();
+        process_events.drain_notifications();
     }
 
     void canvas(prism::DrawList& dl, prism::Rect bounds, const prism::WidgetNode& node) {
@@ -136,6 +152,9 @@ struct SystemMonitor {
                     });
                     vb.tab("Tree", [&](prism::WidgetTree::ViewBuilder& tvb) {
                         tvb.tree(tree_ctrl);
+                    });
+                    vb.tab("Events", [&](prism::WidgetTree::ViewBuilder& tvb) {
+                        tvb.list(event_log);
                     });
                 });
                 vb.canvas(*this).depends_on(heartbeat_phase).min_size(prism::Height{24});
@@ -177,6 +196,7 @@ int main(int argc, char* argv[]) {
         app.proc_list.observe([&app](const std::vector<ProcessInfo>& p) {
             app.ingest_processes(p);
         });
+        app.process_events.observe([&app](const ProcessEvent& e) { app.ingest_process_event(e); });
         // Re-sort immediately on a Dropdown change using the last known snapshot, rather
         // than waiting up to 1.5s for the next background poll to land.
         app.sort_key.observe([&app](const SortKey&) {
@@ -184,7 +204,8 @@ int main(int argc, char* argv[]) {
         });
 
         sys_thread = std::jthread(poll_system_loop, std::ref(app.sys_sample));
-        proc_thread = std::jthread(poll_processes_loop, std::ref(app.proc_list));
+        proc_thread = std::jthread(poll_processes_loop, std::ref(app.proc_list),
+                                    std::ref(app.process_events));
     });
 
     return 0;
