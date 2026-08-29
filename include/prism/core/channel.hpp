@@ -31,6 +31,9 @@ public:
     }
 
 private:
+    // simplify: mpsc_queue is unbounded -- a stalled consumer thread lets a producer grow it
+    // without limit. Add a bounded/drop-oldest policy if the stall-latency work shows this
+    // matters in practice.
     mpsc_queue<T> queue_;
     SenderHub<const T&> received_;
     std::vector<Connection> observers_;
