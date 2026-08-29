@@ -64,8 +64,19 @@ struct is_shared<Shared<T>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_shared_v = is_shared<T>::value;
 
+template <typename> class Channel;
+
+template <typename T>
+struct is_channel : std::false_type {};
+
+template <typename T>
+struct is_channel<Channel<T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_channel_v = is_channel<T>::value;
+
 template <typename T>
 concept component_type = std::is_class_v<T> && !is_field_v<T> && !is_state_v<T>
-    && !is_derived_v<T> && !is_shared_v<T>;
+    && !is_derived_v<T> && !is_shared_v<T> && !is_channel_v<T>;
 
 } // namespace prism::core

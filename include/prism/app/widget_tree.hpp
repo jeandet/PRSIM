@@ -694,6 +694,10 @@ private:
 
                 if constexpr (is_state_v<M>) {
                     // invisible observable — no widget
+                } else if constexpr (is_channel_v<M>) {
+                    // invisible observable — no widget, but still drained every tick since
+                    // (unlike State<T>) it delivers cross-thread, not synchronously on send()
+                    drain_callbacks_.push_back([&member] { member.drain_notifications(); });
                 } else if constexpr (is_field_v<M>) {
                     auto leaf = node_leaf(member, next_id_);
 #ifdef PRISM_DEBUG_TOOLS_ENABLED

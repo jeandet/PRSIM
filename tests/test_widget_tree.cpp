@@ -650,3 +650,35 @@ TEST_CASE("set_debug_highlight with a nonexistent id injects nothing and does no
         if (std::holds_alternative<prism::RectOutline>(cmd)) found = true;
     CHECK_FALSE(found);
 }
+
+#if __cpp_impl_reflection
+#include <prism/core/channel.hpp>
+
+namespace {
+struct ReflectedChannelModel {
+    prism::Field<int> x{1};
+    prism::core::Channel<int> events;
+};
+}
+
+TEST_CASE("Channel<T> member of a reflection-only model produces no widget node") {
+    ReflectedChannelModel model;
+    prism::WidgetTree tree(model);
+    // Only x should have become a leaf -- events is an invisible observable.
+    CHECK(tree.leaf_count() == 1);
+}
+
+TEST_CASE("Channel<T> member of a reflection-only model is auto-drained by drain_shared") {
+    ReflectedChannelModel model;
+    prism::WidgetTree tree(model);
+
+    int received = -1;
+    auto conn = model.events.on_receive().connect([&](const int& v) { received = v; });
+
+    model.events.send(7);
+    CHECK(received == -1); // queued, not yet delivered
+
+    tree.drain_shared();
+    CHECK(received == 7);
+}
+#endif

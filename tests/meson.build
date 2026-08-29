@@ -43,6 +43,7 @@ headless_tests = {
   'table_hover_alias' : files('test_table_hover_alias.cpp'),
   'derived' : files('test_derived.cpp'),
   'shared' : files('test_shared.cpp'),
+  'channel' : files('test_channel.cpp'),
   'field_mirror' : files('test_field_mirror.cpp'),
   'inspector' : files('test_inspector.cpp'),
   'fixed_string' : files('test_fixed_string.cpp'),
