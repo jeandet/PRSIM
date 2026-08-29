@@ -101,32 +101,38 @@ public:
             backend_->wake();
         };
 
-        std::thread backend_thread([&] {
-            backend_->run([&](const WindowEvent& we) {
-                const auto& ev = we.event;
-                exec::start_detached(
-                    stdexec::schedule(sched)
-                    | stdexec::then([&, ev] {
-                        if (std::holds_alternative<WindowClose>(ev)) {
-                            loop.finish();
-                            return;
-                        }
-                        if (auto* resize = std::get_if<WindowResize>(&ev)) {
-                            w = resize->width;
-                            h = resize->height;
-                        }
-                        publish();
-                    })
-                );
-            });
+        // SDL's window creation and event pump must run on the process's real main
+        // thread on macOS (AppKit requirement -- Cocoa_CreateDevice() silently fails
+        // off-main-thread), so backend_->run() stays on whichever thread calls run()
+        // here, and the stdexec run_loop that drives view rebuilding moves to a
+        // worker thread instead.
+        std::thread logic_thread([&] {
+            backend_->wait_ready();
+            publish();
+            loop.run();
+            backend_->quit();
         });
 
-        backend_->wait_ready();
-        publish();
-        loop.run();
+        backend_->run([&](const WindowEvent& we) {
+            const auto& ev = we.event;
+            exec::start_detached(
+                stdexec::schedule(sched)
+                | stdexec::then([&, ev] {
+                    if (std::holds_alternative<WindowClose>(ev)) {
+                        loop.finish();
+                        return;
+                    }
+                    if (auto* resize = std::get_if<WindowResize>(&ev)) {
+                        w = resize->width;
+                        h = resize->height;
+                    }
+                    publish();
+                })
+            );
+        });
+
         loop_ = nullptr;
-        backend_->quit();
-        backend_thread.join();
+        logic_thread.join();
     }
 
 private:

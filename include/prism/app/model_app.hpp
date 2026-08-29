@@ -135,8 +135,60 @@ void model_app(Backend& backend, Window& window, Model& model,
         );
     };
 
-    std::thread backend_thread([&] {
-        backend.run([&](const WindowEvent& we) {
+    // SDL's window creation and event pump must run on the process's real main
+    // thread on macOS (AppKit requirement -- Cocoa_CreateDevice() silently fails
+    // off-main-thread), so backend.run() stays on whichever thread calls model_app()
+    // here, and the stdexec run_loop that drives view rebuilding moves to a worker
+    // thread instead.
+    std::thread logic_thread([&] {
+        backend.wait_ready();
+        registry.for_each([&](WindowId id, WindowRegistry::Entry& entry) {
+            publish_entry(id, entry);
+        });
+
+        // AppContext must outlive setup — callbacks captured during setup use it.
+        auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook);
+
+#ifdef PRISM_DEBUG_TOOLS_ENABLED
+        // Live tree inspector, toggled by Ctrl+Shift+I. This installs the sole
+        // global-key-handler/post-dispatch-hook slots AppContext exposes — an
+        // app's own setup() calling set_global_key_handler/set_post_dispatch_hook
+        // below would silently override this wiring. Known limitation, not solved
+        // here (see commit message).
+        ctx.set_global_key_handler([&](const KeyPress& kp) {
+            if (kp.key != keys::i || !(kp.mods & mods::ctrl) || !(kp.mods & mods::shift))
+                return;
+            if (!debug_window_id) {
+                auto* win = backend.request_window(WindowConfig{.title = "PRISM Tree Inspector",
+                                                                  .decoration = DecorationMode::Custom});
+                if (!win) return; // request failed — stay dormant, try again on next hotkey press
+                auto* primary_entry = registry.find(primary_id);
+                if (!primary_entry) return;
+                debug_window_id = registry.add(*win, debug_model);
+                auto* debug_entry = registry.find(*debug_window_id);
+                if (!debug_entry) return;
+                debug_controller.emplace(*primary_entry->tree, *debug_entry->tree, debug_model);
+                ctx.set_post_dispatch_hook([&] {
+                    if (debug_controller) debug_controller->refresh();
+                });
+            } else {
+                registry.remove(*debug_window_id);
+                backend.close_window(*debug_window_id);
+                reset_debug_inspector();
+            }
+        });
+#endif
+
+        if (setup) {
+            setup(ctx);
+            schedule_tick();
+        }
+
+        loop.run();
+        backend.quit();
+    });
+
+    backend.run([&](const WindowEvent& we) {
             const auto& ev = we.event;
             WindowId wid = we.window;
             exec::start_detached(
@@ -199,55 +251,8 @@ void model_app(Backend& backend, Window& window, Model& model,
                 })
             );
         });
-    });
 
-    backend.wait_ready();
-    registry.for_each([&](WindowId id, WindowRegistry::Entry& entry) {
-        publish_entry(id, entry);
-    });
-
-    // AppContext must outlive setup — callbacks captured during setup use it.
-    auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook);
-
-#ifdef PRISM_DEBUG_TOOLS_ENABLED
-    // Live tree inspector, toggled by Ctrl+Shift+I. This installs the sole
-    // global-key-handler/post-dispatch-hook slots AppContext exposes — an
-    // app's own setup() calling set_global_key_handler/set_post_dispatch_hook
-    // below would silently override this wiring. Known limitation, not solved
-    // here (see commit message).
-    ctx.set_global_key_handler([&](const KeyPress& kp) {
-        if (kp.key != keys::i || !(kp.mods & mods::ctrl) || !(kp.mods & mods::shift))
-            return;
-        if (!debug_window_id) {
-            auto* win = backend.request_window(WindowConfig{.title = "PRISM Tree Inspector",
-                                                              .decoration = DecorationMode::Custom});
-            if (!win) return; // request failed — stay dormant, try again on next hotkey press
-            auto* primary_entry = registry.find(primary_id);
-            if (!primary_entry) return;
-            debug_window_id = registry.add(*win, debug_model);
-            auto* debug_entry = registry.find(*debug_window_id);
-            if (!debug_entry) return;
-            debug_controller.emplace(*primary_entry->tree, *debug_entry->tree, debug_model);
-            ctx.set_post_dispatch_hook([&] {
-                if (debug_controller) debug_controller->refresh();
-            });
-        } else {
-            registry.remove(*debug_window_id);
-            backend.close_window(*debug_window_id);
-            reset_debug_inspector();
-        }
-    });
-#endif
-
-    if (setup) {
-        setup(ctx);
-        schedule_tick();
-    }
-
-    loop.run();
-
-    backend.quit();
-    backend_thread.join();
+    logic_thread.join();
 }
 
 template <typename Model>

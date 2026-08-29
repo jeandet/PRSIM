@@ -50,24 +50,28 @@ TEST_CASE("model_app's cursor reclaims client content after a chrome-edge excurs
                                            .decoration = prism::DecorationMode::Custom});
     auto& sdl_win = static_cast<prism::backends::SdlWindow&>(window);
 
-    std::thread app_thread([&] { prism::model_app(backend, window, model); });
+    // model_app() drives SDL's window creation and event pump, which on macOS must happen on
+    // the process's real main thread (AppKit requirement) -- so it runs here, and the test's
+    // own injection/assertions move to a worker thread instead.
+    std::thread driver([&] {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+        while (sdl_win.sdl_window() == nullptr && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        REQUIRE(sdl_win.sdl_window() != nullptr);
+        auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
 
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-    while (sdl_win.sdl_window() == nullptr && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    REQUIRE(sdl_win.sdl_window() != nullptr);
-    auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
+        push_motion(window_id, 2.f, 150.f); // left edge -- chrome sets ResizeEW
+        REQUIRE(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
 
-    push_motion(window_id, 2.f, 150.f); // left edge -- chrome sets ResizeEW
-    REQUIRE(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
+        push_motion(window_id, 150.f, 150.f); // client content -- must reclaim Default
+        CHECK(wait_for_cursor(sdl_win, prism::CursorShape::Default));
 
-    push_motion(window_id, 150.f, 150.f); // client content -- must reclaim Default
-    CHECK(wait_for_cursor(sdl_win, prism::CursorShape::Default));
+        SDL_Event close_ev{};
+        close_ev.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+        close_ev.window.windowID = window_id;
+        SDL_PushEvent(&close_ev);
+    });
 
-    SDL_Event close_ev{};
-    close_ev.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
-    close_ev.window.windowID = window_id;
-    SDL_PushEvent(&close_ev);
-
-    app_thread.join();
+    prism::model_app(backend, window, model);
+    driver.join();
 }
