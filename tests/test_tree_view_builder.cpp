@@ -152,7 +152,7 @@ TEST_CASE("clicking a row through the real hit_test/route_mouse_button pipeline 
     // returns the first nonzero-id match under the click point, and rows deliberately have real,
     // distinct, nonzero ids (so each row's own click handler can fire ctrl.on_row_clicked) --
     // so a real click's hit_test() always resolves to the ROW's id, never the container's. This
-    // test drives the actual prism::hit_test() + prism::app::detail::route_mouse_button() pipeline
+    // test drives the actual prism::hit_test() + prism::app::widget_detail::route_mouse_button() pipeline
     // a real running app uses, with no shortcut, to prove a real click ends up focusing the
     // container (which is what makes subsequent arrow-key presses route anywhere at all).
     TreeModel model;
@@ -180,7 +180,7 @@ TEST_CASE("clicking a row through the real hit_test/route_mouse_button pipeline 
 
     prism::MouseButton mb{click_pos, /*button=*/1, /*pressed=*/true};
     prism::InputEvent ev{mb};
-    prism::app::detail::route_mouse_button(tree, *snap, ev, mb);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, ev, mb);
 
     // A real click on a row must still end up focusing the container -- otherwise every
     // subsequent arrow-key press has no focused widget to route to, exactly reproducing
@@ -198,7 +198,7 @@ TEST_CASE("clicking a row through the real hit_test/route_mouse_button pipeline 
     tree.clear_dirty();
     prism::KeyPress down_kp{prism::keys::down, 0};
     prism::InputEvent down_ev{down_kp};
-    prism::app::detail::route_key_press(tree, down_ev, down_kp);
+    prism::app::widget_detail::route_key_press(tree, down_ev, down_kp);
     CHECK(model.ctrl.selected.get() == std::optional<prism::TreeNodeId>{2});
 }
 

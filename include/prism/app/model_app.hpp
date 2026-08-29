@@ -172,11 +172,11 @@ void model_app(Backend& backend, Window& window, Model& model,
                     }
                     if (entry->current_snap) {
                         if (auto* mm = std::get_if<MouseMove>(&ev))
-                            detail::route_mouse_move(*entry->tree, *entry->current_snap, *mm);
+                            widget_detail::route_mouse_move(*entry->tree, *entry->current_snap, *mm);
                         if (auto* mb = std::get_if<MouseButton>(&ev))
-                            detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
+                            widget_detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
                         if (auto* ms = std::get_if<MouseScroll>(&ev))
-                            detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
+                            widget_detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
                         // SdlWindow::set_cursor dedups against the real OS cursor, so push
                         // unconditionally — the chrome path (backend thread) can change the
                         // cursor out from under any copy Entry might otherwise cache.
@@ -184,10 +184,10 @@ void model_app(Backend& backend, Window& window, Model& model,
                     }
                     if (auto* kp = std::get_if<KeyPress>(&ev)) {
                         if (global_key_handler) global_key_handler(*kp);
-                        detail::route_key_press(*entry->tree, ev, *kp);
+                        widget_detail::route_key_press(*entry->tree, ev, *kp);
                     }
                     if (std::get_if<TextInput>(&ev))
-                        detail::route_text_input(*entry->tree, ev);
+                        widget_detail::route_text_input(*entry->tree, ev);
 
                     entry->tree->drain_shared();
                     if (post_dispatch_hook) post_dispatch_hook();

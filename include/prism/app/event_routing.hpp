@@ -6,7 +6,7 @@
 
 #include <variant>
 
-namespace prism::app::detail {
+namespace prism::app::widget_detail {
 using namespace prism::core;
 using namespace prism::input;
 using namespace prism::ui;
@@ -96,4 +96,4 @@ inline void route_text_input(WidgetTree& tree, const InputEvent& ev) {
         tree.dispatch(tree.focused_id(), ev);
 }
 
-} // namespace prism::app::detail
+} // namespace prism::app::widget_detail

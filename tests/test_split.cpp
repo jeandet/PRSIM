@@ -227,7 +227,7 @@ TEST_CASE("Pressing and dragging the handle through the real input pipeline resi
 
     MouseButton press{press_pos, /*button=*/1, /*pressed=*/true};
     InputEvent press_ev{press};
-    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, press_ev, press);
     CHECK(tree.captured_id() == handle_id);
 
     // Two separate MouseMove events, each a real 10px rightward mouse movement.
@@ -236,20 +236,20 @@ TEST_CASE("Pressing and dragging the handle through the real input pipeline resi
     // subsequent events instead of reconstructing absolute position, the
     // second move would not add another clean 10px -- it would desync.
     MouseMove move1{Point{X{press_pos.x.raw() + 10.f}, press_pos.y}};
-    prism::app::detail::route_mouse_move(tree, *snap, move1);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move1);
     auto snap2 = tree.build_snapshot(406, 100, 2);
     auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
     CHECK(pane0_rect2.extent.w.raw() == doctest::Approx(pane0_w0 + 10.f));
 
     MouseMove move2{Point{X{press_pos.x.raw() + 20.f}, press_pos.y}};
-    prism::app::detail::route_mouse_move(tree, *snap2, move2);
+    prism::app::widget_detail::route_mouse_move(tree, *snap2, move2);
     auto snap3 = tree.build_snapshot(406, 100, 3);
     auto [pane0_id3, pane0_rect3] = snap3->geometry[0];
     CHECK(pane0_rect3.extent.w.raw() == doctest::Approx(pane0_w0 + 20.f));
 
     MouseButton release{Point{X{press_pos.x.raw() + 20.f}, press_pos.y}, 1, false};
     InputEvent release_ev{release};
-    prism::app::detail::route_mouse_button(tree, *snap3, release_ev, release);
+    prism::app::widget_detail::route_mouse_button(tree, *snap3, release_ev, release);
     CHECK(tree.captured_id() == 0);
 
     auto snap4 = tree.build_snapshot(406, 100, 4);
@@ -353,7 +353,7 @@ TEST_CASE("Dragging a handle in a vstack resizes panes along the Y axis") {
     Point press_pos{X{handle_rect.origin.x.raw() + 5.f}, Y{handle_rect.origin.y.raw() + 2.f}};
     MouseButton press{press_pos, 1, true};
     InputEvent press_ev{press};
-    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, press_ev, press);
     CHECK(tree.captured_id() == handle_id);
 
     // 5px, not the X-axis tests' 20px: the default pane height (30px) is far
@@ -361,7 +361,7 @@ TEST_CASE("Dragging a handle in a vstack resizes panes along the Y axis") {
     // is 24px, so a proportionally-large delta here would clamp pane1 at its
     // minimum instead of exercising a clean, unclamped resize.
     MouseMove move{Point{press_pos.x, Y{press_pos.y.raw() + 5.f}}};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
 
     auto snap2 = tree.build_snapshot(200, 66, 2);
     auto [pane0_id2, pane0_rect2] = snap2->geometry[0];
@@ -413,11 +413,11 @@ TEST_CASE("Dragging the only handle after 3 stacked panes resizes its real neigh
     Point press_pos{X{handle_rect.origin.x.raw() + 5.f}, Y{handle_rect.origin.y.raw() + 2.f}};
     MouseButton press{press_pos, 1, true};
     InputEvent press_ev{press};
-    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, press_ev, press);
     CHECK(tree.captured_id() == handle_id);
 
     MouseMove move{Point{press_pos.x, Y{press_pos.y.raw() + 5.f}}};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
 
     auto snap2 = tree.build_snapshot(200, 126, 2);
     auto [a_id2, a_rect2] = snap2->geometry[0];
@@ -476,11 +476,11 @@ TEST_CASE("Dragging the handle after a PlotGroup resizes every panel together, n
     Point press_pos{X{handle_rect.origin.x.raw() + 2.f}, Y{handle_rect.origin.y.raw() + 2.f}};
     MouseButton press{press_pos, 1, true};
     InputEvent press_ev{press};
-    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, press_ev, press);
     CHECK(tree.captured_id() == handle_id);
 
     MouseMove move{Point{press_pos.x, Y{press_pos.y.raw() + 5.f}}};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
 
     auto snap2 = tree.build_snapshot(300, 276, 2);
     auto [a_id2, a_rect2] = snap2->geometry[0];

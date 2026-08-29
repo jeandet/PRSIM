@@ -69,7 +69,7 @@ TEST_CASE("Hovering a Handle in an hstack reports ResizeEW") {
     auto [handle_id, handle_rect] = snap->geometry[1];
 
     MouseMove move{handle_rect.center()};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
 
     CHECK(tree.desired_cursor() == CursorShape::ResizeEW);
 }
@@ -81,7 +81,7 @@ TEST_CASE("Hovering a Handle in a vstack reports ResizeNS") {
     auto [handle_id, handle_rect] = snap->geometry[1];
 
     MouseMove move{handle_rect.center()};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
 
     CHECK(tree.desired_cursor() == CursorShape::ResizeNS);
 }
@@ -93,7 +93,7 @@ TEST_CASE("A bare, unwired handle() outside a split container has no cursor over
     auto [handle_id, handle_rect] = snap->geometry[1];
 
     MouseMove move{handle_rect.center()};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
 
     CHECK(tree.desired_cursor() == CursorShape::Default);
 }
@@ -107,12 +107,12 @@ TEST_CASE("Capturing a Handle keeps its resize cursor even after the mouse leave
 
     MouseButton press{handle_center, 1, true};
     InputEvent press_ev{press};
-    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, press_ev, press);
     REQUIRE(tree.captured_id() == handle_id);
     CHECK(tree.desired_cursor() == CursorShape::ResizeEW);
 
     MouseMove move{Point{X{handle_center.x.raw() + 60.f}, handle_center.y}};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
     CHECK(tree.desired_cursor() == CursorShape::ResizeEW);
 }
 
@@ -126,14 +126,14 @@ TEST_CASE("Releasing a captured Handle off its rect falls back to whatever is no
 
     MouseButton press{handle_center, 1, true};
     InputEvent press_ev{press};
-    prism::app::detail::route_mouse_button(tree, *snap, press_ev, press);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, press_ev, press);
 
     Point release_pos{pane0_rect.center()};
     MouseMove move{release_pos};
-    prism::app::detail::route_mouse_move(tree, *snap, move);
+    prism::app::widget_detail::route_mouse_move(tree, *snap, move);
     MouseButton release{release_pos, 1, false};
     InputEvent release_ev{release};
-    prism::app::detail::route_mouse_button(tree, *snap, release_ev, release);
+    prism::app::widget_detail::route_mouse_button(tree, *snap, release_ev, release);
 
     REQUIRE(tree.captured_id() == 0);
     CHECK(tree.desired_cursor() == CursorShape::Default);
