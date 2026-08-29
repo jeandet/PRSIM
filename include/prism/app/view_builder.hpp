@@ -1,5 +1,11 @@
 #pragma once
 
+// Include <prism/app/widget_tree.hpp> instead of this header directly. ViewBuilder's inline
+// method bodies call WidgetTree's methods and need it complete, which only happens because
+// widget_tree.hpp includes this file at its own bottom, after WidgetTree's definition closes --
+// including this header on its own leaves WidgetTree an incomplete forward declaration and
+// fails with "invalid use of incomplete type 'class prism::app::WidgetTree'".
+
 #include <prism/delegates/dropdown_delegates.hpp>
 #include <prism/delegates/tabs_delegates.hpp>
 #include <prism/delegates/text_delegates.hpp>

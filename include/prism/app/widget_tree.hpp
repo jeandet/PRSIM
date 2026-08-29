@@ -31,7 +31,6 @@ using namespace prism::core;
 using namespace prism::ui;
 using namespace prism::app::widget_detail;
 
-
 class ViewBuilder;
 
 // index_ stores raw pointers into the tree -- valid only because the tree

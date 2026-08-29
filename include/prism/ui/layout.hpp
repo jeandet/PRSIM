@@ -65,7 +65,7 @@ struct LayoutNode {
     const Theme* theme = &detail::layout_default_theme;
     std::optional<float> canvas_min_width;   // only meaningful for Kind::Canvas
     std::optional<float> canvas_min_height;  // only meaningful for Kind::Canvas
-    // Set by WidgetTree::build_layout() for Leaf/Canvas/Handle nodes -- lets
+    // Set by prism::app::widget_detail::build_layout() for Leaf/Canvas/Handle nodes -- lets
     // layout_flatten() read/update that widget's snapshot-assembly cache directly,
     // without threading a WidgetId->WidgetNode* lookup through this free function.
     WidgetNode* widget = nullptr;

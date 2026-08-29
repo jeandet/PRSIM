@@ -9,9 +9,7 @@
 #include <memory>
 #include <optional>
 
-namespace prism {
-namespace app {
-namespace widget_detail {
+namespace prism::app::widget_detail {
 using namespace prism::core;
 using namespace prism::ui;
 
@@ -167,6 +165,4 @@ inline void build_layout(WidgetNode& node, LayoutNode& parent) {
     }
 }
 
-} // namespace widget_detail
-} // namespace app
-} // namespace prism
+} // namespace prism::app::widget_detail
