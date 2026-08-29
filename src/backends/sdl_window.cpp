@@ -89,7 +89,7 @@ void SdlWindow::ensure_created() {
 }
 
 void SdlWindow::create_sdl_window() {
-    uint64_t flags = 0;
+    uint64_t flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
     if (config_.resizable) flags |= SDL_WINDOW_RESIZABLE;
     if (config_.fullscreen) flags |= SDL_WINDOW_FULLSCREEN;
     if (decoration_ == DecorationMode::Custom || decoration_ == DecorationMode::None)
@@ -97,6 +97,7 @@ void SdlWindow::create_sdl_window() {
 
     sdl_window_ = SDL_CreateWindow(title_.c_str(), config_.width, config_.height, flags);
     renderer_ = SDL_CreateRenderer(sdl_window_, nullptr);
+    // device_scale_ itself is (re-)read from SDL every frame in render_snapshot().
 
     if (decoration_ == DecorationMode::Custom)
         SDL_SetWindowHitTest(sdl_window_, sdl_hit_test_callback, nullptr);
@@ -217,6 +218,14 @@ void SdlWindow::set_cursor(CursorShape shape) {
 
 void SdlWindow::render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const Theme& theme) {
     if (!renderer_) return;
+
+    // Re-read every frame rather than caching at creation time -- dragging the window to a
+    // display with a different backing scale (e.g. Retina <-> external monitor) changes this
+    // without any dedicated event we currently handle.
+    float density = SDL_GetWindowPixelDensity(sdl_window_);
+    device_scale_ = density > 0.f ? density : 1.0f;
+    SDL_SetRenderScale(renderer_, device_scale_, device_scale_);
+
     SDL_SetRenderDrawColor(renderer_, theme.canvas_bg.r, theme.canvas_bg.g,
                            theme.canvas_bg.b, theme.canvas_bg.a);
     SDL_RenderClear(renderer_);
@@ -287,9 +296,14 @@ void SdlWindow::render_cmd(const RectOutline& cmd) {
 void SdlWindow::render_cmd(const TextCmd& cmd, TTF_Font* font) {
     if (!font || cmd.text.empty()) return;
 
+    // Rasterize at the true backing resolution (cmd.size is in points) and shrink the
+    // destination rect back down by the same factor below -- SDL_SetRenderScale then
+    // stretches it back to exactly the glyph bitmap's native size, instead of upscaling a
+    // low-res texture and blurring it.
+    float target_px_size = cmd.size * device_scale_;
     float current_size = TTF_GetFontSize(font);
-    if (std::abs(current_size - cmd.size) > 0.5f) {
-        TTF_SetFontSize(font, cmd.size);
+    if (std::abs(current_size - target_px_size) > 0.5f) {
+        TTF_SetFontSize(font, target_px_size);
     }
 
     SDL_Color color = to_sdl(cmd.color);
@@ -298,8 +312,8 @@ void SdlWindow::render_cmd(const TextCmd& cmd, TTF_Font* font) {
 
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer_, surface);
     if (texture) {
-        float tw = static_cast<float>(surface->w);
-        float th = static_cast<float>(surface->h);
+        float tw = static_cast<float>(surface->w) / device_scale_;
+        float th = static_cast<float>(surface->h) / device_scale_;
         float ox = cmd.origin.x.raw();
         float oy = cmd.origin.y.raw();
 

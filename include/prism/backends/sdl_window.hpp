@@ -82,6 +82,11 @@ private:
     int resize_start_w_ = 0, resize_start_h_ = 0;           // window size at drag start
     int resize_start_pos_x_ = 0, resize_start_pos_y_ = 0;   // window position at drag start
     std::atomic<CursorShape> last_cursor_ = CursorShape::Default;
+    // Ratio of the window's backing-store pixels to its logical/point size (e.g. 2.0 on a
+    // Retina display). All draw commands operate in point space; this is what lets the
+    // renderer scale (see render_snapshot) map that 1:1 onto the real backing resolution
+    // instead of upscaling a low-res framebuffer.
+    float device_scale_ = 1.0f;
 
     void create_sdl_window();
     void destroy_sdl_window();
