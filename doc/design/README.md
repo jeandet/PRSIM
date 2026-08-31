@@ -66,6 +66,7 @@ graph TB
 | [stdexec integration](stdexec-integration.md) | run_loop event loops, prism::then/on pipe adaptors, AppContext | **Implemented** |
 | [canvas escape hatch](../../docs/superpowers/specs/2026-03-29-canvas-escape-hatch-design.md) | `vb.canvas(model)` — custom DrawList rendering in expandable area | **Implemented** |
 | [dynamic-node-tree.md](dynamic-node-tree.md) | Node intermediate layer, vstack/hstack variadic API, pre-C++26 support | **Implemented** |
+| [python-sdk.md](python-sdk.md) | nanobind wrapping, fully multi-threaded, GIL-free Python 3.14+, posted-mutation queue | **Design** |
 | [widget-model.md](widget-model.md) | Persistent widgets from Field<T> via reflection | **Superseded** by field/sender/widget spec |
 | [reactivity.md](reactivity.md) | Sender/observer pattern, Field<T> change propagation | **Superseded** by field/sender/widget spec |
 
@@ -76,6 +77,5 @@ graph TB
 | [components.md](components.md) | `prism::Component` base class — self-wiring reusable UI + logic bundles | **Design only** |
 | [dynamic-node-tree.md](dynamic-node-tree.md) | Runtime `Node` tree — future: public API for dynamic UIs, tree mutation | **Future** |
 | [proxy-widget.md](proxy-widget.md) | Composite foreign renderers (CEF, VTK, mpv, etc.) as regular widgets via shared surfaces | **Concept** |
-| python-bindings | nanobind wrapping, GIL-free Python 3.14+, callback threading |
 | testing-strategy | doctest, synchronous scheduler, headless rendering, visual regression |
 | tracing-profiling | Tracy behind generic macros, trace points at pipeline boundaries |

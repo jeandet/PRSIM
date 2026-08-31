@@ -1,201 +1,113 @@
-# Python SDK — GIL-free Design
+# Python SDK — Design Spec
 
-> Status: **Design / Pre-implementation**. Captures findings from 2026-08-30 review of whether PRISM is ready for a GIL-free Python UI SDK and what glue is needed to bridge C++ compile-time to Python runtime.
+**Status:** Design (replaces `doc/design/README.md` python-bindings placeholder).  
+**Date:** 2026-08-31.  
+**Decisions here are fully multi-threaded from Python** — any Python thread may mutate the model. The single-thread rule (option a) is rejected.
 
-## 1. TL;DR
+## 0. Ground truth — what breaks today
 
-* **Architecture is ready, binding layer is not — which is the good way round.** The hard problem (lock-free, `GIL`-free render isolation via immutable snapshot) is already correct (`doc/design/threading-model.md:5`, `include/prism/render/scene_snapshot.hpp:16`, `include/prism/core/atomic_cell.hpp:11`). The remaining work is a thin, type-erased runtime adapter — not a redesign.
-* `Node` (`include/prism/ui/node.hpp:23`) is already the firewall between compile-time `C++` (`Widget<T>` concepts, `P2996` reflection walk) and a runtime tree. Python needs a `Tier0 dynamic` adapter beside the existing `Tier1 manual / Tier2 concept / Tier3 reflection` tiers for `Table`/`Tree` (`include/prism/ui/table.hpp:42`, `README.md:219`, `AGENTS.md:18`).
-* `Pydantic BaseModel` is the `Python` analog of `Field<T>` reflection and the right selling point: `struct{Field<int> count{42}} → model_app()` in `README.md:68` becomes `class M(BaseModel): count:int = 42 → pydantic_app()`.
-* Recommended build order: `PyField + ViewBuilder` explicit binding first (forcing function), then `PydanticMirror` auto-UI on top. Keep render thread `Py_BEGIN_ALLOW_THREADS`.
+- `Field::set()` is unsynchronized: read-compare-write + emit (`core/field.hpp:21-25`). Two concurrent setters tear; setter races readers.
+- `SenderHub` is plain `vector` + `emit_depth_` (`core/connection.hpp:55-76`). Concurrent `emit`/`connect`/`remove` is UB (realloc during iteration, corrupted depth).
+- `~Connection()` disconnects (`connection.hpp:17,31-35`) — under Python GC can run on any thread (3.14t finalizers), `remove()` (`connection.hpp:78-83`) racing `emit()`.
+- Widget wiring reads `Field` on logic thread without locks: `record()` captures `&field` (`ui/widget_node.hpp:151-169`), `handle_input` mutates (`benchmarks/stall_latency.cpp:89-92`). Off-thread writer races frame pipeline.
+- `connect_dirty` fires `set_dirty(id)` on caller's thread (`app/widget_tree.hpp:522-534`) — off-thread emit dirties `WidgetNode::dirty` while logic thread walks it (`window_registry.hpp:53-57` / `widget_tree.hpp:64`).
+- No idle wake: logic thread only runs on input (`app/model_app.hpp:191-253`) or animation tick. `model_system_monitor` keeps a permanent animation alive to drain `Shared` (`model_system_monitor.cpp:181-193`). Python mutation of idle app would never repaint.
+- Transactions are `thread_local` (`core/transaction.hpp:20-23`, 64-wave assert `64-70`) — must stay on one thread.
+- Cross-thread primitives already proven: `Shared<T>` = `atomic_cell` + pending flag (`core/shared.hpp:17-31`), `Channel<T>` = `mpsc_queue` (`core/channel.hpp:17-25`, `core/mpsc_queue.hpp:46-52`). Render/publish is thread-safe (`threading-model.md`).
+- `AppContext::scheduler()` (`app/model_app.hpp:36`) + posting from foreign thread is proven (`model_app.hpp:194-196`).
 
-## 2. Are we ready for GIL-free? (`include/prism/core/*`, `include/prism/app/*`)
+## 1. Synchronization — hybrid: hub locks + posted mutations
 
-### What is already GIL-free ready
+Rejected **global binding-boundary lock**: frame reads `Field` without crossing binding (`record()` via whole `Field<T>&` `ui/widget_node.hpp:151`). Lock only on Python calls can't stop `record()` race unless held around entire `build_snapshot()` — would serialize producers behind layout+record (up to 500 ms in `stall_latency.cpp:147-163`) and on 3.14t `gil_scoped_acquire` is a no-op so it's the only serialization, held across callbacks. Also rejected **pure per-field locks**: still fires `set_dirty` off-thread and needs every delegate read site locked.
 
-| Property | Where | Why it matters for `3.13t` |
-|---|---|---|
-| Decoupled app vs render: `WidgetTree` dirty→`build_snapshot()`→`atomic_cell<SceneSnapshot>` atomic `shared_ptr` swap → `SoftwareBackend::submit()` `memory_order_release` | `include/prism/app/widget_tree.hpp:350`, `include/prism/app/model_app.hpp:99`, `src/backends/software_backend.cpp:306` | Render never calls into app, never holds a lock. Render can stay `GIL`-free forever. |
-| `mpsc_queue<T>` lock-free Michael-Scott, cache-line-padded | `include/prism/core/mpsc_queue.hpp:19` | Basis for lossless `Python → C++` event streams without `GIL` contention. |
-| `Channel<T>` lossless ordered, `Shared<T>` coalescing latest-value | `include/prism/core/channel.hpp:14`, `include/prism/core/shared.hpp:13` (contrasts in `channel.hpp:11`) | Exact two semantics `free-threaded Python` needs: every event vs latest value. Both expose `drain_notifications()` for owner-thread coalescing. |
-| `stdexec run_loop` scheduler; `Backend::run()` on real main thread (macOS `AppKit` requirement), `logic_thread` owns `run_loop` | `include/prism/app/model_app.hpp:143,188` | Matches `Python` main thread owns `SDL`; `AppContext::scheduler()` (`model_app.hpp:36`) is the `GIL`-aware hop. |
-| Idle sleeps at OS level (`futex`/`SDL_WaitEvent`), zero-CPU | `doc/design/threading-model.md:10` | No `GIL` polling. |
-| `core/` is `SDL`-free; `BackendBase` vtable + `Headless`/`Null`/`Test`/`Capturing` backends | `include/prism/app/backend.hpp:19`, `include/prism/backends/software_backend.hpp:27`, `include/prism/app/headless_window.hpp` etc. | Test `Python` bindings headlessly. |
-| Dirty-repaint persistent `WidgetTree`, `cached_snapshot_draws` | `include/prism/ui/widget_node.hpp:67`, `include/prism/app/widget_tree_layout.hpp` | `Python` not paying per-frame DOM rebuild. |
+**Chosen:**
 
-### What blocks a shippable SDK today
+1. **Thread-safe `SenderHub`** — per-hub mutex guarding `receivers_`; `emit()` snapshots vector under lock, invokes outside lock; `remove()` erases under lock. `emit_depth_`/`pending_removes_` (`connection.hpp:60-64,78-83`) become dead code. Required for GC teardown on 3.14t; benefits C++ too.
+2. **No lock held across user code** — snapshot-then-invoke makes A→B/B→A deadlock impossible.
+3. **Field values single-writer**: off-thread mutations are posted to logic thread (§2); `record()`, `handle_input`, `Derived::recompute` (`core/derived.hpp:37-42`), transactions, dirty tracking unchanged.
 
-1. **No binding layer.** No `subprojects/nanobind.wrap`, no `python/` dir, `meson.build:8` is `cpp_std=c++26` only. Roadmap `README.md:519` Phase 5 lists `Python bindings` as future.
-2. **`Field<T>::set()` is owner-thread-only.** (`include/prism/core/field.hpp:21` direct `emit`, `vector<Connection>`, no atomics.) `Field`/`State`/`Derived` are not thread-safe; only `Shared`/`Channel` are. Free-threaded `Python` threads cannot `field.set()` directly — must `Channel.send()` / `Shared.set()` + owner `drain_notifications()` or `schedule(sched)|then()` (`include/prism/core/exec.hpp`, `model_app.hpp:120`). Binding must enforce and queue.
-3. **Compile-time View.** `Widget<T>` is `concept` dispatch (`include/prism/ui/delegate.hpp:32,285`) + `P2996` walk (`include/prism/core/reflect.hpp:16`, `app/widget_tree.hpp:686`). `Python` needs a runtime registry. The `C++23 view(ViewBuilder&)` fallback (`widget_tree.hpp:647`) proves the runtime path exists; it just needs a `PyViewBuilder` binding.
-4. **Ownership / GIL awareness.** `WidgetTree(Model&)` holds bare `Model&` (`app/widget_tree.hpp:44`), `SenderHub` holds `std::function` (`core/connection.hpp:46`) with no `GIL` management. `PyObject*` refcount + `observe()` holding a `Python` callable under `3.13t` deferred refcount / `PyMutex` is unhandled. Requires `nanobind` (free-threaded-aware) not `pybind11`, plus `shared_ptr<PyObject>` keepalive.
-5. **Event-loop embedding.** `model_app()` blocks `logic_thread.join()`+`backend.run()` (`model_app.hpp:191,254`). `Python` needs a non-blocking `AppContext` + exposed `scheduler()` for `prism.then/on`.
-6. **`transaction` is `thread_local`** (`core/transaction.hpp:21`). Cross-thread `Python` batching must go through `Channel` then `TransactionGuard` on the owner.
+Perf: lock+copy for 1–3 receivers ≈ tens of ns; `stall_latency` dominated by `record()`. `stall_latency` publish/latency/record-count assertions stay green (no off-thread producers in that binary). Add throughput bench (sets/s, 1 vs 8 producers) as gate.
 
-## 3. The Core Gap: Compile-time Graph → Runtime Graph
+**Free-threaded GIL**: PRISM never uses GIL for C++ state safety. Callbacks serialize on logic thread. `gil_scoped_acquire` at entry is required on GIL builds, no-op on 3.14t — identical behavior.
 
-```
-C++26:  struct M { Field<int> count; Field<Slider<>> vol; }  →  ^^M enumerators_of → Node{build_widget,on_change} → WidgetNode
-C++23:  struct M { void view(ViewBuilder& vb){ vb.vstack(count,vol);} }              →  same Node
-Python: dict / BaseModel / dataclass  →  ???  →  Node{build_widget,on_change}  →  same WidgetNode
-                                        ^^^^ missing glue
-```
+**Semantic delta to audit in P0:** receivers connected *during* an emit no longer fire same pass (today index loop can see them `connection.hpp:57`); receivers disconnected mid-emit still complete current pass (today deferred removal) — snapshot gives same. Also nested-emit disconnect: snapshot drops immediately vs today defers until outer `emit_depth_==0` (`connection.hpp:60-64,78-83`). `tests/test_connection.cpp:98-109` covers single-level; extend for nested.
 
-Both `C++` paths converge at `Node` (`ui/node.hpp:23`):
+## 2. Any-thread `field.set()` → logic thread
 
-```cpp
-struct Node {
-  WidgetId id; bool is_leaf; LayoutKind layout_kind; vector<Node> children;
-  function<void(WidgetNode&)> build_widget;               // captures Widget<T>::record/handle_input
-  function<Connection(function<void()>)> on_change;        // captures Field<T>::on_change()
-  vector<function<Connection(function<void()>)>> dependencies; // canvas depends_on
-  shared_ptr<TableState> table_state; // + vlist_* virtualised tiers
-};
-```
+**Coalescing mutation queue + posted `run_loop` task** (not immediate-under-lock, not one-task-per-set):
 
-`ViewBuilder` (`app/view_builder.hpp:103,294,367,441`) is the imperative runtime builder that already constructs those `Node`s: `widget(Field<T>&)`, `list(List<T>&)`, `table(ColumnStorage)`, `tree(TreeController)`, `canvas(T&)`, `hstack/vstack`. For `Python` this is the `public` surface — the `Python` analog of the `C++23` path.
+- Per-app `mpsc_queue<std::function<void()>>` + `atomic<bool> scheduled_` (reuse `Shared::pending_` pattern `core/shared.hpp:22-25`). First enqueue posts one `exec::start_detached(schedule(sched) | then(...))` — same as backend input path (`model_app.hpp:194-196`); `run_loop` wakes on work.
+- **Dispatch check:** binding checks thread-id before choosing path. If already on logic thread (callbacks, `post` tail), call `field.set(v)` directly — synchronous nested emit per §3. Otherwise enqueue + wake. One sentence, enforced in P2 binding layer.
+- Posted task on logic thread: pop all closures FIFO, run each `field.set` (→ emit → `connect_dirty` → `set_dirty` on logic thread), then tail `drain_shared()` → `for_each_dirty(publish)` → `schedule_tick()`. Factor tail from `model_app.hpp:128-130` (tick path, all-windows drain) and `244-250` (input path, single-window — don't copy `244-250` verbatim or secondary windows starve; M3 fix) into shared callable.
+- Ordering: per-producer FIFO via mpsc; publish after whole batch, no interleaving mid-batch. `with prism.transaction():` enqueues single closure doing all sets under one `TransactionGuard` on logic thread (`transaction.hpp:20-23` stays thread_local).
+- **Read-your-writes & read staleness:** `set()` returns before value lands (next loop turn). Binding keeps per-field Python last-set cache for immediate `m.count.value` after assignment. **UI-mutated fields go stale**: after a slider drag (logic-thread write), worker-thread `.value` get still sees cached last Python set until next cache update. Document: "Python sees latest-set you made; UI-driven changes converge next publish; for latest-wins cross-thread reads use `Shared<T>`." `Field::get()` from worker thread races writer — binding `.value` getter checks thread-id: on logic thread reads `field.get()` directly; off logic thread returns cache (or optionally posts a blocking fetch — not in v1).
+- **Shutdown protocol (deep B1 fix):** `run_loop` is a stack local (`model_app.hpp:61`) and the mutation queue is a heap `shared_ptr<mpsc_queue>` held locally (so `weak_ptr` is possible); posting after `loop.finish()` (`model_app.hpp:200`) / destroy is UAF (`__run_loop.hpp:43-52,144-148` assert). Binding ingress holds `weak_ptr` to that queue plus a closed flag; `post()` after close is rejected (no-op or `RuntimeError`); `prism.run()` quiesces queue before destroying `run_loop`. Also guard interpreter-exit-before-app: trampoline checks `Py_IsInitialized()` before `gil_scoped_acquire`.
+- **Pre-`run()` sets:** handles exist from construction, queue only after `model_app` starts. `m.count.value = x` before `prism.run()` does direct `set()` (single-threaded startup, documented).
+- New capability: idle app + off-thread set ⇒ publish with zero input (today impossible; see `model_system_monitor` workaround).
 
-## 4. Glue Architecture — Three Layers
+## 3. Callbacks, GIL, lifecycle
 
-### Layer 1 — Runtime `Field`: `PyField`
+- **Firing thread:** all PRISM callbacks (Field emit, Shared/Channel drain via `drain_callbacks_` `app/widget_tree.hpp:66-69,456-463` collected at `700,713`) fire on logic thread. Document: "callback runs on logic thread; you may `set()` synchronously inside it; don't block it."
+- **GIL:** every trampoline `gil_scoped_acquire`. Never use GIL as C++ state lock.
+- **Exceptions:** catch `nb::python_error` at boundary, print traceback to stderr (P3: mirror into debug Channel). Never unwind through `emit`/`run_loop` (terminates).
+- **Connection teardown:** `Connection` detach captures raw `this` (`connection.hpp:49-51`) — lock fixes races, not lifetime. Python `Connection` wrapper must keep `PyModel` owner alive (`nb::keep_alive` / `shared_ptr`), same as `FieldHandle` (§5). `__del__` is GIL-free pure C++ detach; GC from any thread is safe once hub is locked.
+- **Convenience `observe()`:** `ObservableValue::observe` / `Shared::observe` / `Channel::observe` mutate plain `observers_` vector (`field.hpp:27`, `shared.hpp:35`, `channel.hpp:29`) not covered by hub lock. Binding must call `on_change().connect()` / `on_receive().connect()` (hub-locked after P0) and own `Connection` Python-side; never expose convenience path directly.
+- **Reentrant set:** logic-thread emit → nested snapshot-emit; recursion follows C++ including 64-wave guard (`transaction.hpp:64-70`).
+- **Descriptor `__set__` branching:** on logic thread → direct `set()` + cache update; off-thread → enqueue + cache update. One place, both paths update cache.
 
-Don't expose `Field<T>` directly. Mirror the `Shared`/`Channel` boundary object:
+## 4. `Shared` / `Channel`
 
-```cpp
-// GIL-free boundary object, analogous to core/field.hpp:38 but thread-aware
-struct PyField {
-  PyObject* value; // protected by PyMutex / atomic, not GIL; incref/decref with 3.13t deferred refcount
-  SenderHub<PyObject*> on_change;
-  PyObject* get() const;
-  void set(PyObject* v); // may be called from any Python thread: store + pending flag, no emit
-  void drain_on_owner(); // called on logic_thread, does emit
-};
-```
+- `Shared.set()` any thread: direct, value path unchanged (`shared.hpp:22-25`); `get()` anywhere safe (`atomic_cell` load).
+- `Channel.send()` any thread: direct `mpsc_queue::push` (`channel.hpp:17`, `mpsc_queue.hpp:46`), lossless/ordered via logic-thread drain.
+- Only gap is idle wake: append bare drain+publish closure to same §2 queue (value already stored). Covers Field/Shared/Channel uniformly.
+- `observe()` on them: connects under hub lock; fires in drain.
 
-Producers (`Python` threads) `Channel<PyObject*>::send()` or `PyField::set()` lock-free; consumer (`logic_thread`) `drain_notifications()` on each `tick` (`app/widget_tree.hpp:66`, `model_app.hpp:129` `drain_shared`). This is how `Inspector<Shared<T>>` already bridges threads (`widgets/inspector.hpp:27` `observe` + `Shared::drain`). `Derived<T>` diamond coalescing via `TransactionGuard` (`core/transaction.hpp:45`) still runs `thread_local` on the owner only.
+## 5. Python model API
 
-### Layer 2 — Runtime `Widget` dispatch: `WidgetRegistry`
+Constraints: Python can't use P2996 reflection → must use `view()` path (`widget_tree.hpp:647-684`); `node_leaf` captures `&field` long-lived (`ui/widget_node.hpp:151-187`), so addresses must be stable and outlive `WidgetTree` (`window_registry.hpp:29`).
 
-`Widget<T>` (`ui/delegate.hpp:291`) is concept-selected at compile time. `Python` must switch at runtime:
-
-```cpp
-enum class PyKind { Int, Float, Str, Bool, SliderDesc, ButtonDesc, TextFieldDesc, DropdownDesc, CanvasDesc };
-
-Node node_py_field(PyField& f, PyKind kind, json meta) {
-  Node n; n.is_leaf = true; n.id = next_id++;
-  n.build_widget = [kind, &f, meta](WidgetNode& wn){
-    wn.focus_policy = kind_policy(kind);
-    wn.record = [kind, &f, meta](WidgetNode& node){
-      // GIL-free: DrawList ops only; py_to_string re-acquires GIL briefly
-      node.draws.clear();
-      switch(kind){ case PyKind::Str: node.draws.text(py_to_string(f.get()),...); break; /*...*/ }
-    };
-    wn.wire = [kind, &f](WidgetNode& node){
-      node.connections.push_back(node.on_input.connect([&f](const InputEvent& ev){
-        // handle_input: GIL acquire → call Python callable → f.set()
-      }));
-    };
-    wn.record(wn);
-  };
-  n.on_change = [&f](auto cb){ return f.on_change.connect([cb](PyObject*){ cb(); }); };
-  return n;
-}
-```
-
-Keep `DrawList` allocation (`render/draw_list.hpp:81`) on `logic_thread` with `GIL` released; only `py_to_string` / validation re-acquires.
-
-### Layer 3 — Runtime `View`: `PyViewBuilder`
-
-Expose `ViewBuilder` to `Python`. First iteration is **explicit** — mirrors the `C++23` manual path and proves `GIL-free` isolation before any auto-magic:
+- C++ trampoline `PyModel` owns fields in **per-type stable storage**: one `std::deque` per concrete `Field<T>` (or individually heap-allocated slots + type-erased registry) — `deque::push_back` never invalidates references, single `deque<variant>` can't hold heterogeneous `Field<int>` vs `Field<Slider>` without erasure. Exposes `view(ViewBuilder&)` that re-enters Python if `view` defined, else auto-stacks fields in declaration order (mirrors reflection walk `widget_tree.hpp:686-719`). Runs once at `WidgetTree` construction (on calling thread before `logic_thread` starts `model_app.hpp:77,143`; GIL held on main thread so safe).
+- Python descriptors allocate slots in `__init__` and return handles:
 
 ```python
-import prism
+class Mixer(prism.Model):
+    volume = prism.slider(0.75, min=0.0, max=1.0)
+    mute   = prism.checkbox(False, label="Mute")
+    count  = prism.field(42)
 
-count = prism.Field(42)               # PyField
-vol   = prism.SliderField(0.75, 0.0, 1.0)
+    def view(self, vb):
+        vb.hstack(self.volume, self.mute)
+        vb.widget(self.count)
 
-def view(vb):
-    vb.vstack(lambda: [vb.widget(count), vb.widget(vol)])
-    vb.table(readings, headers=["Sensor","Value"])
-
-prism.model_app("Demo", view)  # holds py::function alive; Node captures keep PyObject* inc-ref'd
+m = Mixer()
+prism.run(m, title="Mixer")          # blocks main thread, releases GIL around SDL pump
+m.count.value = 43                   # any thread, via §2
+conn = m.count.observe(lambda v: ...)  # fires on logic thread; keep conn alive
 ```
 
-`nanobind` wrapper forwards `widget(PyField*) → node_py_field`, `hstack(fn)` holds `py::function`, `table(ColumnStorage)` reuses existing `wrap_column_storage` (`ui/table.hpp:42`) / `wrap_row_storage` / `wrap_soa_columns` adaptors. `WidgetNode::wire/record` are already `std::function` (`ui/widget_node.hpp:56`) so `Python` lambdas can capture `PyObject*`.
+- `m.count` → typed `FieldHandle` (`FieldInt/Float/Bool/Str` + sentinels `Slider/Checkbox/Button` — one nanobind class per `Field<T>`); `.value` get/set, `.observe()`, `.on_change` pipe. `__set__` (`m.count = 5`) routes to slot so rebinding can't orphan address. Handles keep `PyModel` alive (`keep_alive`/`shared_ptr`) — GC while tree lives impossible.
+- `view()` runs GIL-acquired once at startup. `prism.run()` releases GIL around `backend.run()` on GIL builds so workers progress; must be main thread on macOS (`model_app.hpp:138-142`).
 
-## 5. Pydantic — The Selling Point
+## 6. Phases and tests
 
-`README.md:68` demo (`Counter{Field<int>}` → auto UI) and `FieldMirror<T>` (`widgets/field_mirror.hpp:94` `tuple<LeafSlot<T>>` + `sync_from`/`build`/`for_each_leaf`/`view`) are exactly what `Pydantic` does at runtime: walk `model_fields` + `Annotated` metadata, synthesize a form, `sync_from`/`build` with validation.
+**P0 — thread-safe `SenderHub` (C++ only).** Snapshot-emit + locked remove; drop `emit_depth_`/`pending_removes_`. Add `-Db_sanitize=thread` build option / CI job — "TSan-clean" is unenforceable without it. Tests: `tests/test_connection.cpp` N-thread hammer + nested-emit audit + all semantics tests green (`test_field`, `test_derived`, `test_transaction*`).
 
-**Pitch:** `Pydantic` familiar to every `Python` dev, typed, validated, `JSON Schema` already emitted. PRISM gives it a `60fps`, `GIL`-free, dirty-repainted renderer no `Streamlit`/`NiceGUI` can match.
+**P1 — logic-thread ingress (C++ only).** Mutation/wake queue + factored tail + closed-flag shutdown protocol + thread-id dispatch check. Tests (headless `TestBackend`/`CapturingBackend`): (a) N-thread concurrent sets, TSan-clean, final snapshot = legal last write; (b) idle-wake (no input, off-thread set ⇒ publish); (c) per-producer FIFO; (d) `stall_latency` unmodified; (e) throughput bench 1 vs 8 producers; (f) unbounded-queue growth under GIL contention — also add bounded/drop-oldest policy note from `channel.hpp:34-36`.
 
-```python
-from pydantic import BaseModel, Field
-from typing import Annotated
-import prism
+**P2 — Python MVP.** nanobind wrap, `PyModel` + per-type stable slots + descriptors/handles for scalar/string + `Slider/Checkbox/Button`, auto-stack view, `prism.run` GIL release, §2/§3 trampolines. Tests: pytest multi-thread storm on headless app, read-your-writes cache, stale-read doc check, observer values, `Connection` GC from workers, clean shutdown with live app + post-after-close rejection. CI both GIL (3.13/3.14) and free-threaded (3.14t) — verify nanobind free-threaded support per docs (local is 3.15.0rc1).
 
-class Mixer(BaseModel):
-    volume: Annotated[float, prism.Slider(min=0, max=1)] = 0.75
-    mute: bool = False
-    name: str = Field(default="chan1", max_length=32, description="Channel name")
-    # Literal["a","b"] → Dropdown, ge/le → Slider bounds, description → label
+**P3 — completeness.** `Shared`/`Channel` wrappers (+ wake), custom Python `view()`, `prism.transaction()` (`with` block buffers per-Python-thread batch → single closure; parallel to C++ `thread_local`), `Derived` with Python compute, `List<T>`/table sources, quit/lifecycle, `doc/design/python-sdk.md` polish, exception sink beyond stderr.
 
-prism.pydantic_app("Mixer", Mixer())  # FieldMirror<BaseModel> at runtime
-```
+Deferred: GPU backend interplay, full widget catalog, asyncio, free-threaded perf tuning beyond correctness.
 
-Mapping:
+## Open questions
 
-| Pydantic | Sentinel / Annotation (`core/reflect_annotations.hpp`) |
-|---|---|
-| `Annotated[float, prism.Slider(...)]` | `Slider<T>` (`ui/delegate.hpp:469`) |
-| `str Field(description=…)` | `label_t` / `section_t` (`field_mirror.hpp:103,125`) |
-| `bool` | `Checkbox` / `Widget<bool>` (`delegate.hpp:418`) |
-| `Literal` / `Enum` | `Dropdown` / `Widget<ScopedEnum>` (`delegate.hpp:648,646`) |
-| `constr(max_length=…)` | `TextField` (`delegate.hpp:62`) |
-| `Field(ge/le)` | `Slider` `min`/`max` |
+- nanobind free-threaded maturity on 3.15t — pin CI to minor nanobind cleanly supports.
+- Python exception sink beyond stderr (debug Channel) — P3 nicety.
+- Pre-`run()` direct-set vs queued — documented as direct for startup single-thread.
 
-### `PydanticMirror` — runtime `FieldMirror`
+## Conventions
 
-```
-BaseModel mutated (any thread) ──Channel<dict>/Shared<dict>──▶ logic_thread drain
-  ── PydanticMirror.sync_from(model.model_dump()) ──▶ each PyField.value.set()
-  ──▶ Node.on_change ──▶ WidgetTree dirty ──▶ snapshot ──▶ render (GIL-free)
-
-UI handle_input (logic_thread) ──▶ PyField.set() ──▶ PydanticMirror.build()
-  ──▶ model_copy(update=…) + model_validate() ──▶ ValidationError ? mark WidgetNode dirty with error DrawList : Channel.send(new_model)
-```
-
-Reuse `Inspector`'s `SyncGuard` (`widgets/inspector.hpp:55`, `field_mirror.hpp:144`) — multi-field `sync_from` would otherwise `push_local` per leaf with a torn value. Reuse `TransactionGuard` (`core/transaction.hpp:45`) to coalesce the fan-out. Don't reuse `pydantic.Field` name (collides with `prism.Field`); prefer `Annotated` or `prism.ui(...)` metadata (`field_mirror.hpp:76` `has_annotation<skip>` pattern).
-
-`Python` `dict.__setitem__` isn't observable — force `proxy = prism.proxify({"count":42})` that intercepts `__setitem__`/`__setattr__` or require `py_field.set(v)`. Same reason `FieldMirror` stores `LeafSlot<M> value` (`field_mirror.hpp:34`) not bare `M`.
-
-`Pydantic v2` core is `Rust`/`maturin`; verify `free-threaded 3.13t` wheel before locking (`free-threaded` deferred refcount interacts with `PyField` inc/dec).
-
-### Build order
-
-1. **Tier0: `PyField` + `PyViewBuilder` explicit** — proves `GIL-free` isolation, exercises `Channel`/`Shared` contract (`core/channel.hpp:18` vs `core/field.hpp:21`), exercises reference `Python` multi-thread `model_system_monitor` forcing function (`AGENTS.md:31`, `examples/model_system_monitor/proc_metrics.hpp:313` `Shared`+`Channel` poll loops). No `Pydantic` dependency.
-2. **Tier1: `PydanticMirror` / `pydantic_app()`** — thin adapter that walks `model_fields` and delegates to Tier0. No new `Widget` code.
-
-## 6. Concrete Next Steps
-
-1. `meson` `nanobind` wrap, `3.13t` CI, `Headless`/`Test` backend harness for `Python` tests (`app/test_backend.hpp`, `app/capturing_backend.hpp`).
-2. `python/prism/` module: `Field`, `SliderField`, `Channel`, `Shared`, `List` (`core/list.hpp:11`), `ViewBuilder` bindings; `GIL`-release in `record()`/`SoftwareBackend::submit()`, `GIL`-acquire only in `wire` callbacks.
-3. `PydanticMirror` in `python/` that reuses `FieldMirror` shape (`widgets/field_mirror.hpp:170` `view()` loop over `slots`).
-4. `examples/python_pydantic_demo/` as the composite multi-thread reference app (extend `model_system_monitor`, don't add a single-widget demo — `AGENTS.md:31`).
-
-## 7. References
-
-* Threading: `doc/design/threading-model.md`, `include/prism/app/model_app.hpp:120,143`, `src/backends/software_backend.cpp:96,311`
-* Snapshot / dirty repaint: `include/prism/render/scene_snapshot.hpp:16`, `include/prism/ui/widget_node.hpp:67`, `include/prism/app/widget_tree_layout.hpp`
-* Core reactivity: `include/prism/core/field.hpp:21`, `include/prism/core/shared.hpp:13`, `include/prism/core/channel.hpp:14`, `include/prism/core/transaction.hpp:21,45`, `include/prism/core/connection.hpp:42`
-* Node / ViewBuilder runtime seam: `include/prism/ui/node.hpp:23`, `include/prism/app/view_builder.hpp:103`, `include/prism/app/widget_tree.hpp:44,629`, `doc/design/dynamic-node-tree.md`
-* Widget dispatch: `include/prism/ui/delegate.hpp:32,285,311,469,648`
-* Existing adapter precedent: `include/prism/ui/table.hpp:42`, `include/prism/widgets/field_mirror.hpp:94`, `include/prism/widgets/inspector.hpp:27`, `include/prism/core/traits.hpp:79`
-* Roadmap: `README.md:68,445,519`, `doc/design/README.md`
-
-## 8. Open Questions
-
-* `Field ge/le → Slider` vs `TextField` heuristic — infer or require `Annotated`?
-* `Pydantic` validation error presentation — per-field `DrawList` error or `overlay` (`render/scene_snapshot.hpp:24`)?
-* `List[BaseModel]` → `Table` `RowStorage` (`ui/table.hpp:89` `wrap_row_storage`) vs `SoA` (`ui/table.hpp:185` `wrap_soa_columns`) auto-selection for `Python` lists.
-* `nanobind` `free-threaded` `PyObject` lifetime in `WidgetNode::edit_state` (`std::any` `ui/widget_node.hpp:37`) — store `py::object` with `PyMutex` or `shared_ptr<void>` holder?
+- After any-thread mutation, Python `.value` shows latest Python set; rendered value converges next frame. Use `Shared<T>` for latest-wins cross-thread reads, `Channel<T>` for every-event delivery — per `AGENTS.md` taxonomy.
+- `Node` addresses stable via per-type deques; `view()` mirrors reflection auto-stack.
+- Core stays SDL-free; SDL types never cross binding boundary.
