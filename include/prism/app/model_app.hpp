@@ -27,6 +27,7 @@ using namespace prism::input;
 using namespace prism::ui;
 
 inline thread_local bool detail_is_logic_thread = false;
+inline thread_local bool detail_in_mutation_batch = false;
 
 class AppContext {
 public:
@@ -71,6 +72,12 @@ public:
         if (!fn) return;
         if (closed_ && closed_->load(std::memory_order_acquire)) return;
         if (detail_is_logic_thread) {
+            if (detail_in_mutation_batch) {
+                // Re-entrant from within a batch drain — defer publish to the
+                // outer batch's tail (publish-after-whole-batch ordering).
+                fn();
+                return;
+            }
             fn();
             if (drain_publish_ && *drain_publish_) (*drain_publish_)();
             return;
@@ -80,24 +87,21 @@ public:
         if (scheduled_->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
             auto q = queue_;
             auto sched_flag = scheduled_;
-            auto closed_flag = closed_;
             auto tail = drain_publish_;
             auto sch = sched_;
-            exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, closed_flag, tail, sch] {
-                // Drain all queued closures FIFO, then run the shared publish tail
-                while (auto f = q->pop()) (*f)();
-                if (tail && *tail) (*tail)();
-                sched_flag->store(false, std::memory_order_release);
-                if (!q->empty()) {
+            exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, tail, sch] {
+                // Loop instead of depth-1 retry — avoids lost wakeup when
+                // pushes race the store(false)/empty/CAS window.
+                do {
+                    detail_in_mutation_batch = true;
+                    while (auto f = q->pop()) (*f)();
+                    detail_in_mutation_batch = false;
+                    if (tail && *tail) (*tail)();
+                    sched_flag->store(false, std::memory_order_release);
+                    if (q->empty()) break;
                     bool exp = false;
-                    if (sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) {
-                        exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, tail, sch] {
-                            while (auto f = q->pop()) (*f)();
-                            if (tail && *tail) (*tail)();
-                            sched_flag->store(false, std::memory_order_release);
-                        }));
-                    }
-                }
+                    if (!sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
+                } while (true);
             }));
         }
     }
@@ -217,16 +221,23 @@ void model_app(Backend& backend, Window& window, Model& model,
     // off-main-thread), so backend.run() stays on whichever thread calls model_app()
     // here, and the stdexec run_loop that drives view rebuilding moves to a worker
     // thread instead.
-    std::thread logic_thread([&, mutation_queue, mutation_scheduled, mutation_closed, mutation_drain_publish] {
+    // Heap-allocate AppContext so raw AppContext* cached by callers (tests,
+    // and future Python bindings holding weak_ptr to queue) never dangles
+    // when the logic thread exits and would otherwise destroy a stack `ctx`.
+    // The shared_ptr is held both here and by the logic thread; raw
+    // pointers observed in setup()/Backend::run remain valid until join.
+    auto ctx_holder = std::make_shared<AppContext>(sched, anim_clock, window, backend, registry,
+                                                   global_key_handler, post_dispatch_hook,
+                                                   mutation_queue, mutation_scheduled,
+                                                   mutation_closed, mutation_drain_publish);
+    std::thread logic_thread([&, ctx_holder, mutation_queue, mutation_scheduled, mutation_closed, mutation_drain_publish] {
         detail_is_logic_thread = true;
         backend.wait_ready();
         registry.for_each([&](WindowId id, WindowRegistry::Entry& entry) {
             publish_entry(id, entry);
         });
 
-        // AppContext must outlive setup — callbacks captured during setup use it.
-        auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook,
-                              mutation_queue, mutation_scheduled, mutation_closed, mutation_drain_publish);
+        auto& ctx = *ctx_holder;
 
 #ifdef PRISM_DEBUG_TOOLS_ENABLED
         // Live tree inspector, toggled by Ctrl+Shift+I. This installs the sole

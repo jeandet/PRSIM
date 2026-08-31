@@ -51,6 +51,8 @@ public:
         prev->next.store(n, std::memory_order_release);
     }
 
+    // Single-consumer only — caller must be the queue owner (logic thread
+    // task). Using empty() from a producer races pop() and is meaningless.
     [[nodiscard]] bool empty() const
     {
         return head_->next.load(std::memory_order_acquire) == nullptr;
