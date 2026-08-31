@@ -79,6 +79,7 @@ backend_base_tests = {
   'ui' : files('test_ui.cpp'),
   'model_app' : files('test_model_app.cpp'),
   'golden_snapshot' : files('test_golden_snapshot.cpp'),
+  'mutation_queue' : files('test_mutation_queue.cpp'),
 }
 
 foreach name, src : backend_base_tests

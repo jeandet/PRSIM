@@ -51,6 +51,11 @@ public:
         prev->next.store(n, std::memory_order_release);
     }
 
+    [[nodiscard]] bool empty() const
+    {
+        return head_->next.load(std::memory_order_acquire) == nullptr;
+    }
+
     // Single-consumer only.
     [[nodiscard]] std::optional<T> pop()
     {

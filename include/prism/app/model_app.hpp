@@ -16,12 +16,17 @@
 #include <optional>
 #include <thread>
 #include <variant>
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <prism/core/mpsc_queue.hpp>
 
 namespace prism::app {
 using namespace prism::core;
 using namespace prism::input;
 using namespace prism::ui;
 
+inline thread_local bool detail_is_logic_thread = false;
 
 class AppContext {
 public:
@@ -29,9 +34,26 @@ public:
 
     explicit AppContext(scheduler_type s, AnimationClock& c, Window& w, Backend& b,
                          WindowRegistry& r, std::function<void(const KeyPress&)>& key_handler,
-                         std::function<void()>& post_dispatch_hook)
+                         std::function<void()>& post_dispatch_hook,
+                         std::shared_ptr<mpsc_queue<std::function<void()>>> q,
+                         std::shared_ptr<std::atomic<bool>> scheduled,
+                         std::shared_ptr<std::atomic<bool>> closed,
+                         std::shared_ptr<std::function<void()>> drain_publish)
         : sched_(s), clock_(&c), window_(&w), backend_(&b), registry_(&r),
-          key_handler_(&key_handler), post_dispatch_hook_(&post_dispatch_hook) {}
+          key_handler_(&key_handler), post_dispatch_hook_(&post_dispatch_hook),
+          queue_(std::move(q)), scheduled_(std::move(scheduled)),
+          closed_(std::move(closed)), drain_publish_(std::move(drain_publish)) {}
+
+    // Keep old 3-arg ctor for tests that construct BackendBase directly without queue —
+    // delegates to the full ctor with empty queue (post becomes no-op).
+    explicit AppContext(scheduler_type s, AnimationClock& c, Window& w, Backend& b,
+                         WindowRegistry& r, std::function<void(const KeyPress&)>& key_handler,
+                         std::function<void()>& post_dispatch_hook)
+        : AppContext(s, c, w, b, r, key_handler, post_dispatch_hook,
+                     std::make_shared<mpsc_queue<std::function<void()>>>(),
+                     std::make_shared<std::atomic<bool>>(false),
+                     std::make_shared<std::atomic<bool>>(false),
+                     std::make_shared<std::function<void()>>()) {}
 
     scheduler_type scheduler() const { return sched_; }
     AnimationClock& clock() { return *clock_; }
@@ -45,6 +67,41 @@ public:
         *post_dispatch_hook_ = std::move(fn);
     }
 
+    void post(std::function<void()> fn) {
+        if (!fn) return;
+        if (closed_ && closed_->load(std::memory_order_acquire)) return;
+        if (detail_is_logic_thread) {
+            fn();
+            if (drain_publish_ && *drain_publish_) (*drain_publish_)();
+            return;
+        }
+        queue_->push(std::move(fn));
+        bool expected = false;
+        if (scheduled_->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            auto q = queue_;
+            auto sched_flag = scheduled_;
+            auto closed_flag = closed_;
+            auto tail = drain_publish_;
+            auto sch = sched_;
+            exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, closed_flag, tail, sch] {
+                // Drain all queued closures FIFO, then run the shared publish tail
+                while (auto f = q->pop()) (*f)();
+                if (tail && *tail) (*tail)();
+                sched_flag->store(false, std::memory_order_release);
+                if (!q->empty()) {
+                    bool exp = false;
+                    if (sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) {
+                        exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, tail, sch] {
+                            while (auto f = q->pop()) (*f)();
+                            if (tail && *tail) (*tail)();
+                            sched_flag->store(false, std::memory_order_release);
+                        }));
+                    }
+                }
+            }));
+        }
+    }
+
 private:
     scheduler_type sched_;
     AnimationClock* clock_;
@@ -53,6 +110,10 @@ private:
     WindowRegistry* registry_;
     std::function<void(const KeyPress&)>* key_handler_;
     std::function<void()>* post_dispatch_hook_;
+    std::shared_ptr<mpsc_queue<std::function<void()>>> queue_;
+    std::shared_ptr<std::atomic<bool>> scheduled_;
+    std::shared_ptr<std::atomic<bool>> closed_;
+    std::shared_ptr<std::function<void()>> drain_publish_;
 };
 
 template <typename Model>
@@ -80,6 +141,11 @@ void model_app(Backend& backend, Window& window, Model& model,
     std::function<void(const KeyPress&)> global_key_handler;
     std::function<void()> post_dispatch_hook;
     bool tick_scheduled = false;
+
+    auto mutation_queue = std::make_shared<mpsc_queue<std::function<void()>>>();
+    auto mutation_scheduled = std::make_shared<std::atomic<bool>>(false);
+    auto mutation_closed = std::make_shared<std::atomic<bool>>(false);
+    auto mutation_drain_publish = std::make_shared<std::function<void()>>();
 
 #ifdef PRISM_DEBUG_TOOLS_ENABLED
     // Shared by the hotkey's own detach branch and the generic secondary-WindowClose
@@ -135,19 +201,32 @@ void model_app(Backend& backend, Window& window, Model& model,
         );
     };
 
+    // Shared tail for §2 mutation queue: drain all Shared/Channel, publish dirty, tick.
+    // Factored from tick path's for_each(drain_shared) + publish_dirty (not the
+    // single-window drain_shared in the input path — secondary windows would starve).
+    *mutation_drain_publish = [&] {
+        registry.for_each([&](WindowId, WindowRegistry::Entry& entry) {
+            entry.tree->drain_shared();
+        });
+        publish_dirty();
+        schedule_tick();
+    };
+
     // SDL's window creation and event pump must run on the process's real main
     // thread on macOS (AppKit requirement -- Cocoa_CreateDevice() silently fails
     // off-main-thread), so backend.run() stays on whichever thread calls model_app()
     // here, and the stdexec run_loop that drives view rebuilding moves to a worker
     // thread instead.
-    std::thread logic_thread([&] {
+    std::thread logic_thread([&, mutation_queue, mutation_scheduled, mutation_closed, mutation_drain_publish] {
+        detail_is_logic_thread = true;
         backend.wait_ready();
         registry.for_each([&](WindowId id, WindowRegistry::Entry& entry) {
             publish_entry(id, entry);
         });
 
         // AppContext must outlive setup — callbacks captured during setup use it.
-        auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook);
+        auto ctx = AppContext(sched, anim_clock, window, backend, registry, global_key_handler, post_dispatch_hook,
+                              mutation_queue, mutation_scheduled, mutation_closed, mutation_drain_publish);
 
 #ifdef PRISM_DEBUG_TOOLS_ENABLED
         // Live tree inspector, toggled by Ctrl+Shift+I. This installs the sole
@@ -191,12 +270,14 @@ void model_app(Backend& backend, Window& window, Model& model,
     backend.run([&](const WindowEvent& we) {
             const auto& ev = we.event;
             WindowId wid = we.window;
+            auto closed_copy = mutation_closed;
             exec::start_detached(
                 stdexec::schedule(sched)
-                | stdexec::then([&, ev, wid] {
+                | stdexec::then([&, ev, wid, closed_copy] {
                     if (std::holds_alternative<WindowClose>(ev)) {
                         if (wid == primary_id) {
                             anim_clock.clear();
+                            closed_copy->store(true, std::memory_order_release);
                             loop.finish();
                         } else {
                             registry.remove(wid);
