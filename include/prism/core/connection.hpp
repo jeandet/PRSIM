@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace prism::core {
@@ -43,9 +44,31 @@ class SenderHub {
 public:
     using Callback = std::function<void(Args...)>;
 
+    SenderHub() = default;
+    SenderHub(const SenderHub&) = delete;
+    SenderHub& operator=(const SenderHub&) = delete;
+
+    SenderHub(SenderHub&& other) noexcept {
+        std::lock_guard<std::mutex> lk(other.mutex_);
+        receivers_ = std::move(other.receivers_);
+        next_id_ = other.next_id_;
+    }
+    SenderHub& operator=(SenderHub&& other) noexcept {
+        if (this != &other) {
+            std::scoped_lock lk(mutex_, other.mutex_);
+            receivers_ = std::move(other.receivers_);
+            next_id_ = other.next_id_;
+        }
+        return *this;
+    }
+
     [[nodiscard]] Connection connect(Callback cb) {
-        auto id = next_id_++;
-        receivers_.push_back({id, std::move(cb)});
+        uint64_t id;
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            id = next_id_++;
+            receivers_.push_back({id, std::move(cb)});
+        }
         auto detach = std::make_shared<std::function<void()>>(
             [this, id] { remove(id); }
         );
@@ -53,14 +76,14 @@ public:
     }
 
     void emit(Args... args) const {
-        ++emit_depth_;
-        for (size_t i = 0; i < receivers_.size(); ++i) {
-            if (receivers_[i].cb) receivers_[i].cb(args...);
+        std::vector<Callback> snapshot;
+        {
+            std::lock_guard<std::mutex> lk(mutex_);
+            snapshot.reserve(receivers_.size());
+            for (auto& e : receivers_) snapshot.push_back(e.cb);
         }
-        if (--emit_depth_ == 0 && !pending_removes_.empty()) {
-            for (auto id : pending_removes_)
-                std::erase_if(receivers_, [id](auto& e) { return e.id == id; });
-            pending_removes_.clear();
+        for (auto& cb : snapshot) {
+            if (cb) cb(args...);
         }
     }
 
@@ -70,16 +93,13 @@ private:
         Callback cb;
     };
 
+    mutable std::mutex mutex_;
     uint64_t next_id_ = 0;
     mutable std::vector<Entry> receivers_;
-    mutable std::vector<uint64_t> pending_removes_;
-    mutable int emit_depth_ = 0;
 
     void remove(uint64_t id) {
-        if (emit_depth_ > 0)
-            pending_removes_.push_back(id);
-        else
-            std::erase_if(receivers_, [id](auto& e) { return e.id == id; });
+        std::lock_guard<std::mutex> lk(mutex_);
+        std::erase_if(receivers_, [id](auto& e) { return e.id == id; });
     }
 };
 
