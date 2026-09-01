@@ -10,11 +10,14 @@
 #include <prism/app/model_app.hpp>
 #include <prism/app/backend.hpp>
 
+#include <prism/app/headless_window.hpp>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 namespace nb = nanobind;
@@ -26,22 +29,30 @@ using namespace prism::app;
 static std::mutex g_handle_mutex;
 static std::optional<AppContext::PostHandle> g_post_handle;
 static bool g_has_handle = false;
+static std::atomic<bool> g_app_closed{false};
 
-static bool try_post_via_handle(std::function<void()> fn) {
-    if (prism::app::detail_is_logic_thread) return false;
+enum class PostResult { Posted, NoApp, Closed };
+
+static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_logic_thread) {
+    if (!allow_logic_thread && prism::app::detail_is_logic_thread) return PostResult::NoApp;
     std::optional<AppContext::PostHandle> hopt;
     {
         std::lock_guard<std::mutex> lk(g_handle_mutex);
-        if (!g_has_handle || !g_post_handle) return false;
+        if (!g_has_handle || !g_post_handle) {
+            return g_app_closed.load(std::memory_order_acquire) ? PostResult::Closed : PostResult::NoApp;
+        }
         hopt = *g_post_handle;
     }
     auto& h = *hopt;
     auto q = h.queue.lock();
-    if (!q) return false;
+    if (!q) return PostResult::Closed;
     auto closed_flag = h.closed.lock();
-    if (!closed_flag || closed_flag->load(std::memory_order_acquire)) return false;
+    if (!closed_flag || closed_flag->load(std::memory_order_acquire)) {
+        g_app_closed.store(true, std::memory_order_release);
+        return PostResult::Closed;
+    }
     auto sched_flag = h.scheduled.lock();
-    if (!sched_flag) return false;
+    if (!sched_flag) return PostResult::Closed;
     auto tail = h.drain_publish.lock();
     q->push(std::move(fn));
     bool expected = false;
@@ -51,60 +62,46 @@ static bool try_post_via_handle(std::function<void()> fn) {
         auto tp = tail;
         auto sch = h.sched;
         exec::start_detached(stdexec::schedule(sch) | stdexec::then([qq, sf, tp, sch] {
-            do {
-                prism::app::detail_in_mutation_batch = true;
-                while (auto f = qq->pop()) (*f)();
-                prism::app::detail_in_mutation_batch = false;
-                if (tp && *tp) (*tp)();
-                sf->store(false, std::memory_order_release);
-                if (qq->empty()) break;
-                bool exp = false;
-                if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
-            } while (true);
+            if (Py_IsInitialized()) {
+                nb::gil_scoped_acquire gil;
+                do {
+                    prism::app::detail_in_mutation_batch = true;
+                    while (auto f = qq->pop()) (*f)();
+                    prism::app::detail_in_mutation_batch = false;
+                    if (tp && *tp) (*tp)();
+                    sf->store(false, std::memory_order_release);
+                    if (qq->empty()) break;
+                    bool exp = false;
+                    if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
+                } while (true);
+            } else {
+                do {
+                    prism::app::detail_in_mutation_batch = true;
+                    while (auto f = qq->pop()) (*f)();
+                    prism::app::detail_in_mutation_batch = false;
+                    if (tp && *tp) (*tp)();
+                    sf->store(false, std::memory_order_release);
+                    if (qq->empty()) break;
+                    bool exp = false;
+                    if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
+                } while (true);
+            }
         }));
     }
-    return true;
+    return PostResult::Posted;
+}
+
+static bool try_post_via_handle(std::function<void()> fn) {
+    return try_post_via_handle_impl(std::move(fn), false) == PostResult::Posted;
+}
+
+static PostResult try_post_any_thread(std::function<void()> fn) {
+    return try_post_via_handle_impl(std::move(fn), true);
 }
 
 static void ensure_idle_wake() {
     if (prism::app::detail_in_mutation_batch) return;
-    std::optional<AppContext::PostHandle> hopt;
-    {
-        std::lock_guard<std::mutex> lk(g_handle_mutex);
-        if (!g_has_handle || !g_post_handle) return;
-        hopt = *g_post_handle;
-    }
-    auto& h = *hopt;
-    auto q = h.queue.lock();
-    if (!q) return;
-    auto closed_flag = h.closed.lock();
-    if (!closed_flag || closed_flag->load(std::memory_order_acquire)) return;
-    auto sched_flag = h.scheduled.lock();
-    if (!sched_flag) return;
-    auto tail = h.drain_publish.lock();
-    // Coalesced wake: push no-op and schedule one drain_publish tail per batch.
-    // Works from any thread (including logic_thread) so rapid Shared/Channel
-    // sets coalesce into a single publish.
-    q->push([] {});
-    bool expected = false;
-    if (sched_flag->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-        auto qq = q;
-        auto sf = sched_flag;
-        auto tp = tail;
-        auto sch = h.sched;
-        exec::start_detached(stdexec::schedule(sch) | stdexec::then([qq, sf, tp, sch] {
-            do {
-                prism::app::detail_in_mutation_batch = true;
-                while (auto f = qq->pop()) (*f)();
-                prism::app::detail_in_mutation_batch = false;
-                if (tp && *tp) (*tp)();
-                sf->store(false, std::memory_order_release);
-                if (qq->empty()) break;
-                bool exp = false;
-                if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
-            } while (true);
-        }));
-    }
+    (void)try_post_any_thread([] {});
 }
 
 // Transaction buffering — Python thread-local coalescing into one logic-thread closure.
@@ -112,6 +109,7 @@ static void ensure_idle_wake() {
 // Uses C++ thread_local(TransactionState) semantics but buffered per-Python-thread pre-dispatch.
 inline thread_local int txn_depth = 0;
 inline thread_local std::vector<std::function<void()>> txn_queue;
+inline thread_local std::vector<size_t> txn_marks;
 inline bool txn_active() { return txn_depth > 0; }
 
 inline void txn_flush_batch() {
@@ -119,23 +117,48 @@ inline void txn_flush_batch() {
     auto batch = std::move(txn_queue);
     txn_queue.clear();
     txn_queue.shrink_to_fit();
+    txn_marks.clear();
     if (prism::app::detail_is_logic_thread) {
+        // GIL needed: field->set will emit copying handlers holding Python objects.
+        nb::gil_scoped_acquire gil;
         prism::TransactionGuard g;
         for (auto& fn : batch) fn();
-        if (!prism::app::detail_in_mutation_batch) ensure_idle_wake();
+        // If inside outer batch drain, defer publish to outer tail; else wake directly via tail if available.
+        if (prism::app::detail_in_mutation_batch) return;
+        // Try direct tail if we have handle, else fallback to coalesced wake.
+        {
+            std::optional<AppContext::PostHandle> hopt;
+            {
+                std::lock_guard<std::mutex> lk(g_handle_mutex);
+                if (g_has_handle && g_post_handle) hopt = *g_post_handle;
+            }
+            if (hopt) {
+                auto tail = hopt->drain_publish.lock();
+                auto closed_flag = hopt->closed.lock();
+                if (tail && *tail && closed_flag && !closed_flag->load(std::memory_order_acquire)) {
+                    (*tail)();
+                    return;
+                }
+            }
+        }
+        ensure_idle_wake();
         return;
     }
-    // Off-thread: if no app running, execute directly (avoid moving batch into posted lambda)
+    // Off-thread: distinguish no-app (direct) vs closed (drop) vs live (post)
+    // NoApp takes priority after run has cleared handle — future txns are direct, not dropped.
+    PostResult pr;
     {
         std::lock_guard<std::mutex> lk(g_handle_mutex);
-        if (!g_has_handle || !g_post_handle) {
-            prism::TransactionGuard g;
-            for (auto& fn : batch) fn();
-            return;
-        }
+        if (!g_has_handle || !g_post_handle) pr = PostResult::NoApp;
+        else if (g_app_closed.load(std::memory_order_acquire)) pr = PostResult::Closed;
+        else pr = PostResult::Posted; // will attempt post below
     }
-    // posted batch already moved into try_post's lambda; if post fails during
-    // shutdown the batch is dropped — best-effort, no recovery needed.
+    if (pr == PostResult::NoApp) {
+        prism::TransactionGuard g;
+        for (auto& fn : batch) fn();
+        return;
+    }
+    if (pr == PostResult::Closed) return; // drop batch per spec
     (void)try_post_via_handle([batch = std::move(batch)]() mutable {
         prism::TransactionGuard g;
         for (auto& fn : batch) fn();
@@ -158,12 +181,19 @@ void field_set_dispatch(Field<T>* field, T v) {
     if (txn_buffer_or_dispatch(field, v)) return;
     if (!prism::app::detail_is_logic_thread) {
         T copy = v;
-        bool posted = try_post_via_handle([field, copy = std::move(copy)]() mutable {
+        auto res = try_post_via_handle_impl([field, copy = std::move(copy)]() mutable {
             field->set(std::move(copy));
-        });
-        if (posted) return;
+        }, false);
+        if (res == PostResult::Posted) return;
+        if (res == PostResult::Closed) return; // post-close: no-op per spec (no direct fallback)
+        // NoApp: fall through to direct (pre-run single-threaded)
     }
-    field->set(std::move(v));
+    if (prism::app::detail_is_logic_thread && Py_IsInitialized()) {
+        nb::gil_scoped_acquire gil;
+        field->set(std::move(v));
+    } else {
+        field->set(std::move(v));
+    }
 }
 
 // Standalone field (owns storage) — for quick tests / non-model usage.
@@ -519,23 +549,7 @@ NB_MODULE(_prism_ext, m) {
 
     nb::class_<PyModel>(m, "Model")
         .def(nb::init<>())
-        .def("add_int", [](PyModel& self, int v){
-                auto [owner, p] = self.add_int_slot(v);
-                BoundField<int> h; h.owner = std::move(owner); h.field = p; return h;
-            }, nb::arg("value")=0)
-        .def("add_float", [](PyModel& self, double v){
-                auto [owner, p] = self.add_float_slot(v);
-                BoundField<double> h; h.owner = std::move(owner); h.field = p; return h;
-            }, nb::arg("value")=0.0)
-        .def("add_str", [](PyModel& self, std::string v){
-                auto [owner, p] = self.add_str_slot(std::move(v));
-                BoundField<std::string> h; h.owner = std::move(owner); h.field = p; return h;
-            }, nb::arg("value")="")
-        .def("add_bool", [](PyModel& self, bool v){
-                auto [owner, p] = self.add_bool_slot(v);
-                BoundField<bool> h; h.owner = std::move(owner); h.field = p; return h;
-            }, nb::arg("value")=false)
-        // Internal allocators — same ownership via shared_ptr<SlotBase>, no keep_alive cycle.
+        // Single internal allocator set — deduped (public add_* was duplicate dead code)
         .def("_add_int_internal", [](PyModel& self, int v){
                 auto [owner, p] = self.add_int_slot(v);
                 BoundField<int> h; h.owner = std::move(owner); h.field = p; return h;
@@ -584,55 +598,78 @@ NB_MODULE(_prism_ext, m) {
         .def("_add_channel_bool_internal", [](PyModel& self){
                 auto [owner, p] = self.add_channel_bool_slot();
                 BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
-            })
-        .def("add_shared_int", [](PyModel& self, int v){
-                auto [owner, p] = self.add_shared_int_slot(v);
-                BoundShared<int> h; h.owner = std::move(owner); h.shared = p; return h;
-            }, nb::arg("value")=0)
-        .def("add_shared_float", [](PyModel& self, double v){
-                auto [owner, p] = self.add_shared_float_slot(v);
-                BoundShared<double> h; h.owner = std::move(owner); h.shared = p; return h;
-            }, nb::arg("value")=0.0)
-        .def("add_shared_str", [](PyModel& self, std::string v){
-                auto [owner, p] = self.add_shared_str_slot(std::move(v));
-                BoundShared<std::string> h; h.owner = std::move(owner); h.shared = p; return h;
-            }, nb::arg("value")="")
-        .def("add_shared_bool", [](PyModel& self, bool v){
-                auto [owner, p] = self.add_shared_bool_slot(v);
-                BoundShared<bool> h; h.owner = std::move(owner); h.shared = p; return h;
-            }, nb::arg("value")=false)
-        .def("add_channel_int", [](PyModel& self){
-                auto [owner, p] = self.add_channel_int_slot();
-                BoundChannel<int> h; h.owner = std::move(owner); h.channel = p; return h;
-            })
-        .def("add_channel_float", [](PyModel& self){
-                auto [owner, p] = self.add_channel_float_slot();
-                BoundChannel<double> h; h.owner = std::move(owner); h.channel = p; return h;
-            })
-        .def("add_channel_str", [](PyModel& self){
-                auto [owner, p] = self.add_channel_str_slot();
-                BoundChannel<std::string> h; h.owner = std::move(owner); h.channel = p; return h;
-            })
-        .def("add_channel_bool", [](PyModel& self){
-                auto [owner, p] = self.add_channel_bool_slot();
-                BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
             });
 
     m.def("_txn_begin", [](){
-        if (txn_depth == 0) txn_queue.clear();
+        txn_marks.push_back(txn_queue.size());
         ++txn_depth;
     });
     m.def("_txn_commit", [](){
         if (txn_depth == 0) return;
-        if (--txn_depth == 0) txn_flush_batch();
+        if (--txn_depth == 0) {
+            txn_marks.clear();
+            txn_flush_batch();
+        } else {
+            txn_marks.pop_back();
+        }
     });
     m.def("_txn_abort", [](){
-        txn_depth = 0;
-        txn_queue.clear();
-        txn_queue.shrink_to_fit();
+        if (txn_depth == 0) return;
+        size_t mark = txn_marks.empty() ? 0 : txn_marks.back();
+        txn_queue.resize(mark);
+        txn_marks.pop_back();
+        if (--txn_depth == 0) {
+            txn_marks.clear();
+            txn_queue.clear();
+            txn_queue.shrink_to_fit();
+        }
     });
 
+    // Headless backend for pytest — stays alive for delay_ms then fires WindowClose.
+    struct DelayHeadlessBackend final : BackendBase {
+        HeadlessWindow window_{0, {}};
+        int delay_ms_ = 100;
+        explicit DelayHeadlessBackend(int d) : delay_ms_(d) {}
+        Window& create_window(WindowConfig cfg) override { window_ = HeadlessWindow{1, cfg}; return window_; }
+        void run(std::function<void(const WindowEvent&)> cb) override {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
+            cb(WindowEvent{window_.id(), WindowClose{}});
+        }
+        void submit(WindowId, std::shared_ptr<const SceneSnapshot>) override {}
+        void wake() override {}
+        void quit() override {}
+    };
+
+    m.def("_run_headless", [](PyModel& model, int delay_ms){
+        {
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            if (g_has_handle) throw std::runtime_error("prism.run already running");
+            g_app_closed.store(false, std::memory_order_release);
+        }
+        nb::gil_scoped_release release;
+        auto backend = Backend{std::make_unique<DelayHeadlessBackend>(delay_ms)};
+        auto& window = backend.create_window({});
+        auto setup = [](AppContext& ctx){
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            g_post_handle = ctx.post_handle();
+            g_has_handle = true;
+            g_app_closed.store(false, std::memory_order_release);
+        };
+        model_app(backend, window, model, setup);
+        {
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            g_post_handle.reset();
+            g_has_handle = false;
+            g_app_closed.store(true, std::memory_order_release);
+        }
+    }, nb::arg("model"), nb::arg("delay_ms")=100);
+
     m.def("run", [](PyModel& model, std::string title){
+        {
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            if (g_has_handle) throw std::runtime_error("prism.run already running");
+            g_app_closed.store(false, std::memory_order_release);
+        }
         // Must be called from main thread on macOS
         nb::gil_scoped_release release;
         auto backend = Backend::software(RenderConfig{});
@@ -643,12 +680,14 @@ NB_MODULE(_prism_ext, m) {
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();
             g_has_handle = true;
+            g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
         {
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle.reset();
             g_has_handle = false;
+            g_app_closed.store(true, std::memory_order_release);
         }
     }, nb::arg("model"), nb::arg("title")="PRISM App");
 }

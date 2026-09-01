@@ -31,9 +31,33 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
+          pip install meson-python nanobind pytest
       - name: Setup TSan builddir
         run: meson setup builddir-tsan -Db_sanitize=thread -Dbuildtype=debugoptimized
       - name: Build TSan
         run: ninja -C builddir-tsan
-      - name: Run TSan tests (allow SDL/dbus false positives)
-        run: meson test -C builddir-tsan --print-errorlogs || true
+      - name: Run TSan C++ tests
+        run: meson test -C builddir-tsan --print-errorlogs
+      - name: Run TSan Python tests
+        run: PYTHONPATH=builddir-tsan/python:$PYTHONPATH python -m pytest python/tests -v --import-mode=importlib
+
+  free-threaded:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
+          pip install meson-python nanobind pytest
+      - name: Setup free-threaded Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14t'
+          allow-prereleases: true
+      - name: Setup builddir
+        run: meson setup builddir-ft
+      - name: Build
+        run: ninja -C builddir-ft
+      - name: Run Python tests (free-threaded)
+        run: PYTHONPATH=builddir-ft/python:$PYTHONPATH python -m pytest python/tests -v --import-mode=importlib

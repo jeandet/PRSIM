@@ -30,6 +30,7 @@ from ._prism_ext import (
     _txn_begin,
     _txn_commit,
     _txn_abort,
+    _run_headless as _run_headless_impl,
 )
 
 __all__ = [
@@ -230,3 +231,7 @@ def transaction():
 
 def run(model, title="PRISM App"):
     return _run(model, title)
+
+
+def _run_headless(model, delay_ms=100):
+    return _run_headless_impl(model, delay_ms)
