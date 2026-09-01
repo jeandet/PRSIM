@@ -50,15 +50,15 @@ Via `atomic_cell<SceneSnapshot>`:
 - If the application publishes faster than rendering, intermediate snapshots are silently dropped.
 - If the application hasn't published, the render thread re-uses the previous snapshot.
 
-The handoff is a single atomic `shared_ptr` swap. No mutex, no condition variable.
+The snapshot `atomic_cell` handoff is a single atomic `shared_ptr` swap (no condvar). `SoftwareBackend::submit()` / drain paths additionally guard the `windows_` map with `windows_mutex_` — pragmatic, not on the hot snapshot path.
 
 ## Input Event Flow
 
-OS events are captured by the render thread (which owns the SDL window) and forwarded to application threads via `mpsc_queue<InputEvent>`:
+OS events are captured by the render thread (which owns the SDL window) and forwarded to the app thread via stdexec `run_loop` scheduling (`exec::start_detached(schedule(sched) | then(...))` from `backend.run()`):
 
-- Render thread handles SDL events via `SDL_WaitEvent`, maps them to `InputEvent` values, pushes to queue, wakes app thread.
-- Application thread drains the queue, performs hit testing, dispatches to handlers.
-- The render thread never interprets input — it only forwards.
+- Render thread handles SDL events via `SDL_WaitEvent`, maps to `InputEvent`, and schedules dispatch directly onto the app `run_loop`.
+- App thread's `run_loop` drains and performs hit testing / dispatch.
+- The render thread never interprets input — it only forwards. The prior `mpsc_queue<InputEvent>` + `atomic_wait` path is removed (see stdexec-integration.md).
 
 ## Shutdown
 

@@ -40,7 +40,7 @@ prism_software_backend_lib = library('prism-software-backend',
   install : true,
 )
 
-install_data(font_path, install_dir : get_option('datadir') / 'prism' / 'fonts')
+install_data(font_path, install_dir : get_option('datadir') / 'prism' / 'fonts', install_tag : 'runtime')
 
 prism_software_backend_dep = declare_dependency(
   link_with : prism_software_backend_lib,

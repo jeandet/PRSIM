@@ -26,8 +26,22 @@ const char* SoftwareBackend::resolve_font_path(const RenderConfig& cfg) {
     {
         std::error_code ec;
         if (std::filesystem::exists(PRISM_FONT_INSTALL_PATH, ec)) return PRISM_FONT_INSTALL_PATH;
-        // Also try prefix-relative: <install_prefix>/PRISM_FONT_INSTALL_PATH
-        // meson installs datadir relative to prefix; at runtime prefix may differ.
+        // Resolve relative to executable prefix, not CWD (wheel installs).
+        // PRISM_FONT_INSTALL_PATH is datadir-relative (e.g. share/prism/fonts/...),
+        // try <exe_dir>/../share/... and <exe_dir>/share/...
+        try {
+            auto exe = std::filesystem::read_symlink("/proc/self/exe");
+            auto exe_dir = exe.parent_path();
+            for (auto cand : {exe_dir / ("../" PRISM_FONT_INSTALL_PATH), exe_dir / PRISM_FONT_INSTALL_PATH}) {
+                std::error_code ec2;
+                auto norm = cand.lexically_normal();
+                if (std::filesystem::exists(norm, ec2)) {
+                    static std::string cached;
+                    cached = norm.string();
+                    return cached.c_str();
+                }
+            }
+        } catch (...) {}
     }
 #endif
     return nullptr;

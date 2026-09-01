@@ -63,6 +63,10 @@ public:
     }
 
     // The hub (source) must outlive any Connection returned from it.
+    // Moving a hub with live Connections is unsafe — the Connection's
+    // detach still points at the pre-move address. All in-tree moves
+    // happen before wiring (e.g. WidgetNode vector reserve), so live
+    // connections are never moved in practice.
     // Cross-object subscriptions are allowed but the source's lifetime
     // must strictly contain the observer's — disconnect before the hub
     // is destroyed, or use an owning handle (e.g. Python Bound* owner).

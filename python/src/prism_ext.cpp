@@ -115,6 +115,11 @@ static void ensure_idle_wake() {
 template <typename T>
 T dispatch_sync_read(std::function<T()> reader) {
     if (prism::app::detail_is_logic_thread) return reader();
+    // Startup window: spin briefly like write path before falling back to direct.
+    if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
+        for (int i = 0; i < 200 && !g_has_handle.load(std::memory_order_acquire); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     // Pre-run or post-close: direct read (single-threaded / drained)
     {
         std::lock_guard<std::mutex> lk(g_handle_mutex);
@@ -536,14 +541,15 @@ auto* shared_ptr_of(SH& h) {
     else return &h.shared;
 }
 template <typename T>
-void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
+void derived_attach_dep(std::shared_ptr<SlotDerived<T>> slot, nb::object dep) {
+    std::weak_ptr<SlotDerived<T>> weak = slot;
     auto connect_field = [&](auto* example) -> bool {
         using FH = std::decay_t<decltype(*example)>;
         if (!nb::isinstance<FH>(dep)) return false;
         auto& h = nb::cast<FH&>(dep);
         auto* ptr = field_ptr_of(h);
         if (!ptr) return true;
-        slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        slot->deps_.push_back(ptr->on_change().connect([weak](const auto&){ if (auto s = weak.lock()) s->recompute(); }));
         if constexpr (requires { h.owner; }) { if (h.owner) slot->dep_owners_.push_back(h.owner); }
         slot->dep_keepalive_.push_back(dep);
         return true;
@@ -554,7 +560,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         auto& h = nb::cast<SH&>(dep);
         auto* ptr = shared_ptr_of(h);
         if (!ptr) return true;
-        slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        slot->deps_.push_back(ptr->on_change().connect([weak](const auto&){ if (auto s = weak.lock()) s->recompute(); }));
         if constexpr (requires { h.owner; }) { if (h.owner) slot->dep_owners_.push_back(h.owner); }
         slot->dep_keepalive_.push_back(dep);
         return true;
@@ -565,7 +571,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         auto& h = nb::cast<DH&>(dep);
         auto* ptr = h.derived;
         if (!ptr) return true;
-        slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        slot->deps_.push_back(ptr->on_change().connect([weak](const auto&){ if (auto s = weak.lock()) s->recompute(); }));
         if (h.owner) slot->dep_owners_.push_back(h.owner);
         slot->dep_keepalive_.push_back(dep);
         return true;
@@ -740,7 +746,7 @@ struct PyModel {
             try { init = nb::cast<T>(fn()); } catch (...) {}
         }
         auto s = std::make_shared<SlotDerived<T>>(std::move(fn), std::move(init));
-        for (auto& dep : deps) derived_attach_dep(s.get(), dep);
+        for (auto& dep : deps) derived_attach_dep(s, dep);
         std::lock_guard<std::mutex> lk(slots_mutex);
         slots.push_back(s);
         return {s, s.get()};
@@ -805,46 +811,46 @@ NB_MODULE(_prism_ext, m) {
     nb::class_<FieldHandle<int>>(m, "FieldInt")
         .def(nb::init<int>(), nb::arg("value") = 0)
         .def_prop_rw("value", &FieldHandle<int>::get, &FieldHandle<int>::set)
-        .def("observe", &FieldHandle<int>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        .def("observe", &FieldHandle<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>(), nb::arg("callback"))
         .def("get", &FieldHandle<int>::get)
         .def("set", &FieldHandle<int>::set);
     nb::class_<FieldHandle<double>>(m, "FieldFloat")
         .def(nb::init<double>(), nb::arg("value") = 0.0)
         .def_prop_rw("value", &FieldHandle<double>::get, &FieldHandle<double>::set)
-        .def("observe", &FieldHandle<double>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &FieldHandle<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &FieldHandle<double>::get)
         .def("set", &FieldHandle<double>::set);
     nb::class_<FieldHandle<std::string>>(m, "FieldStr")
         .def(nb::init<std::string>(), nb::arg("value") = "")
         .def_prop_rw("value", &FieldHandle<std::string>::get, &FieldHandle<std::string>::set)
-        .def("observe", &FieldHandle<std::string>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &FieldHandle<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &FieldHandle<std::string>::get)
         .def("set", &FieldHandle<std::string>::set);
     nb::class_<FieldHandle<bool>>(m, "FieldBool")
         .def(nb::init<bool>(), nb::arg("value") = false)
         .def_prop_rw("value", &FieldHandle<bool>::get, &FieldHandle<bool>::set)
-        .def("observe", &FieldHandle<bool>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &FieldHandle<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &FieldHandle<bool>::get)
         .def("set", &FieldHandle<bool>::set);
 
     nb::class_<BoundField<int>>(m, "BoundInt")
         .def_prop_rw("value", &BoundField<int>::get, &BoundField<int>::set)
-        .def("observe", &BoundField<int>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundField<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundField<int>::get)
         .def("set", &BoundField<int>::set);
     nb::class_<BoundField<double>>(m, "BoundFloat")
         .def_prop_rw("value", &BoundField<double>::get, &BoundField<double>::set)
-        .def("observe", &BoundField<double>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundField<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundField<double>::get)
         .def("set", &BoundField<double>::set);
     nb::class_<BoundField<std::string>>(m, "BoundStr")
         .def_prop_rw("value", &BoundField<std::string>::get, &BoundField<std::string>::set)
-        .def("observe", &BoundField<std::string>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundField<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundField<std::string>::get)
         .def("set", &BoundField<std::string>::set);
     nb::class_<BoundField<bool>>(m, "BoundBool")
         .def_prop_rw("value", &BoundField<bool>::get, &BoundField<bool>::set)
-        .def("observe", &BoundField<bool>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundField<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundField<bool>::get)
         .def("set", &BoundField<bool>::set);
 
@@ -852,103 +858,103 @@ NB_MODULE(_prism_ext, m) {
     nb::class_<SharedHandle<int>>(m, "SharedInt")
         .def(nb::init<int>(), nb::arg("value") = 0)
         .def_prop_rw("value", &SharedHandle<int>::get, &SharedHandle<int>::set)
-        .def("observe", &SharedHandle<int>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        .def("observe", &SharedHandle<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>(), nb::arg("callback"))
         .def("get", &SharedHandle<int>::get).def("set", &SharedHandle<int>::set);
     nb::class_<SharedHandle<double>>(m, "SharedFloat")
         .def(nb::init<double>(), nb::arg("value") = 0.0)
         .def_prop_rw("value", &SharedHandle<double>::get, &SharedHandle<double>::set)
-        .def("observe", &SharedHandle<double>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &SharedHandle<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &SharedHandle<double>::get).def("set", &SharedHandle<double>::set);
     nb::class_<SharedHandle<std::string>>(m, "SharedStr")
         .def(nb::init<std::string>(), nb::arg("value") = "")
         .def_prop_rw("value", &SharedHandle<std::string>::get, &SharedHandle<std::string>::set)
-        .def("observe", &SharedHandle<std::string>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &SharedHandle<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &SharedHandle<std::string>::get).def("set", &SharedHandle<std::string>::set);
     nb::class_<SharedHandle<bool>>(m, "SharedBool")
         .def(nb::init<bool>(), nb::arg("value") = false)
         .def_prop_rw("value", &SharedHandle<bool>::get, &SharedHandle<bool>::set)
-        .def("observe", &SharedHandle<bool>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &SharedHandle<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &SharedHandle<bool>::get).def("set", &SharedHandle<bool>::set);
 
     nb::class_<BoundShared<int>>(m, "BoundSharedInt")
         .def_prop_rw("value", &BoundShared<int>::get, &BoundShared<int>::set)
-        .def("observe", &BoundShared<int>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundShared<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundShared<int>::get).def("set", &BoundShared<int>::set);
     nb::class_<BoundShared<double>>(m, "BoundSharedFloat")
         .def_prop_rw("value", &BoundShared<double>::get, &BoundShared<double>::set)
-        .def("observe", &BoundShared<double>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundShared<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundShared<double>::get).def("set", &BoundShared<double>::set);
     nb::class_<BoundShared<std::string>>(m, "BoundSharedStr")
         .def_prop_rw("value", &BoundShared<std::string>::get, &BoundShared<std::string>::set)
-        .def("observe", &BoundShared<std::string>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundShared<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundShared<std::string>::get).def("set", &BoundShared<std::string>::set);
     nb::class_<BoundShared<bool>>(m, "BoundSharedBool")
         .def_prop_rw("value", &BoundShared<bool>::get, &BoundShared<bool>::set)
-        .def("observe", &BoundShared<bool>::observe, nb::keep_alive<0, 1>())
+        .def("observe", &BoundShared<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>())
         .def("get", &BoundShared<bool>::get).def("set", &BoundShared<bool>::set);
 
     // Channel handles
     nb::class_<ChannelHandle<int>>(m, "ChannelInt")
-        .def(nb::init<>()).def("send", &ChannelHandle<int>::send).def("observe", &ChannelHandle<int>::observe, nb::keep_alive<0, 1>());
+        .def(nb::init<>()).def("send", &ChannelHandle<int>::send).def("observe", &ChannelHandle<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<ChannelHandle<double>>(m, "ChannelFloat")
-        .def(nb::init<>()).def("send", &ChannelHandle<double>::send).def("observe", &ChannelHandle<double>::observe, nb::keep_alive<0, 1>());
+        .def(nb::init<>()).def("send", &ChannelHandle<double>::send).def("observe", &ChannelHandle<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<ChannelHandle<std::string>>(m, "ChannelStr")
-        .def(nb::init<>()).def("send", &ChannelHandle<std::string>::send).def("observe", &ChannelHandle<std::string>::observe, nb::keep_alive<0, 1>());
+        .def(nb::init<>()).def("send", &ChannelHandle<std::string>::send).def("observe", &ChannelHandle<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<ChannelHandle<bool>>(m, "ChannelBool")
-        .def(nb::init<>()).def("send", &ChannelHandle<bool>::send).def("observe", &ChannelHandle<bool>::observe, nb::keep_alive<0, 1>());
+        .def(nb::init<>()).def("send", &ChannelHandle<bool>::send).def("observe", &ChannelHandle<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
 
     nb::class_<BoundChannel<int>>(m, "BoundChannelInt")
-        .def("send", &BoundChannel<int>::send).def("observe", &BoundChannel<int>::observe, nb::keep_alive<0, 1>());
+        .def("send", &BoundChannel<int>::send).def("observe", &BoundChannel<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<BoundChannel<double>>(m, "BoundChannelFloat")
-        .def("send", &BoundChannel<double>::send).def("observe", &BoundChannel<double>::observe, nb::keep_alive<0, 1>());
+        .def("send", &BoundChannel<double>::send).def("observe", &BoundChannel<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<BoundChannel<std::string>>(m, "BoundChannelStr")
-        .def("send", &BoundChannel<std::string>::send).def("observe", &BoundChannel<std::string>::observe, nb::keep_alive<0, 1>());
+        .def("send", &BoundChannel<std::string>::send).def("observe", &BoundChannel<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<BoundChannel<bool>>(m, "BoundChannelBool")
-        .def("send", &BoundChannel<bool>::send).def("observe", &BoundChannel<bool>::observe, nb::keep_alive<0, 1>());
+        .def("send", &BoundChannel<bool>::send).def("observe", &BoundChannel<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
 
     nb::class_<BoundDerived<int>>(m, "BoundDerivedInt")
         .def_prop_ro("value", &BoundDerived<int>::get).def("get", &BoundDerived<int>::get)
-        .def("observe", &BoundDerived<int>::observe, nb::keep_alive<0, 1>());
+        .def("observe", &BoundDerived<int>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<BoundDerived<double>>(m, "BoundDerivedFloat")
         .def_prop_ro("value", &BoundDerived<double>::get).def("get", &BoundDerived<double>::get)
-        .def("observe", &BoundDerived<double>::observe, nb::keep_alive<0, 1>());
+        .def("observe", &BoundDerived<double>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<BoundDerived<std::string>>(m, "BoundDerivedStr")
         .def_prop_ro("value", &BoundDerived<std::string>::get).def("get", &BoundDerived<std::string>::get)
-        .def("observe", &BoundDerived<std::string>::observe, nb::keep_alive<0, 1>());
+        .def("observe", &BoundDerived<std::string>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
     nb::class_<BoundDerived<bool>>(m, "BoundDerivedBool")
         .def_prop_ro("value", &BoundDerived<bool>::get).def("get", &BoundDerived<bool>::get)
-        .def("observe", &BoundDerived<bool>::observe, nb::keep_alive<0, 1>());
+        .def("observe", &BoundDerived<bool>::observe, nb::keep_alive<0, 1>(), nb::keep_alive<1, 0>());
 
     nb::class_<ListHandle<int>>(m, "ListInt")
         .def(nb::init<>()).def("push", &ListHandle<int>::push).def("erase", &ListHandle<int>::erase)
         .def("set", &ListHandle<int>::set).def("replace_all", &ListHandle<int>::replace_all)
         .def("size", &ListHandle<int>::size).def("get", &ListHandle<int>::get).def("to_list", &ListHandle<int>::to_list)
-        .def("observe_insert", &ListHandle<int>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &ListHandle<int>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &ListHandle<int>::observe_update, nb::keep_alive<0,1>());
+        .def("observe_insert", &ListHandle<int>::observe_insert, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_remove", &ListHandle<int>::observe_remove, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_update", &ListHandle<int>::observe_update, nb::keep_alive<0,1>(), nb::keep_alive<1,0>());
     nb::class_<ListHandle<double>>(m, "ListFloat")
         .def(nb::init<>()).def("push", &ListHandle<double>::push).def("erase", &ListHandle<double>::erase)
         .def("set", &ListHandle<double>::set).def("replace_all", &ListHandle<double>::replace_all)
         .def("size", &ListHandle<double>::size).def("get", &ListHandle<double>::get).def("to_list", &ListHandle<double>::to_list)
-        .def("observe_insert", &ListHandle<double>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &ListHandle<double>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &ListHandle<double>::observe_update, nb::keep_alive<0,1>());
+        .def("observe_insert", &ListHandle<double>::observe_insert, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_remove", &ListHandle<double>::observe_remove, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_update", &ListHandle<double>::observe_update, nb::keep_alive<0,1>(), nb::keep_alive<1,0>());
     nb::class_<ListHandle<std::string>>(m, "ListStr")
         .def(nb::init<>()).def("push", &ListHandle<std::string>::push).def("erase", &ListHandle<std::string>::erase)
         .def("set", &ListHandle<std::string>::set).def("replace_all", &ListHandle<std::string>::replace_all)
         .def("size", &ListHandle<std::string>::size).def("get", &ListHandle<std::string>::get).def("to_list", &ListHandle<std::string>::to_list)
-        .def("observe_insert", &ListHandle<std::string>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &ListHandle<std::string>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &ListHandle<std::string>::observe_update, nb::keep_alive<0,1>());
+        .def("observe_insert", &ListHandle<std::string>::observe_insert, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_remove", &ListHandle<std::string>::observe_remove, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_update", &ListHandle<std::string>::observe_update, nb::keep_alive<0,1>(), nb::keep_alive<1,0>());
     // List<bool> disabled — vector<bool> proxy incompatible with const T& Signal; use int list for bool data
 
 
     nb::class_<BoundList<int>>(m, "BoundListInt")
         .def("push", &BoundList<int>::push).def("erase", &BoundList<int>::erase).def("set", &BoundList<int>::set).def("replace_all", &BoundList<int>::replace_all)
         .def("size", &BoundList<int>::size).def("get", &BoundList<int>::get).def("to_list", &BoundList<int>::to_list)
-        .def("observe_insert", &BoundList<int>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &BoundList<int>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &BoundList<int>::observe_update, nb::keep_alive<0,1>());
+        .def("observe_insert", &BoundList<int>::observe_insert, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_remove", &BoundList<int>::observe_remove, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_update", &BoundList<int>::observe_update, nb::keep_alive<0,1>(), nb::keep_alive<1,0>());
     nb::class_<BoundList<double>>(m, "BoundListFloat")
         .def("push", &BoundList<double>::push).def("erase", &BoundList<double>::erase).def("set", &BoundList<double>::set).def("replace_all", &BoundList<double>::replace_all)
         .def("size", &BoundList<double>::size).def("get", &BoundList<double>::get).def("to_list", &BoundList<double>::to_list)
-        .def("observe_insert", &BoundList<double>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &BoundList<double>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &BoundList<double>::observe_update, nb::keep_alive<0,1>());
+        .def("observe_insert", &BoundList<double>::observe_insert, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_remove", &BoundList<double>::observe_remove, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_update", &BoundList<double>::observe_update, nb::keep_alive<0,1>(), nb::keep_alive<1,0>());
     nb::class_<BoundList<std::string>>(m, "BoundListStr")
         .def("push", &BoundList<std::string>::push).def("erase", &BoundList<std::string>::erase).def("set", &BoundList<std::string>::set).def("replace_all", &BoundList<std::string>::replace_all)
         .def("size", &BoundList<std::string>::size).def("get", &BoundList<std::string>::get).def("to_list", &BoundList<std::string>::to_list)
-        .def("observe_insert", &BoundList<std::string>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &BoundList<std::string>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &BoundList<std::string>::observe_update, nb::keep_alive<0,1>());
+        .def("observe_insert", &BoundList<std::string>::observe_insert, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_remove", &BoundList<std::string>::observe_remove, nb::keep_alive<0,1>(), nb::keep_alive<1,0>()).def("observe_update", &BoundList<std::string>::observe_update, nb::keep_alive<0,1>(), nb::keep_alive<1,0>());
     // BoundList<bool> disabled — see above
 
 

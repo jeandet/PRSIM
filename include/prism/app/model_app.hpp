@@ -359,6 +359,9 @@ void model_app(Backend& backend, Window& window, Model& model,
                         }
                         if (auto* kp = std::get_if<KeyPress>(&ev)) {
                             if (global_key_handler) global_key_handler(*kp);
+                            // global_key_handler may have destroyed entry (e.g. debug inspector hotkey toggles window)
+                            entry = registry.find(wid);
+                            if (!entry) return;
                             widget_detail::route_key_press(*entry->tree, ev, *kp);
                         }
                         if (std::get_if<TextInput>(&ev))

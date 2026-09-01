@@ -33,8 +33,9 @@ using namespace prism::app::widget_detail;
 
 class ViewBuilder;
 
-// index_ stores raw pointers into the tree -- valid only because the tree
-// is fully built before build_index runs and never mutated after construction.
+// index_ stores raw pointers into the tree — built after construction;
+// virtualized containers (VirtualList/Table/Tabs) mutate the tree and
+// rebuild the index via reindex() so pointers stay valid.
 class WidgetTree {
 public:
     using ViewBuilder = app::ViewBuilder;
