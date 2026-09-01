@@ -103,6 +103,34 @@ static void ensure_idle_wake() {
     (void)try_post_any_thread([] {});
 }
 
+#include <future>
+
+template <typename T>
+T dispatch_sync_read(std::function<T()> reader) {
+    if (prism::app::detail_is_logic_thread) return reader();
+    // Pre-run or post-close: direct read (single-threaded / drained)
+    {
+        std::lock_guard<std::mutex> lk(g_handle_mutex);
+        if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) return reader();
+        if (g_app_closed.load(std::memory_order_acquire)) return reader();
+        auto closed_flag = g_post_handle->closed.lock();
+        if (!closed_flag || closed_flag->load(std::memory_order_acquire)) return reader();
+    }
+    auto prom = std::make_shared<std::promise<T>>();
+    auto fut = prom->get_future();
+    PostResult pr = try_post_via_handle_impl([reader = std::move(reader), prom]() mutable {
+        try { prom->set_value(reader()); }
+        catch (...) { try { prom->set_exception(std::current_exception()); } catch (...) {} }
+    }, false);
+    if (pr != PostResult::Posted) return reader(); // fallback: NoApp/Closed handled above, but safety
+    // Block caller (off logic thread) until logic thread runs reader — release GIL while waiting
+    {
+        nb::gil_scoped_release rel;
+        fut.wait();
+    }
+    return fut.get();
+}
+
 // Transaction buffering — Python thread-local coalescing into one logic-thread closure.
 // Matches doc/design/python-sdk.md §2: `with prism.transaction():` enqueues single closure.
 // Uses C++ thread_local(TransactionState) semantics but buffered per-Python-thread pre-dispatch.
@@ -200,7 +228,10 @@ template <typename T>
 struct FieldHandle {
     Field<T> field;
     FieldHandle(T init) : field(std::move(init)) {}
-    T get() const { return field.get(); }
+    T get() const {
+        const Field<T>* p = &field;
+        return dispatch_sync_read<T>([p](){ return p->get(); });
+    }
     void set(T v) { field_set_dispatch(&field, std::move(v)); }
     Connection observe(nb::callable cb) {
         auto wrapper = [cb](const T& val) {
@@ -265,7 +296,11 @@ template <typename T>
 struct BoundField {
     std::shared_ptr<SlotBase> owner;
     Field<T>* field = nullptr;
-    T get() const { return field ? field->get() : T{}; }
+    T get() const {
+        if (!field) return T{};
+        Field<T>* p = field;
+        return dispatch_sync_read<T>([p](){ return p->get(); });
+    }
     void set(T v) {
         if (field) field_set_dispatch(field, std::move(v));
     }
@@ -355,10 +390,14 @@ struct SlotDerived : SlotBase {
     nb::object py_fn = nb::none();
     SenderHub<const T&> changed_;
     std::vector<Connection> deps_;
+    std::vector<std::shared_ptr<SlotBase>> dep_owners_;
     std::vector<Connection> observers_;
     SlotDerived() = default;
     SlotDerived(nb::object fn, T init) : py_fn(std::move(fn)), value_(std::move(init)) {}
-    T get() const { return value_; }
+    T get() const {
+        const T* p = &value_;
+        return dispatch_sync_read<T>([p](){ return *p; });
+    }
     SenderHub<const T&>& on_change() { return changed_; }
     void recompute() {
         T nv{};
@@ -378,7 +417,12 @@ template <typename T>
 struct BoundDerived {
     std::shared_ptr<SlotBase> owner;
     SlotDerived<T>* derived = nullptr;
-    T get() const { return derived ? derived->get() : T{}; }
+    T get() const {
+        if (!derived) return T{};
+        SlotDerived<T>* p = derived;
+        // SlotDerived::get already does dispatch, but keep direct to avoid double dispatch
+        return p->get();
+    }
     Connection observe(nb::callable cb) {
         if (!derived) return {};
         auto* d = derived;
@@ -407,10 +451,20 @@ struct ListHandle {
         List<T>* p = &list;
         list_op_dispatch([p, vec = std::move(vec)]() mutable { p->replace_all(vec); });
     }
-    size_t size() const { return list.size(); }
-    T get(size_t i) const { return i < list.size() ? list[i] : T{}; }
+    size_t size() const {
+        const List<T>* p = &list;
+        return dispatch_sync_read<size_t>([p](){ return p->size(); });
+    }
+    T get(size_t i) const {
+        const List<T>* p = &list;
+        return dispatch_sync_read<T>([p,i](){ return i < p->size() ? (*p)[i] : T{}; });
+    }
     nb::list to_list() const {
-        nb::list out; for (size_t i=0;i<list.size();++i) out.append(list[i]); return out;
+        const List<T>* p = &list;
+        return dispatch_sync_read<nb::list>([p](){
+            nb::gil_scoped_acquire g;
+            nb::list out; for (size_t i=0;i<p->size();++i) out.append((*p)[i]); return out;
+        });
     }
     Connection observe_insert(nb::callable cb) {
         auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
@@ -433,9 +487,24 @@ struct BoundList {
     void erase(size_t i) { if(list) { auto* p=list; list_op_dispatch([p,i](){ if(i<p->size()) p->erase(i); }); } }
     void set(size_t i, T v) { if(list) { auto* p=list; list_op_dispatch([p,i,v=std::move(v)]() mutable { if(i<p->size()) p->set(i,std::move(v)); }); } }
     void replace_all(nb::list py) { if(!list) return; std::vector<T> vec; vec.reserve(nb::len(py)); for(auto h:py) vec.push_back(nb::cast<T>(h)); auto* p=list; list_op_dispatch([p, vec=std::move(vec)]() mutable { p->replace_all(vec); }); }
-    size_t size() const { return list ? list->size() : 0; }
-    T get(size_t i) const { return list && i<list->size() ? (*list)[i] : T{}; }
-    nb::list to_list() const { nb::list out; if(!list) return out; for(size_t i=0;i<list->size();++i) out.append((*list)[i]); return out; }
+    size_t size() const {
+        if (!list) return 0;
+        List<T>* p = list;
+        return dispatch_sync_read<size_t>([p](){ return p->size(); });
+    }
+    T get(size_t i) const {
+        if (!list) return T{};
+        List<T>* p = list;
+        return dispatch_sync_read<T>([p,i](){ return i < p->size() ? (*p)[i] : T{}; });
+    }
+    nb::list to_list() const {
+        if (!list) return nb::list();
+        List<T>* p = list;
+        return dispatch_sync_read<nb::list>([p](){
+            nb::gil_scoped_acquire g;
+            nb::list out; for (size_t i=0;i<p->size();++i) out.append((*p)[i]); return out;
+        });
+    }
     Connection observe_insert(nb::callable cb) {
         if(!list) return {}; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_insert().connect(std::move(w));
     }
@@ -467,6 +536,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         auto* ptr = field_ptr_of(h);
         if (!ptr) return true;
         slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        if constexpr (requires { h.owner; }) { if (h.owner) slot->dep_owners_.push_back(h.owner); }
         return true;
     };
     auto connect_shared = [&](auto* example) -> bool {
@@ -476,6 +546,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         auto* ptr = shared_ptr_of(h);
         if (!ptr) return true;
         slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        if constexpr (requires { h.owner; }) { if (h.owner) slot->dep_owners_.push_back(h.owner); }
         return true;
     };
     auto connect_derived = [&](auto* example) -> bool {
@@ -485,6 +556,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         auto* ptr = h.derived;
         if (!ptr) return true;
         slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        if (h.owner) slot->dep_owners_.push_back(h.owner);
         return true;
     };
     // Bound handles
