@@ -3,6 +3,8 @@
 #include <nanobind/stl/function.h>
 
 #include <prism/core/field.hpp>
+#include <prism/core/shared.hpp>
+#include <prism/core/channel.hpp>
 #include <prism/core/connection.hpp>
 #include <prism/app/model_app.hpp>
 #include <prism/app/backend.hpp>
@@ -65,6 +67,24 @@ static bool try_post_via_handle(std::function<void()> fn) {
     return true;
 }
 
+static void ensure_idle_wake() {
+    if (prism::app::detail_is_logic_thread) {
+        if (prism::app::detail_in_mutation_batch) return;
+        std::optional<AppContext::PostHandle> hopt;
+        {
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            if (!g_has_handle || !g_post_handle) return;
+            hopt = *g_post_handle;
+        }
+        auto tp = hopt->drain_publish.lock();
+        if (tp && *tp) (*tp)();
+        return;
+    }
+    // Off-thread: post a bare drain+publish wake.
+    std::function<void()> wake_fn = []{};
+    (void)try_post_via_handle(std::move(wake_fn));
+}
+
 // Helper to post or direct-set a Field.
 template <typename T>
 void field_set_dispatch(Field<T>* field, T v) {
@@ -95,13 +115,31 @@ struct FieldHandle {
     }
 };
 
-// Type-erased slot for PyModel view — defined before BoundField so BoundField can hold shared_ptr to it.
-struct SlotBase { virtual ~SlotBase() = default; virtual void build(ViewBuilder& vb) = 0; };
+// Type-erased slot for PyModel view — defined before Bound* so they can hold shared_ptr to it.
+struct SlotBase {
+    virtual ~SlotBase() = default;
+    virtual void build(ViewBuilder& vb) = 0;
+    virtual void drain() {}
+};
 template <typename T>
 struct Slot : SlotBase {
     Field<T> field;
     explicit Slot(T v) : field(std::move(v)) {}
     void build(ViewBuilder& vb) override { vb.widget(field); }
+};
+template <typename T>
+struct SlotShared : SlotBase {
+    Shared<T> shared;
+    explicit SlotShared(T v) : shared(std::move(v)) {}
+    void build(ViewBuilder& vb) override { vb.widget(shared); }
+    void drain() override { shared.drain_notifications(); }
+};
+template <typename T>
+struct SlotChannel : SlotBase {
+    Channel<T> channel;
+    SlotChannel() = default;
+    void build(ViewBuilder& vb) override { (void)vb; /* invisible — drain via PyModel::drain */ }
+    void drain() override { channel.drain_notifications(); }
 };
 
 // Bound handle — references Field owned by PyModel via shared_ptr<SlotBase> (no Model cycle).
@@ -123,6 +161,73 @@ struct BoundField {
             try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
         };
         return f->on_change().connect(std::move(wrapper));
+    }
+};
+
+// Standalone / bound handles for Shared<T> and Channel<T>
+template <typename T>
+struct SharedHandle {
+    Shared<T> shared;
+    SharedHandle(T init) : shared(std::move(init)) {}
+    T get() const { return shared.get(); }
+    void set(T v) { shared.set(std::move(v)); ensure_idle_wake(); }
+    Connection observe(nb::callable cb) {
+        auto wrapper = [cb](const T& val) {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire acq;
+            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+        };
+        return shared.on_change().connect(std::move(wrapper));
+    }
+};
+template <typename T>
+struct BoundShared {
+    std::shared_ptr<SlotBase> owner;
+    Shared<T>* shared = nullptr;
+    T get() const { return shared ? shared->get() : T{}; }
+    void set(T v) {
+        if (shared) { shared->set(std::move(v)); ensure_idle_wake(); }
+    }
+    Connection observe(nb::callable cb) {
+        if (!shared) return {};
+        Shared<T>* s = shared;
+        auto wrapper = [cb, s](const T& val) {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire acq;
+            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+        };
+        return s->on_change().connect(std::move(wrapper));
+    }
+};
+template <typename T>
+struct ChannelHandle {
+    Channel<T> channel;
+    void send(T v) { channel.send(std::move(v)); ensure_idle_wake(); }
+    Connection observe(nb::callable cb) {
+        auto wrapper = [cb](const T& val) {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire acq;
+            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+        };
+        return channel.on_receive().connect(std::move(wrapper));
+    }
+};
+template <typename T>
+struct BoundChannel {
+    std::shared_ptr<SlotBase> owner;
+    Channel<T>* channel = nullptr;
+    void send(T v) {
+        if (channel) { channel->send(std::move(v)); ensure_idle_wake(); }
+    }
+    Connection observe(nb::callable cb) {
+        if (!channel) return {};
+        Channel<T>* c = channel;
+        auto wrapper = [cb, c](const T& val) {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire acq;
+            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+        };
+        return c->on_receive().connect(std::move(wrapper));
     }
 };
 
@@ -158,6 +263,62 @@ struct PyModel {
         slots.push_back(s);
         return {s, p};
     }
+    std::pair<std::shared_ptr<SlotBase>, Shared<int>*> add_shared_int_slot(int v) {
+        auto s = std::make_shared<SlotShared<int>>(v);
+        auto* p = &s->shared;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Shared<double>*> add_shared_float_slot(double v) {
+        auto s = std::make_shared<SlotShared<double>>(v);
+        auto* p = &s->shared;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Shared<std::string>*> add_shared_str_slot(std::string v) {
+        auto s = std::make_shared<SlotShared<std::string>>(std::move(v));
+        auto* p = &s->shared;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Shared<bool>*> add_shared_bool_slot(bool v) {
+        auto s = std::make_shared<SlotShared<bool>>(v);
+        auto* p = &s->shared;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Channel<int>*> add_channel_int_slot() {
+        auto s = std::make_shared<SlotChannel<int>>();
+        auto* p = &s->channel;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Channel<double>*> add_channel_float_slot() {
+        auto s = std::make_shared<SlotChannel<double>>();
+        auto* p = &s->channel;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Channel<std::string>*> add_channel_str_slot() {
+        auto s = std::make_shared<SlotChannel<std::string>>();
+        auto* p = &s->channel;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Channel<bool>*> add_channel_bool_slot() {
+        auto s = std::make_shared<SlotChannel<bool>>();
+        auto* p = &s->channel;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
     // Legacy raw-pointer accessors (kept for internal use if needed)
     Field<int>* add_int(int v) { return add_int_slot(v).second; }
     Field<double>* add_float(double v) { return add_float_slot(v).second; }
@@ -171,7 +332,8 @@ struct PyModel {
     }
 
     void drain() {
-        // PyModel currently has no Shared/Channel to drain
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        for (auto& s : slots) s->drain();
     }
 };
 
@@ -229,6 +391,64 @@ NB_MODULE(_prism_ext, m) {
         .def("get", &BoundField<bool>::get)
         .def("set", &BoundField<bool>::set);
 
+    // Standalone Shared handles
+    nb::class_<SharedHandle<int>>(m, "SharedInt")
+        .def(nb::init<int>(), nb::arg("value") = 0)
+        .def_prop_rw("value", &SharedHandle<int>::get, &SharedHandle<int>::set)
+        .def("observe", &SharedHandle<int>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        .def("get", &SharedHandle<int>::get).def("set", &SharedHandle<int>::set);
+    nb::class_<SharedHandle<double>>(m, "SharedFloat")
+        .def(nb::init<double>(), nb::arg("value") = 0.0)
+        .def_prop_rw("value", &SharedHandle<double>::get, &SharedHandle<double>::set)
+        .def("observe", &SharedHandle<double>::observe, nb::keep_alive<0, 1>())
+        .def("get", &SharedHandle<double>::get).def("set", &SharedHandle<double>::set);
+    nb::class_<SharedHandle<std::string>>(m, "SharedStr")
+        .def(nb::init<std::string>(), nb::arg("value") = "")
+        .def_prop_rw("value", &SharedHandle<std::string>::get, &SharedHandle<std::string>::set)
+        .def("observe", &SharedHandle<std::string>::observe, nb::keep_alive<0, 1>())
+        .def("get", &SharedHandle<std::string>::get).def("set", &SharedHandle<std::string>::set);
+    nb::class_<SharedHandle<bool>>(m, "SharedBool")
+        .def(nb::init<bool>(), nb::arg("value") = false)
+        .def_prop_rw("value", &SharedHandle<bool>::get, &SharedHandle<bool>::set)
+        .def("observe", &SharedHandle<bool>::observe, nb::keep_alive<0, 1>())
+        .def("get", &SharedHandle<bool>::get).def("set", &SharedHandle<bool>::set);
+
+    nb::class_<BoundShared<int>>(m, "BoundSharedInt")
+        .def_prop_rw("value", &BoundShared<int>::get, &BoundShared<int>::set)
+        .def("observe", &BoundShared<int>::observe, nb::keep_alive<0, 1>())
+        .def("get", &BoundShared<int>::get).def("set", &BoundShared<int>::set);
+    nb::class_<BoundShared<double>>(m, "BoundSharedFloat")
+        .def_prop_rw("value", &BoundShared<double>::get, &BoundShared<double>::set)
+        .def("observe", &BoundShared<double>::observe, nb::keep_alive<0, 1>())
+        .def("get", &BoundShared<double>::get).def("set", &BoundShared<double>::set);
+    nb::class_<BoundShared<std::string>>(m, "BoundSharedStr")
+        .def_prop_rw("value", &BoundShared<std::string>::get, &BoundShared<std::string>::set)
+        .def("observe", &BoundShared<std::string>::observe, nb::keep_alive<0, 1>())
+        .def("get", &BoundShared<std::string>::get).def("set", &BoundShared<std::string>::set);
+    nb::class_<BoundShared<bool>>(m, "BoundSharedBool")
+        .def_prop_rw("value", &BoundShared<bool>::get, &BoundShared<bool>::set)
+        .def("observe", &BoundShared<bool>::observe, nb::keep_alive<0, 1>())
+        .def("get", &BoundShared<bool>::get).def("set", &BoundShared<bool>::set);
+
+    // Channel handles
+    nb::class_<ChannelHandle<int>>(m, "ChannelInt")
+        .def(nb::init<>()).def("send", &ChannelHandle<int>::send).def("observe", &ChannelHandle<int>::observe, nb::keep_alive<0, 1>());
+    nb::class_<ChannelHandle<double>>(m, "ChannelFloat")
+        .def(nb::init<>()).def("send", &ChannelHandle<double>::send).def("observe", &ChannelHandle<double>::observe, nb::keep_alive<0, 1>());
+    nb::class_<ChannelHandle<std::string>>(m, "ChannelStr")
+        .def(nb::init<>()).def("send", &ChannelHandle<std::string>::send).def("observe", &ChannelHandle<std::string>::observe, nb::keep_alive<0, 1>());
+    nb::class_<ChannelHandle<bool>>(m, "ChannelBool")
+        .def(nb::init<>()).def("send", &ChannelHandle<bool>::send).def("observe", &ChannelHandle<bool>::observe, nb::keep_alive<0, 1>());
+
+    nb::class_<BoundChannel<int>>(m, "BoundChannelInt")
+        .def("send", &BoundChannel<int>::send).def("observe", &BoundChannel<int>::observe, nb::keep_alive<0, 1>());
+    nb::class_<BoundChannel<double>>(m, "BoundChannelFloat")
+        .def("send", &BoundChannel<double>::send).def("observe", &BoundChannel<double>::observe, nb::keep_alive<0, 1>());
+    nb::class_<BoundChannel<std::string>>(m, "BoundChannelStr")
+        .def("send", &BoundChannel<std::string>::send).def("observe", &BoundChannel<std::string>::observe, nb::keep_alive<0, 1>());
+    nb::class_<BoundChannel<bool>>(m, "BoundChannelBool")
+        .def("send", &BoundChannel<bool>::send).def("observe", &BoundChannel<bool>::observe, nb::keep_alive<0, 1>());
+
     nb::class_<PyModel>(m, "Model")
         .def(nb::init<>())
         .def("add_int", [](PyModel& self, int v){
@@ -263,7 +483,72 @@ NB_MODULE(_prism_ext, m) {
         .def("_add_bool_internal", [](PyModel& self, bool v){
                 auto [owner, p] = self.add_bool_slot(v);
                 BoundField<bool> h; h.owner = std::move(owner); h.field = p; return h;
-            }, nb::arg("value")=false);
+            }, nb::arg("value")=false)
+        // Shared internal allocators
+        .def("_add_shared_int_internal", [](PyModel& self, int v){
+                auto [owner, p] = self.add_shared_int_slot(v);
+                BoundShared<int> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")=0)
+        .def("_add_shared_float_internal", [](PyModel& self, double v){
+                auto [owner, p] = self.add_shared_float_slot(v);
+                BoundShared<double> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")=0.0)
+        .def("_add_shared_str_internal", [](PyModel& self, std::string v){
+                auto [owner, p] = self.add_shared_str_slot(std::move(v));
+                BoundShared<std::string> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")="")
+        .def("_add_shared_bool_internal", [](PyModel& self, bool v){
+                auto [owner, p] = self.add_shared_bool_slot(v);
+                BoundShared<bool> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")=false)
+        .def("_add_channel_int_internal", [](PyModel& self){
+                auto [owner, p] = self.add_channel_int_slot();
+                BoundChannel<int> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("_add_channel_float_internal", [](PyModel& self){
+                auto [owner, p] = self.add_channel_float_slot();
+                BoundChannel<double> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("_add_channel_str_internal", [](PyModel& self){
+                auto [owner, p] = self.add_channel_str_slot();
+                BoundChannel<std::string> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("_add_channel_bool_internal", [](PyModel& self){
+                auto [owner, p] = self.add_channel_bool_slot();
+                BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("add_shared_int", [](PyModel& self, int v){
+                auto [owner, p] = self.add_shared_int_slot(v);
+                BoundShared<int> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")=0)
+        .def("add_shared_float", [](PyModel& self, double v){
+                auto [owner, p] = self.add_shared_float_slot(v);
+                BoundShared<double> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")=0.0)
+        .def("add_shared_str", [](PyModel& self, std::string v){
+                auto [owner, p] = self.add_shared_str_slot(std::move(v));
+                BoundShared<std::string> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")="")
+        .def("add_shared_bool", [](PyModel& self, bool v){
+                auto [owner, p] = self.add_shared_bool_slot(v);
+                BoundShared<bool> h; h.owner = std::move(owner); h.shared = p; return h;
+            }, nb::arg("value")=false)
+        .def("add_channel_int", [](PyModel& self){
+                auto [owner, p] = self.add_channel_int_slot();
+                BoundChannel<int> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("add_channel_float", [](PyModel& self){
+                auto [owner, p] = self.add_channel_float_slot();
+                BoundChannel<double> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("add_channel_str", [](PyModel& self){
+                auto [owner, p] = self.add_channel_str_slot();
+                BoundChannel<std::string> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("add_channel_bool", [](PyModel& self){
+                auto [owner, p] = self.add_channel_bool_slot();
+                BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
+            });
 
     m.def("run", [](PyModel& model, std::string title){
         // Must be called from main thread on macOS
