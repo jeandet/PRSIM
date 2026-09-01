@@ -134,6 +134,14 @@ public:
         current_parent().children.push_back(std::move(node));
     }
 
+    // Generic read-only widget for custom observables (e.g. Python Derived).
+    template <typename T, typename Obs>
+    void widget_generic(Obs& obs) {
+        placed_.insert(static_cast<const void*>(&obs));
+        auto leaf = node_readonly_leaf<T>(obs, tree_.next_id_);
+        current_parent().children.push_back(std::move(leaf));
+    }
+
     [[nodiscard]] const std::set<const void*>& placed() const { return placed_; }
 
     template <typename C>

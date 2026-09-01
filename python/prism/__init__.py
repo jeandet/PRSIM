@@ -25,6 +25,10 @@ from ._prism_ext import (
     BoundChannelFloat,
     BoundChannelStr,
     BoundChannelBool,
+    BoundDerivedInt,
+    BoundDerivedFloat,
+    BoundDerivedStr,
+    BoundDerivedBool,
     Connection,
     is_logic_thread,
     run as _run,
@@ -42,6 +46,7 @@ __all__ = [
     "checkbox",
     "shared",
     "channel",
+    "derived",
     "transaction",
     "FieldInt",
     "FieldFloat",
@@ -55,6 +60,10 @@ __all__ = [
     "ChannelFloat",
     "ChannelStr",
     "ChannelBool",
+    "BoundDerivedInt",
+    "BoundDerivedFloat",
+    "BoundDerivedStr",
+    "BoundDerivedBool",
     "Connection",
     "is_logic_thread",
     "run",
@@ -194,6 +203,139 @@ def channel(type_hint=0):
     return _ChannelDescriptor(type_hint)
 
 
+class _DerivedDescriptor:
+    def __init__(self, fn, *deps, type_hint=None):
+        self.fn = fn
+        self.deps = deps  # attribute names (str) or handles resolved later
+        self.type_hint = type_hint
+        self.name = None
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def _allocate(self, instance):
+        cache = instance.__dict__.setdefault("_prism_fields", {})
+        if self.name in cache:
+            return cache[self.name]
+        # resolve deps: str -> getattr(instance, name)
+        dep_handles = []
+        for d in self.deps:
+            if isinstance(d, str):
+                dep_handles.append(getattr(instance, d))
+            else:
+                dep_handles.append(d)
+        # infer type from probe call if not hinted; also build wrapped call_fn
+        import inspect
+
+        sig = inspect.signature(self.fn)
+        n_params = len(sig.parameters)
+        n_deps = len(dep_handles)
+        # collect current dep values for probe of (a,b) style
+        def _dep_vals():
+            vals = []
+            for h in dep_handles:
+                try:
+                    vals.append(h.value)
+                except Exception:
+                    vals.append(0)
+            return vals
+
+        import weakref as _wr
+
+        if n_params == 1 and n_deps >= 1:
+            # self-style: fn(instance) — break Model->slot->py_fn->instance cycle via weakref
+            wref = _wr.ref(instance)
+            orig = self.fn
+            probe_fn = lambda: orig(wref()) if wref() is not None else orig(instance)  # type: ignore[no-untyped-call]
+            call_fn = lambda _w=wref, _f=orig: _f(_w()) if _w() is not None else None  # type: ignore[no-untyped-call]
+            try:
+                probe = probe_fn()
+            except Exception:
+                probe = 0
+        elif n_params == n_deps and n_deps > 0:
+            vals = _dep_vals()
+            probe_fn = lambda: self.fn(*vals)  # type: ignore[no-untyped-call]
+            # break cycle: capture weakref + dep names (strings) not handles
+            wref2 = _wr.ref(instance)
+            dep_names = tuple(d if isinstance(d, str) else None for d in self.deps)
+            has_str_names = all(n is not None for n in dep_names)
+            if has_str_names:
+                orig2 = self.fn
+                call_fn = lambda _w=wref2, _f=orig2, _ns=dep_names: _f(*[getattr(_w(), n).value for n in _ns]) if _w() is not None else None  # type: ignore[no-untyped-call]
+            else:
+                # fallback: captures handles strongly (rare)
+                call_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
+            try:
+                probe = probe_fn()
+            except Exception:
+                probe = vals[0] if vals else 0
+        else:
+            # try no-arg
+            try:
+                probe = self.fn()  # type: ignore[no-untyped-call]
+                call_fn = self.fn
+            except Exception:
+                # fallback: try with dep vals
+                vals = _dep_vals()
+                try:
+                    probe = self.fn(*vals)  # type: ignore[no-untyped-call]
+                    call_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
+                except Exception:
+                    probe = 0
+                    call_fn = self.fn
+        th = self.type_hint
+        if th is None:
+            th = probe
+        if isinstance(th, bool):
+            h = instance._add_derived_bool_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
+        elif isinstance(th, int):
+            h = instance._add_derived_int_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
+        elif isinstance(th, float):
+            h = instance._add_derived_float_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
+        elif isinstance(th, str):
+            h = instance._add_derived_str_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
+        else:
+            # fallback int
+            h = instance._add_derived_int_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
+        cache[self.name] = h
+        return h
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._allocate(instance)
+
+
+def derived(fn=None, *deps, type_hint=None):
+    """Descriptor factory: @derived('a','b') or derived(lambda self: ..., 'a').
+
+    Usage:
+      class M(Model):
+        a = field(1)
+        b = field(2)
+        total = derived(lambda self: self.a.value + self.b.value, 'a', 'b')
+      # or
+      class M(Model):
+        a = field(1)
+        total = derived(lambda self: self.a.value*2, 'a', type_hint=0)
+    When used as @derived('a') decorator on method, method is compute.
+    """
+    if fn is not None and callable(fn) and not deps and type_hint is None:
+        # called as @derived without args -> fn is the function, no deps yet (must be supplied elsewhere)
+        # treat as decorator waiting for deps: return descriptor with fn and no deps
+        return _DerivedDescriptor(fn)
+    if callable(fn):
+        return _DerivedDescriptor(fn, *deps, type_hint=type_hint)
+    # called as derived('a','b') -> fn is first dep string, need decorator
+    # so fn is actually dep name
+    all_deps = (fn,) + deps if fn is not None else deps
+
+    def decorator(func):
+        return _DerivedDescriptor(func, *all_deps, type_hint=type_hint)
+
+    return decorator
+
+
 class Model(_ModelBase):
     def __init__(self, **kwargs):
         super().__init__()
@@ -201,7 +343,13 @@ class Model(_ModelBase):
         for cls in reversed(type(self).__mro__):
             for name, attr in cls.__dict__.items():
                 if isinstance(
-                    attr, (_FieldDescriptor, _SharedDescriptor, _ChannelDescriptor)
+                    attr,
+                    (
+                        _FieldDescriptor,
+                        _SharedDescriptor,
+                        _ChannelDescriptor,
+                        _DerivedDescriptor,
+                    ),
                 ):
                     attr._allocate(self)
         # Apply kwargs overrides

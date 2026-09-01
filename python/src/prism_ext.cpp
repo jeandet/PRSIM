@@ -328,6 +328,110 @@ struct BoundChannel {
     }
 };
 
+// Derived — Python compute with C++ subscription
+template <typename T>
+struct SlotDerived : SlotBase {
+    T value_{};
+    nb::object py_fn = nb::none();
+    SenderHub<const T&> changed_;
+    std::vector<Connection> deps_;
+    std::vector<Connection> observers_;
+    SlotDerived() = default;
+    SlotDerived(nb::object fn, T init) : py_fn(std::move(fn)), value_(std::move(init)) {}
+    T get() const { return value_; }
+    SenderHub<const T&>& on_change() { return changed_; }
+    void recompute() {
+        T nv{};
+        {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire g;
+            try { nv = nb::cast<T>(py_fn()); } catch (nb::python_error& e) { e.restore(); PyErr_Print(); return; } catch (...) { return; }
+        }
+        if (nv == value_) return;
+        value_ = std::move(nv);
+        emit_or_defer(static_cast<void*>(&changed_), [this]{ changed_.emit(value_); });
+    }
+    void build(ViewBuilder& vb) override { vb.widget_generic<T>(*this); }
+};
+
+template <typename T>
+struct BoundDerived {
+    std::shared_ptr<SlotBase> owner;
+    SlotDerived<T>* derived = nullptr;
+    T get() const { return derived ? derived->get() : T{}; }
+    Connection observe(nb::callable cb) {
+        if (!derived) return {};
+        auto* d = derived;
+        auto wrapper = [cb, d](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        return d->on_change().connect(std::move(wrapper));
+    }
+};
+
+// helper to attach a single dep to a derived slot
+template <typename FH>
+auto* field_ptr_of(FH& h) {
+    if constexpr (std::is_pointer_v<decltype(h.field)>) return h.field;
+    else return &h.field;
+}
+template <typename SH>
+auto* shared_ptr_of(SH& h) {
+    if constexpr (std::is_pointer_v<decltype(h.shared)>) return h.shared;
+    else return &h.shared;
+}
+template <typename T>
+void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
+    auto connect_field = [&](auto* example) -> bool {
+        using FH = std::decay_t<decltype(*example)>;
+        if (!nb::isinstance<FH>(dep)) return false;
+        auto& h = nb::cast<FH&>(dep);
+        auto* ptr = field_ptr_of(h);
+        if (!ptr) return true;
+        slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        return true;
+    };
+    auto connect_shared = [&](auto* example) -> bool {
+        using SH = std::decay_t<decltype(*example)>;
+        if (!nb::isinstance<SH>(dep)) return false;
+        auto& h = nb::cast<SH&>(dep);
+        auto* ptr = shared_ptr_of(h);
+        if (!ptr) return true;
+        slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        return true;
+    };
+    auto connect_derived = [&](auto* example) -> bool {
+        using DH = std::decay_t<decltype(*example)>;
+        if (!nb::isinstance<DH>(dep)) return false;
+        auto& h = nb::cast<DH&>(dep);
+        auto* ptr = h.derived;
+        if (!ptr) return true;
+        slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
+        return true;
+    };
+    // Bound handles
+    if (connect_field((BoundField<int>*)nullptr)) return;
+    if (connect_field((BoundField<double>*)nullptr)) return;
+    if (connect_field((BoundField<std::string>*)nullptr)) return;
+    if (connect_field((BoundField<bool>*)nullptr)) return;
+    if (connect_shared((BoundShared<int>*)nullptr)) return;
+    if (connect_shared((BoundShared<double>*)nullptr)) return;
+    if (connect_shared((BoundShared<std::string>*)nullptr)) return;
+    if (connect_shared((BoundShared<bool>*)nullptr)) return;
+    if (connect_derived((BoundDerived<int>*)nullptr)) return;
+    if (connect_derived((BoundDerived<double>*)nullptr)) return;
+    if (connect_derived((BoundDerived<std::string>*)nullptr)) return;
+    if (connect_derived((BoundDerived<bool>*)nullptr)) return;
+    // Standalone handles
+    if (connect_field((FieldHandle<int>*)nullptr)) return;
+    if (connect_field((FieldHandle<double>*)nullptr)) return;
+    if (connect_field((FieldHandle<std::string>*)nullptr)) return;
+    if (connect_field((FieldHandle<bool>*)nullptr)) return;
+    if (connect_shared((SharedHandle<int>*)nullptr)) return;
+    if (connect_shared((SharedHandle<double>*)nullptr)) return;
+    if (connect_shared((SharedHandle<std::string>*)nullptr)) return;
+    if (connect_shared((SharedHandle<bool>*)nullptr)) return;
+    throw std::runtime_error("derived: unsupported dependency handle type");
+}
+
 inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
     if (nb::isinstance<BoundField<int>>(h)) vb.widget(*nb::cast<BoundField<int>&>(h).field);
     else if (nb::isinstance<BoundField<double>>(h)) vb.widget(*nb::cast<BoundField<double>&>(h).field);
@@ -337,6 +441,10 @@ inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
     else if (nb::isinstance<BoundShared<double>>(h)) vb.widget(*nb::cast<BoundShared<double>&>(h).shared);
     else if (nb::isinstance<BoundShared<std::string>>(h)) vb.widget(*nb::cast<BoundShared<std::string>&>(h).shared);
     else if (nb::isinstance<BoundShared<bool>>(h)) vb.widget(*nb::cast<BoundShared<bool>&>(h).shared);
+    else if (nb::isinstance<BoundDerived<int>>(h)) vb.widget_generic<int>(*nb::cast<BoundDerived<int>&>(h).derived);
+    else if (nb::isinstance<BoundDerived<double>>(h)) vb.widget_generic<double>(*nb::cast<BoundDerived<double>&>(h).derived);
+    else if (nb::isinstance<BoundDerived<std::string>>(h)) vb.widget_generic<std::string>(*nb::cast<BoundDerived<std::string>&>(h).derived);
+    else if (nb::isinstance<BoundDerived<bool>>(h)) vb.widget_generic<bool>(*nb::cast<BoundDerived<bool>&>(h).derived);
     else throw std::runtime_error("ViewBuilder.widget: unsupported handle type");
 }
 
@@ -428,6 +536,33 @@ struct PyModel {
         slots.push_back(s);
         return {s, p};
     }
+    // Derived slots — vector-based deps (avoid immutable tuple assignment)
+    template <typename T>
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<T>*> add_derived_slot_vec(nb::object fn, const std::vector<nb::object>& deps) {
+        T init{};
+        {
+            nb::gil_scoped_acquire g;
+            try { init = nb::cast<T>(fn()); } catch (...) {}
+        }
+        auto s = std::make_shared<SlotDerived<T>>(std::move(fn), std::move(init));
+        for (auto& dep : deps) derived_attach_dep(s.get(), dep);
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, s.get()};
+    }
+    // kept for tuple-compat if needed
+    template <typename T>
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<T>*> add_derived_slot(nb::object fn, nb::tuple deps) {
+        std::vector<nb::object> v;
+        v.reserve(deps.size());
+        for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
+        return add_derived_slot_vec<T>(std::move(fn), v);
+    }
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<int>*> add_derived_int_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<int>(std::move(fn), std::move(deps)); }
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<double>*> add_derived_double_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<double>(std::move(fn), std::move(deps)); }
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<std::string>*> add_derived_str_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<std::string>(std::move(fn), std::move(deps)); }
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<bool>*> add_derived_bool_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<bool>(std::move(fn), std::move(deps)); }
+
     // Legacy raw-pointer accessors (kept for internal use if needed)
     Field<int>* add_int(int v) { return add_int_slot(v).second; }
     Field<double>* add_float(double v) { return add_float_slot(v).second; }
@@ -576,6 +711,19 @@ NB_MODULE(_prism_ext, m) {
     nb::class_<BoundChannel<bool>>(m, "BoundChannelBool")
         .def("send", &BoundChannel<bool>::send).def("observe", &BoundChannel<bool>::observe, nb::keep_alive<0, 1>());
 
+    nb::class_<BoundDerived<int>>(m, "BoundDerivedInt")
+        .def_prop_ro("value", &BoundDerived<int>::get).def("get", &BoundDerived<int>::get)
+        .def("observe", &BoundDerived<int>::observe, nb::keep_alive<0, 1>());
+    nb::class_<BoundDerived<double>>(m, "BoundDerivedFloat")
+        .def_prop_ro("value", &BoundDerived<double>::get).def("get", &BoundDerived<double>::get)
+        .def("observe", &BoundDerived<double>::observe, nb::keep_alive<0, 1>());
+    nb::class_<BoundDerived<std::string>>(m, "BoundDerivedStr")
+        .def_prop_ro("value", &BoundDerived<std::string>::get).def("get", &BoundDerived<std::string>::get)
+        .def("observe", &BoundDerived<std::string>::observe, nb::keep_alive<0, 1>());
+    nb::class_<BoundDerived<bool>>(m, "BoundDerivedBool")
+        .def_prop_ro("value", &BoundDerived<bool>::get).def("get", &BoundDerived<bool>::get)
+        .def("observe", &BoundDerived<bool>::observe, nb::keep_alive<0, 1>());
+
     nb::class_<ViewBuilder>(m, "ViewBuilder")
         .def("widget", [](ViewBuilder& vb, nb::object h){ py_widget_dispatch(vb, h); }, nb::arg("handle"))
         .def("hstack", [](ViewBuilder& vb, nb::args args){
@@ -653,6 +801,30 @@ NB_MODULE(_prism_ext, m) {
         .def("_add_channel_bool_internal", [](PyModel& self){
                 auto [owner, p] = self.add_channel_bool_slot();
                 BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
+            })
+        .def("_add_derived_int_internal", [](PyModel& self, nb::object fn, nb::args deps){
+                std::vector<nb::object> v; v.reserve(deps.size());
+                for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
+                auto [owner, p] = self.add_derived_slot_vec<int>(fn, v);
+                BoundDerived<int> h; h.owner = std::move(owner); h.derived = p; return h;
+            })
+        .def("_add_derived_float_internal", [](PyModel& self, nb::object fn, nb::args deps){
+                std::vector<nb::object> v; v.reserve(deps.size());
+                for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
+                auto [owner, p] = self.add_derived_slot_vec<double>(fn, v);
+                BoundDerived<double> h; h.owner = std::move(owner); h.derived = p; return h;
+            })
+        .def("_add_derived_str_internal", [](PyModel& self, nb::object fn, nb::args deps){
+                std::vector<nb::object> v; v.reserve(deps.size());
+                for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
+                auto [owner, p] = self.add_derived_slot_vec<std::string>(fn, v);
+                BoundDerived<std::string> h; h.owner = std::move(owner); h.derived = p; return h;
+            })
+        .def("_add_derived_bool_internal", [](PyModel& self, nb::object fn, nb::args deps){
+                std::vector<nb::object> v; v.reserve(deps.size());
+                for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
+                auto [owner, p] = self.add_derived_slot_vec<bool>(fn, v);
+                BoundDerived<bool> h; h.owner = std::move(owner); h.derived = p; return h;
             });
 
     m.def("_txn_begin", [](){
