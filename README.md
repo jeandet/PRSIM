@@ -283,6 +283,62 @@ struct Settings {
 it without input wiring; `label` overrides the caption; `section` inserts a header row above
 the field.
 
+## Python SDK
+
+Same MVB architecture, fully multi-threaded from Python — any thread may mutate the model.
+
+```python
+import prism
+from typing import Annotated
+from pydantic import Field as PField
+
+Vol = Annotated[float, PField(ge=0, le=1)]
+
+class Mixer(prism.Model):
+    volume: Vol = 0.75                          # Annotated → validated via TypeAdapter
+    mute = prism.checkbox(False, label="Mute")
+    count = prism.field(42)
+
+    volume_slider = prism.slider(0.75, min=0.0, max=1.0)
+    total = prism.derived(lambda self: self.count.value * 2, "count")
+
+    def view(self, vb):                         # optional — else auto-stacked
+        vb.hstack(self.volume_slider, self.mute)
+        vb.widget(self.count)
+
+m = Mixer()
+prism.run(m, title="Mixer")                     # blocks, releases GIL around SDL pump
+
+# from any thread:
+m.count.value = 43
+conn = Mixer.count.observe(m, lambda v: print(v))  # type-safe, no string name
+with prism.transaction():
+    m.count.value = 1
+    m.volume = 0.9                              # coalesced into one publish
+```
+
+| Python | C++ equivalent | Notes |
+|---|---|---|
+| `prism.field(default)` | `Field<T>` | `.value` get/set, `.observe()` |
+| `prism.slider` / `prism.checkbox` | `Field<Slider<>>` / `Field<Checkbox>` | sentinel widgets |
+| `prism.shared(default)` | `Shared<T>` | latest-value, cross-thread |
+| `prism.channel(type_hint)` | `Channel<T>` | lossless ordered |
+| `prism.derived(fn, *deps)` | `Derived<T>` | recomputed on dep change |
+| `prism.list_field([...])` | `List<T>` | `push`/`erase`/`observe_*` |
+| `prism.transaction()` | `prism::transaction([]{...})` | coalesced publish |
+| `prism.validator_for(Annotated)` | — | Pydantic validation |
+| `prism.run(model)` | `model_app(title, model)` | `vb` trampoline via `ViewBuilder` |
+
+Install (editable, requires Meson ≥1.5):
+
+```bash
+pip install -e . --no-build-isolation
+meson test -C builddir           # 73 C++ + Python bindings via meson test
+pytest python/tests -v           # direct pytest alternative
+```
+
+See [Python SDK design](doc/design/python-sdk.md) for threading (SenderHub snapshot + coalescing queue), GIL handling, and lifecycle details. `python/tests/test_prism_python.py` is the API reference by example.
+
 ## Core Abstractions: `Field<T>` and `State<T>`
 
 Two observable types share the same core (`.get()`, `.set()`, `.on_change()`):
@@ -514,8 +570,8 @@ graph LR
 - **Phase 3.5** (done) — stdexec `run_loop` event loops, `prism::then`/`prism::on` pipe adaptors, `AppContext`
 - **Phase 3.6** (done) — `Node` intermediate layer (type-erased `Field<T>` + children), pre-C++26 support via `view()` methods, magic_enum enum fallback, `#if __cpp_impl_reflection` guards (only 2 locations)
 - **Phase 4** (done) — Scroll areas, virtual lists, animation system (easing/spring, `Animation<T>`, `TransitionGuard<T>`), mouse capture & drag, table widget (virtual scroll, headers, row selection), tab bar (`TabBar<>`, lazy per-tab `ViewBuilder`), plot widget (zoom/pan/crosshair, auto-fit), SVG export, window abstraction + custom chrome, theme palette (runtime-switchable), transaction API (deferred/coalesced callbacks), `Derived<T>`/`Shared<T>` state taxonomy, codebase reorganization into 8 modules
-- **Phase 4.5** (in progress) — Custom widget from type (`Widget<T>`, `is_widget_v`, `EditState`), live object inspector (`Inspector<T>`/`FieldMirror<T>` — edit a `Shared<T>` cross-thread with zero boilerplate), inspector field annotations (`skip`/`readonly`/`label`/`section` via C++26 `[[=...]]` attributes), `Tree<T>` widget (`TreeSource`/`TreeController`, `wrap_tree_storage()`/`wrap_struct_tree()`, virtualized rows, keyboard nav), live tree inspector (browse a running app's own `WidgetNode` tree, synced detail panel with auto-scroll); broader debugging/profiling story (dirty-region viewer) continues
-- **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing, Python bindings
+- **Phase 4.5** (in progress) — Custom widget from type (`Widget<T>`, `is_widget_v`, `EditState`), live object inspector (`Inspector<T>`/`FieldMirror<T>` — edit a `Shared<T>` cross-thread with zero boilerplate), inspector field annotations (`skip`/`readonly`/`label`/`section` via C++26 `[[=...]]` attributes), `Tree<T>` widget (`TreeSource`/`TreeController`, `wrap_tree_storage()`/`wrap_struct_tree()`, virtualized rows, keyboard nav), live tree inspector (browse a running app's own `WidgetNode` tree, synced detail panel with auto-scroll), **Python SDK** (nanobind, fully multi-threaded, `Field`/`Shared`/`Channel`/`Derived`/`List`, `ViewBuilder` trampoline, `Annotated` validation, `transaction`); broader debugging/profiling story (dirty-region viewer) continues
+- **Phase 5** — Vulkan/WebGPU backend, SDF text, tile compositing
 
 ## Design Documents
 
@@ -548,6 +604,7 @@ Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design
 - [Inspector Field Annotations](docs/superpowers/specs/2026-07-15-inspector-field-annotations-design.md) — `skip`/`readonly`/`label`/`section` C++26 attributes
 - [Tree Widget](docs/superpowers/specs/2026-07-20-tree-widget-design.md) — `TreeSource`, 3-tier adapter API, virtualized rows, keyboard nav
 - [Live Tree Inspector](docs/superpowers/specs/2026-07-15-live-tree-inspector-design.md) — live `WidgetNode` tree browser, dual-window event loop, detail panel auto-scroll
+- [Python SDK](doc/design/python-sdk.md) — nanobind, fully multi-threaded, GIL-free 3.14+, posted-mutation queue, ViewBuilder trampoline
 
 ## License
 
