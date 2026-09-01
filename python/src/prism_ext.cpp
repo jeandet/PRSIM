@@ -6,6 +6,7 @@
 #include <prism/core/shared.hpp>
 #include <prism/core/channel.hpp>
 #include <prism/core/connection.hpp>
+#include <prism/core/transaction.hpp>
 #include <prism/app/model_app.hpp>
 #include <prism/app/backend.hpp>
 
@@ -85,9 +86,55 @@ static void ensure_idle_wake() {
     (void)try_post_via_handle(std::move(wake_fn));
 }
 
+// Transaction buffering — Python thread-local coalescing into one logic-thread closure.
+// Matches doc/design/python-sdk.md §2: `with prism.transaction():` enqueues single closure.
+// Uses C++ thread_local(TransactionState) semantics but buffered per-Python-thread pre-dispatch.
+inline thread_local int txn_depth = 0;
+inline thread_local std::vector<std::function<void()>> txn_queue;
+inline bool txn_active() { return txn_depth > 0; }
+
+inline void txn_flush_batch() {
+    if (txn_queue.empty()) return;
+    auto batch = std::move(txn_queue);
+    txn_queue.clear();
+    txn_queue.shrink_to_fit();
+    if (prism::app::detail_is_logic_thread) {
+        prism::TransactionGuard g;
+        for (auto& fn : batch) fn();
+        if (!prism::app::detail_in_mutation_batch) ensure_idle_wake();
+        return;
+    }
+    // Off-thread: if no app running, execute directly (avoid moving batch into posted lambda)
+    {
+        std::lock_guard<std::mutex> lk(g_handle_mutex);
+        if (!g_has_handle || !g_post_handle) {
+            prism::TransactionGuard g;
+            for (auto& fn : batch) fn();
+            return;
+        }
+    }
+    // posted batch already moved into try_post's lambda; if post fails during
+    // shutdown the batch is dropped — best-effort, no recovery needed.
+    (void)try_post_via_handle([batch = std::move(batch)]() mutable {
+        prism::TransactionGuard g;
+        for (auto& fn : batch) fn();
+    });
+}
+
+template <typename T>
+inline bool txn_buffer_or_dispatch(Field<T>* field, T v) {
+    if (!txn_active()) return false;
+    T copy = v;
+    txn_queue.emplace_back([field, copy = std::move(copy)]() mutable {
+        field->set(std::move(copy));
+    });
+    return true;
+}
+
 // Helper to post or direct-set a Field.
 template <typename T>
 void field_set_dispatch(Field<T>* field, T v) {
+    if (txn_buffer_or_dispatch(field, std::move(v))) return;
     if (!prism::app::detail_is_logic_thread) {
         T copy = v;
         bool posted = try_post_via_handle([field, copy = std::move(copy)]() mutable {
@@ -549,6 +596,20 @@ NB_MODULE(_prism_ext, m) {
                 auto [owner, p] = self.add_channel_bool_slot();
                 BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
             });
+
+    m.def("_txn_begin", [](){
+        if (txn_depth == 0) txn_queue.clear();
+        ++txn_depth;
+    });
+    m.def("_txn_commit", [](){
+        if (txn_depth == 0) return;
+        if (--txn_depth == 0) txn_flush_batch();
+    });
+    m.def("_txn_abort", [](){
+        txn_depth = 0;
+        txn_queue.clear();
+        txn_queue.shrink_to_fit();
+    });
 
     m.def("run", [](PyModel& model, std::string title){
         // Must be called from main thread on macOS

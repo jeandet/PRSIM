@@ -1,0 +1,16 @@
+[build-system]
+build-backend = 'mesonpy'
+requires = ['meson-python>=0.14.0', 'nanobind>=2.0']
+
+[project]
+name = "prism"
+description = "PRISM - Persistent Rendering & Interactive Scene Model"
+authors = [{name="PRISM Contributors"}]
+license = {text="MIT"}
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.meson-python.args]
+setup = ['-Doptimization=3', '-Dcpp_std=c++26', '--vsenv']
+install = ['--tags=runtime,python-runtime']

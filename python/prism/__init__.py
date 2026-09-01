@@ -27,6 +27,9 @@ from ._prism_ext import (
     Connection,
     is_logic_thread,
     run as _run,
+    _txn_begin,
+    _txn_commit,
+    _txn_abort,
 )
 
 __all__ = [
@@ -36,6 +39,7 @@ __all__ = [
     "checkbox",
     "shared",
     "channel",
+    "transaction",
     "FieldInt",
     "FieldFloat",
     "FieldStr",
@@ -205,6 +209,23 @@ class Model(_ModelBase):
                 setattr(self, k, v)
             else:
                 setattr(self, k, v)
+
+
+class _TransactionCtx:
+    def __enter__(self):
+        _txn_begin()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            _txn_commit()
+        else:
+            _txn_abort()
+        return False
+
+
+def transaction():
+    return _TransactionCtx()
 
 
 def run(model, title="PRISM App"):
