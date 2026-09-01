@@ -1,3 +1,5 @@
+from typing import Annotated, get_args, get_origin
+
 from ._prism_ext import (
     Model as _ModelBase,
     ViewBuilder,
@@ -55,6 +57,7 @@ __all__ = [
     "derived",
     "transaction",
     "list_field",
+    "validator_for",
     "FieldInt",
     "FieldFloat",
     "FieldStr",
@@ -84,10 +87,11 @@ __all__ = [
 
 
 class _FieldDescriptor:
-    def __init__(self, default, kind=None, meta=None):
+    def __init__(self, default, kind=None, meta=None, validator=None):
         self.default = default
         self.kind = kind
         self.meta = meta or {}
+        self.validator = validator
         self.name = None
 
     def __set_name__(self, owner, name):
@@ -117,32 +121,49 @@ class _FieldDescriptor:
             return self
         return self._allocate(instance)
 
+    def _validate(self, value):
+        if self.validator is not None:
+            return self.validator(value)
+        return value
+
     def __set__(self, instance, value):
         h = self._allocate(instance)
-        h.value = value
+        h.value = self._validate(value)
+
+    # non-string, type-safe observe: M.volume.observe(m, cb) instead of m.observe('volume', cb)
+    def observe(self, instance, callback):
+        return self._allocate(instance).observe(callback)
+
+    def get(self, instance):
+        return self._allocate(instance).value
+
+    def set(self, instance, value):
+        self.__set__(instance, value)
 
 
-def field(default):
-    return _FieldDescriptor(default)
+def field(default, validator=None):
+    return _FieldDescriptor(default, validator=validator)
 
 
-def slider(default, min=0.0, max=1.0):
+def slider(default, min=0.0, max=1.0, validator=None):
     return _FieldDescriptor(
-        float(default), kind="slider", meta={"min": float(min), "max": float(max)}
+        float(default), kind="slider", meta={"min": float(min), "max": float(max)}, validator=validator
     )
 
 
-def checkbox(default, label=None):
+def checkbox(default, label=None, validator=None):
     return _FieldDescriptor(
         bool(default),
         kind="checkbox",
         meta={"label": label} if label is not None else {},
+        validator=validator,
     )
 
 
 class _SharedDescriptor:
-    def __init__(self, default):
+    def __init__(self, default, validator=None):
         self.default = default
+        self.validator = validator
         self.name = None
 
     def __set_name__(self, owner, name):
@@ -170,9 +191,21 @@ class _SharedDescriptor:
             return self
         return self._allocate(instance)
 
+    def _validate(self, value):
+        return self.validator(value) if self.validator is not None else value
+
     def __set__(self, instance, value):
         h = self._allocate(instance)
-        h.value = value
+        h.value = self._validate(value)
+
+    def observe(self, instance, callback):
+        return self._allocate(instance).observe(callback)
+
+    def get(self, instance):
+        return self._allocate(instance).value
+
+    def set(self, instance, value):
+        self.__set__(instance, value)
 
 
 class _ChannelDescriptor:
@@ -207,9 +240,12 @@ class _ChannelDescriptor:
             return self
         return self._allocate(instance)
 
+    def observe(self, instance, callback):
+        return self._allocate(instance).observe(callback)
 
-def shared(default):
-    return _SharedDescriptor(default)
+
+def shared(default, validator=None):
+    return _SharedDescriptor(default, validator=validator)
 
 
 def channel(type_hint=0):
@@ -318,6 +354,12 @@ class _DerivedDescriptor:
             return self
         return self._allocate(instance)
 
+    def observe(self, instance, callback):
+        return self._allocate(instance).observe(callback)
+
+    def get(self, instance):
+        return self._allocate(instance).value
+
 
 def derived(fn=None, *deps, type_hint=None):
     """Descriptor factory: @derived('a','b') or derived(lambda self: ..., 'a').
@@ -384,12 +426,97 @@ class _ListDescriptor:
             return self
         return self._allocate(instance)
 
+    def observe_insert(self, instance, callback):
+        return self._allocate(instance).observe_insert(callback)
+
+    def observe_remove(self, instance, callback):
+        return self._allocate(instance).observe_remove(callback)
+
+    def observe_update(self, instance, callback):
+        return self._allocate(instance).observe_update(callback)
+
+    # alias generic observe to update
+    def observe(self, instance, callback):
+        return self.observe_update(instance, callback)
+
 
 def list_field(default=None):
     return _ListDescriptor(default)
 
 
+def validator_for(type_hint):
+    """Build a pydantic TypeAdapter validator for Annotated types.
+
+    Example:
+        from typing import Annotated
+        from pydantic import Field as PydanticField
+        Vol = Annotated[float, PydanticField(ge=0, le=1)]
+        class M(prism.Model):
+            volume = prism.field(0.5, validator=prism.validator_for(Vol))
+    """
+    try:
+        from pydantic import TypeAdapter
+
+        ta = TypeAdapter(type_hint)
+        return ta.validate_python
+    except Exception as e:  # pragma: no cover
+        raise RuntimeError(f"validator_for requires pydantic: {e}") from e
+
+
 class Model(_ModelBase):
+    def observe(self, descriptor, callback):
+        """Instance convenience for non-string observe: m.observe(M.volume, cb)."""
+        return descriptor.observe(self, callback)
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        ann = getattr(cls, "__annotations__", {})
+        for name, hint in list(ann.items()):
+            if get_origin(hint) is not Annotated:
+                continue
+            try:
+                v = validator_for(hint)
+            except Exception:
+                v = None
+            cur = cls.__dict__.get(name, None)
+            if isinstance(cur, (_FieldDescriptor, _SharedDescriptor)):
+                if cur.validator is None and v is not None:
+                    cur.validator = v
+            elif isinstance(cur, _ListDescriptor):
+                continue
+            else:
+                # auto-create field from Annotated + plain default (transparent Annotated)
+                # e.g. `count: Annotated[int, Field(ge=0)] = 0` without prism.field()
+                default = cur
+                base = get_args(hint)[0] if get_args(hint) else None
+                # handle bare annotation without default
+                if default is None and name not in cls.__dict__:
+                    if base is int:
+                        default = 0
+                    elif base is float:
+                        default = 0.0
+                    elif base is str:
+                        default = ""
+                    elif base is bool:
+                        default = False
+                    else:
+                        # generic fallback
+                        default = 0
+                # detect list
+                origin = get_origin(base) if base is not None else None
+                if origin is list:
+                    default = default if isinstance(default, list) else []
+                    descr: _FieldDescriptor | _ListDescriptor = _ListDescriptor(default)
+                    setattr(cls, name, descr)
+                    descr.__set_name__(cls, name)
+                else:
+                    # scalar field – infer default if still None
+                    if default is None:
+                        default = 0
+                    descr2 = _FieldDescriptor(default, validator=v)
+                    setattr(cls, name, descr2)
+                    descr2.__set_name__(cls, name)
+
     def __init__(self, **kwargs):
         super().__init__()
         # Allocate descriptors eagerly so view ordering matches class definition order
