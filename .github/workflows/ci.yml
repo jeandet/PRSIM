@@ -18,10 +18,8 @@ jobs:
         run: meson setup builddir
       - name: Build
         run: ninja -C builddir
-      - name: Run C++ tests
+      - name: Run tests (C++ + Python via meson test)
         run: meson test -C builddir --print-errorlogs
-      - name: Run Python tests
-        run: PYTHONPATH=builddir/python:$PYTHONPATH python -m pytest python/tests -v --import-mode=importlib
 
   tsan:
     runs-on: ubuntu-latest
@@ -36,10 +34,8 @@ jobs:
         run: meson setup builddir-tsan -Db_sanitize=thread -Dbuildtype=debugoptimized
       - name: Build TSan
         run: ninja -C builddir-tsan
-      - name: Run TSan C++ tests (excluding SDL/dbus flaky suites)
+      - name: Run TSan tests (C++ + Python via meson test, SDL flaky suites excluded)
         run: meson test -C builddir-tsan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
-      - name: Run TSan Python tests
-        run: PYTHONPATH=builddir-tsan/python:$PYTHONPATH python -m pytest python/tests -v --import-mode=importlib
 
   free-threaded:
     runs-on: ubuntu-latest
@@ -59,5 +55,5 @@ jobs:
         run: meson setup builddir-ft
       - name: Build
         run: ninja -C builddir-ft
-      - name: Run Python tests (free-threaded)
-        run: PYTHONPATH=builddir-ft/python:$PYTHONPATH python -m pytest python/tests -v --import-mode=importlib
+      - name: Run tests (C++ + Python via meson test, free-threaded)
+        run: meson test -C builddir-ft --print-errorlogs

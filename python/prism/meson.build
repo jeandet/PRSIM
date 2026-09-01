@@ -32,5 +32,16 @@ if python3.found()
     )
 
     python3.install_sources('__init__.py', pure : false, subdir : 'prism')
+
+    # Python binding tests — part of `meson test` so WTF doesn't happen again.
+    # Runs pytest against the source test file with PYTHONPATH pointing at
+    # the just-built extension in builddir/python.
+    test('python_bindings',
+      python3,
+      args : ['-m', 'pytest', meson.project_source_root() / 'python/tests/test_prism_python.py', '-q', '--import-mode=importlib'],
+      env : ['PYTHONPATH=' + meson.project_build_root() / 'python'],
+      depends : _prism_ext,
+      timeout : 60,
+    )
   endif
 endif
