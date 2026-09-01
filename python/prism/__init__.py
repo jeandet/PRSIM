@@ -1,5 +1,6 @@
 from ._prism_ext import (
     Model as _ModelBase,
+    ViewBuilder,
     FieldInt,
     FieldFloat,
     FieldStr,
@@ -211,6 +212,25 @@ class Model(_ModelBase):
                 setattr(self, k, v)
             else:
                 setattr(self, k, v)
+        # If subclass overrides view(), register trampoline. Use weakref to break
+        # Model -> _c_model -> py_view_cb -> bound method -> Model cycle (would leak).
+        for cls in type(self).__mro__:
+            if cls in (Model, _ModelBase, object):
+                continue
+            if "view" in cls.__dict__:
+                import weakref
+
+                fn = cls.__dict__["view"]
+                wr = weakref.ref(self)
+
+                def _tramp(vb, _wr=wr, _fn=fn):  # type: ignore[no-untyped-def]
+                    inst = _wr()
+                    if inst is None:
+                        return
+                    return _fn(inst, vb)
+
+                self._set_view_callback(_tramp)  # type: ignore[attr-defined]
+                break
 
 
 class _TransactionCtx:

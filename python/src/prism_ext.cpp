@@ -328,6 +328,18 @@ struct BoundChannel {
     }
 };
 
+inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
+    if (nb::isinstance<BoundField<int>>(h)) vb.widget(*nb::cast<BoundField<int>&>(h).field);
+    else if (nb::isinstance<BoundField<double>>(h)) vb.widget(*nb::cast<BoundField<double>&>(h).field);
+    else if (nb::isinstance<BoundField<std::string>>(h)) vb.widget(*nb::cast<BoundField<std::string>&>(h).field);
+    else if (nb::isinstance<BoundField<bool>>(h)) vb.widget(*nb::cast<BoundField<bool>&>(h).field);
+    else if (nb::isinstance<BoundShared<int>>(h)) vb.widget(*nb::cast<BoundShared<int>&>(h).shared);
+    else if (nb::isinstance<BoundShared<double>>(h)) vb.widget(*nb::cast<BoundShared<double>&>(h).shared);
+    else if (nb::isinstance<BoundShared<std::string>>(h)) vb.widget(*nb::cast<BoundShared<std::string>&>(h).shared);
+    else if (nb::isinstance<BoundShared<bool>>(h)) vb.widget(*nb::cast<BoundShared<bool>&>(h).shared);
+    else throw std::runtime_error("ViewBuilder.widget: unsupported handle type");
+}
+
 struct PyModel {
     std::vector<std::shared_ptr<SlotBase>> slots;
     std::mutex slots_mutex;
@@ -422,8 +434,26 @@ struct PyModel {
     Field<std::string>* add_str(std::string v) { return add_str_slot(std::move(v)).second; }
     Field<bool>* add_bool(bool v) { return add_bool_slot(v).second; }
 
+    // Python view callback — set from Model.__init__ if subclass overrides view().
+    nb::object py_view_cb = nb::none();
+    void set_view_callback(nb::object cb) { py_view_cb = std::move(cb); }
+
     void view(ViewBuilder& vb) {
-        // Custom Python view() deferred to P3 — auto-stack fields in declaration order.
+        // Check callback with GIL held — nb::object copy/incref requires GIL.
+        {
+            nb::gil_scoped_acquire gil;
+            if (!py_view_cb.is_none()) {
+                nb::object cb = py_view_cb;
+                nb::object vb_obj = nb::cast(&vb, nb::rv_policy::reference);
+                try {
+                    cb(vb_obj);
+                } catch (nb::python_error& e) {
+                    e.restore();
+                    PyErr_Print();
+                } catch (...) {}
+                return;
+            }
+        }
         std::lock_guard<std::mutex> lk(slots_mutex);
         for (auto& s : slots) s->build(vb);
     }
@@ -546,8 +576,34 @@ NB_MODULE(_prism_ext, m) {
     nb::class_<BoundChannel<bool>>(m, "BoundChannelBool")
         .def("send", &BoundChannel<bool>::send).def("observe", &BoundChannel<bool>::observe, nb::keep_alive<0, 1>());
 
+    nb::class_<ViewBuilder>(m, "ViewBuilder")
+        .def("widget", [](ViewBuilder& vb, nb::object h){ py_widget_dispatch(vb, h); }, nb::arg("handle"))
+        .def("hstack", [](ViewBuilder& vb, nb::args args){
+            // hstack(handle1, handle2, ...) -> Row container with those widgets
+            // single callable arg -> container with callable body (for lambda capturing vb)
+            if (args.size() == 1 && nb::isinstance<nb::callable>(args[0])) {
+                auto fn = nb::cast<nb::callable>(args[0]);
+                vb.hstack([&]{ fn(); });
+                return;
+            }
+            vb.hstack([&]{
+                for (auto a : args) py_widget_dispatch(vb, nb::cast<nb::object>(a));
+            });
+        })
+        .def("vstack", [](ViewBuilder& vb, nb::args args){
+            if (args.size() == 1 && nb::isinstance<nb::callable>(args[0])) {
+                auto fn = nb::cast<nb::callable>(args[0]);
+                vb.vstack([&]{ fn(); });
+                return;
+            }
+            vb.vstack([&]{
+                for (auto a : args) py_widget_dispatch(vb, nb::cast<nb::object>(a));
+            });
+        });
+
     nb::class_<PyModel>(m, "Model")
         .def(nb::init<>())
+        .def("_set_view_callback", &PyModel::set_view_callback, nb::arg("callback"))
         // Single internal allocator set — deduped (public add_* was duplicate dead code)
         .def("_add_int_internal", [](PyModel& self, int v){
                 auto [owner, p] = self.add_int_slot(v);
