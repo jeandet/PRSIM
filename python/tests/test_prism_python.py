@@ -320,7 +320,11 @@ def test_headless_app_concurrent_post():
 
     t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=300))
     t.start()
-    time.sleep(0.05)  # let model_app setup install g_post_handle
+    # Poll until app reports running (CAS now true before setup, so workers will hit queue path)
+    for _ in range(100):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
     threads = [threading.Thread(target=worker, args=(n,)) for n in range(4)]
     for th in threads:
         th.start()
@@ -329,9 +333,24 @@ def test_headless_app_concurrent_post():
     t.join()
     assert not errors
     assert isinstance(m.x.value, int)
-    # post-close must be no-op, not direct: after run, off-thread set should not crash
-    m.x.value = 123  # pre-run style direct would work; post-close should be no-op/drop but not UAF
-    assert m.x.value in (123, m.x.value)  # allow either no-op or direct pre-run fallback
+    # post-close must be no-op, not direct: after run, off-thread set is dropped
+    before = m.x.value
+    # run from main thread after close — should be no-op/drop, not crash; from worker thread also dropped
+    done = threading.Event()
+
+    def post_close_worker():
+        try:
+            m.x.value = 999999
+        except Exception as e:
+            errors.append(e)
+        done.set()
+
+    th2 = threading.Thread(target=post_close_worker)
+    th2.start()
+    done.wait(timeout=1.0)
+    th2.join()
+    assert not errors
+    assert m.x.value == before  # dropped, not overwritten to 999999
 
 
 def test_headless_transaction_in_app():
@@ -352,7 +371,10 @@ def test_headless_transaction_in_app():
 
     t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=200))
     t.start()
-    time.sleep(0.05)
+    for _ in range(100):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
     th = threading.Thread(target=do_txn)
     th.start()
     th.join()

@@ -39,11 +39,13 @@ public:
                          std::shared_ptr<mpsc_queue<std::function<void()>>> q,
                          std::shared_ptr<std::atomic<bool>> scheduled,
                          std::shared_ptr<std::atomic<bool>> closed,
-                         std::shared_ptr<std::function<void()>> drain_publish)
+                         std::shared_ptr<std::function<void()>> drain_publish,
+                         std::shared_ptr<std::function<void(std::function<void()>)>> logic_wrapper = nullptr)
         : sched_(s), clock_(&c), window_(&w), backend_(&b), registry_(&r),
           key_handler_(&key_handler), post_dispatch_hook_(&post_dispatch_hook),
           queue_(std::move(q)), scheduled_(std::move(scheduled)),
-          closed_(std::move(closed)), drain_publish_(std::move(drain_publish)) {}
+          closed_(std::move(closed)), drain_publish_(std::move(drain_publish)),
+          logic_wrapper_(std::move(logic_wrapper)) {}
 
     // Keep old 3-arg ctor for tests that construct BackendBase directly without queue —
     // delegates to the full ctor with empty queue (post becomes no-op).
@@ -67,6 +69,16 @@ public:
     void set_post_dispatch_hook(std::function<void()> fn) {
         *post_dispatch_hook_ = std::move(fn);
     }
+    // Injectable wrapper for logic-thread work (e.g. GIL acquire for Python callbacks).
+    // Keep SDL-free: caller provides the wrapping logic.
+    void set_logic_wrapper(std::function<void(std::function<void()>)> w) {
+        if (logic_wrapper_) *logic_wrapper_ = std::move(w);
+        else logic_wrapper_ = std::make_shared<std::function<void(std::function<void()>)>>(std::move(w));
+    }
+    void run_wrapped(std::function<void()> fn) const {
+        if (logic_wrapper_ && *logic_wrapper_) (*logic_wrapper_)(std::move(fn));
+        else fn();
+    }
 
     struct PostHandle {
         std::weak_ptr<mpsc_queue<std::function<void()>>> queue;
@@ -76,6 +88,7 @@ public:
         scheduler_type sched;
     };
     PostHandle post_handle() const { return {queue_, scheduled_, closed_, drain_publish_, sched_}; }
+    std::shared_ptr<std::function<void(std::function<void()>)>> logic_wrapper_ptr() const { return logic_wrapper_; }
 
     void post(std::function<void()> fn) {
         if (!fn) return;
@@ -84,11 +97,13 @@ public:
             if (detail_in_mutation_batch) {
                 // Re-entrant from within a batch drain — defer publish to the
                 // outer batch's tail (publish-after-whole-batch ordering).
-                fn();
+                run_wrapped(std::move(fn));
                 return;
             }
-            fn();
-            if (drain_publish_ && *drain_publish_) (*drain_publish_)();
+            run_wrapped([&]{
+                fn();
+                if (drain_publish_ && *drain_publish_) (*drain_publish_)();
+            });
             return;
         }
         queue_->push(std::move(fn));
@@ -98,19 +113,22 @@ public:
             auto sched_flag = scheduled_;
             auto tail = drain_publish_;
             auto sch = sched_;
-            exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, tail, sch] {
-                // Loop instead of depth-1 retry — avoids lost wakeup when
-                // pushes race the store(false)/empty/CAS window.
-                do {
-                    detail_in_mutation_batch = true;
-                    while (auto f = q->pop()) (*f)();
-                    detail_in_mutation_batch = false;
-                    if (tail && *tail) (*tail)();
-                    sched_flag->store(false, std::memory_order_release);
-                    if (q->empty()) break;
-                    bool exp = false;
-                    if (!sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
-                } while (true);
+            auto wrapper = logic_wrapper_;
+            exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, tail, sch, wrapper] {
+                auto do_drain = [&]{
+                    do {
+                        detail_in_mutation_batch = true;
+                        while (auto f = q->pop()) (*f)();
+                        detail_in_mutation_batch = false;
+                        if (tail && *tail) (*tail)();
+                        sched_flag->store(false, std::memory_order_release);
+                        if (q->empty()) break;
+                        bool exp = false;
+                        if (!sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
+                    } while (true);
+                };
+                if (wrapper && *wrapper) (*wrapper)(do_drain);
+                else do_drain();
             }));
         }
     }
@@ -127,6 +145,7 @@ private:
     std::shared_ptr<std::atomic<bool>> scheduled_;
     std::shared_ptr<std::atomic<bool>> closed_;
     std::shared_ptr<std::function<void()>> drain_publish_;
+    std::shared_ptr<std::function<void(std::function<void()>)>> logic_wrapper_;
 };
 
 template <typename Model>
@@ -195,21 +214,28 @@ void model_app(Backend& backend, Window& window, Model& model,
         });
     };
 
+    // Shared wrapper holder for logic-thread work (GIL acquire for Python). SDL-free.
+    auto logic_wrapper_holder = std::make_shared<std::function<void(std::function<void()>)>>();
+
     std::function<void()> schedule_tick;
     schedule_tick = [&] {
         if (!anim_clock.active() || tick_scheduled) return;
         tick_scheduled = true;
         exec::start_detached(
             stdexec::schedule(sched)
-            | stdexec::then([&] {
-                tick_scheduled = false;
-                anim_clock.tick(AnimationClock::clock::now());
-                registry.for_each([&](WindowId, WindowRegistry::Entry& entry) {
-                    entry.tree->drain_shared();
-                });
-                publish_dirty();
-                if (anim_clock.active())
-                    schedule_tick();
+            | stdexec::then([&, logic_wrapper_holder] {
+                auto do_tick = [&]{
+                    tick_scheduled = false;
+                    anim_clock.tick(AnimationClock::clock::now());
+                    registry.for_each([&](WindowId, WindowRegistry::Entry& entry) {
+                        entry.tree->drain_shared();
+                    });
+                    publish_dirty();
+                    if (anim_clock.active())
+                        schedule_tick();
+                };
+                if (logic_wrapper_holder && *logic_wrapper_holder) (*logic_wrapper_holder)(do_tick);
+                else do_tick();
             })
         );
     };
@@ -238,7 +264,8 @@ void model_app(Backend& backend, Window& window, Model& model,
     auto ctx_holder = std::make_shared<AppContext>(sched, anim_clock, window, backend, registry,
                                                    global_key_handler, post_dispatch_hook,
                                                    mutation_queue, mutation_scheduled,
-                                                   mutation_closed, mutation_drain_publish);
+                                                   mutation_closed, mutation_drain_publish,
+                                                   logic_wrapper_holder);
     std::thread logic_thread([&, ctx_holder, mutation_queue, mutation_scheduled, mutation_closed, mutation_drain_publish] {
         detail_is_logic_thread = true;
         backend.wait_ready();
@@ -291,64 +318,62 @@ void model_app(Backend& backend, Window& window, Model& model,
             const auto& ev = we.event;
             WindowId wid = we.window;
             auto closed_copy = mutation_closed;
+            auto wrapper_for_dispatch = logic_wrapper_holder;
             exec::start_detached(
                 stdexec::schedule(sched)
-                | stdexec::then([&, ev, wid, closed_copy] {
-                    if (std::holds_alternative<WindowClose>(ev)) {
-                        if (wid == primary_id) {
-                            anim_clock.clear();
-                            closed_copy->store(true, std::memory_order_release);
-                            loop.finish();
-                        } else {
-                            registry.remove(wid);
-                            backend.close_window(wid);
+                | stdexec::then([&, ev, wid, closed_copy, wrapper_for_dispatch] {
+                    auto do_dispatch = [&]{
+                        if (std::holds_alternative<WindowClose>(ev)) {
+                            if (wid == primary_id) {
+                                anim_clock.clear();
+                                closed_copy->store(true, std::memory_order_release);
+                                loop.finish();
+                            } else {
+                                registry.remove(wid);
+                                backend.close_window(wid);
 #ifdef PRISM_DEBUG_TOOLS_ENABLED
-                            // Debug window closed via its own chrome (not the hotkey) —
-                            // reset the same state the hotkey's detach branch would, so
-                            // the next Ctrl+Shift+I press reopens rather than tries to
-                            // detach an already-removed window.
-                            if (debug_window_id && wid == *debug_window_id)
-                                reset_debug_inspector();
+                                if (debug_window_id && wid == *debug_window_id)
+                                    reset_debug_inspector();
 #endif
+                            }
+                            return;
                         }
-                        return;
-                    }
 
-                    auto* entry = registry.find(wid);
-                    if (!entry) return;
+                        auto* entry = registry.find(wid);
+                        if (!entry) return;
 
-                    bool needs_publish = false;
-                    if (auto* resize = std::get_if<WindowResize>(&ev)) {
-                        entry->width = resize->width;
-                        entry->height = resize->height;
-                        needs_publish = true;
-                    }
-                    if (entry->current_snap) {
-                        if (auto* mm = std::get_if<MouseMove>(&ev))
-                            widget_detail::route_mouse_move(*entry->tree, *entry->current_snap, *mm);
-                        if (auto* mb = std::get_if<MouseButton>(&ev))
-                            widget_detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
-                        if (auto* ms = std::get_if<MouseScroll>(&ev))
-                            widget_detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
-                        // SdlWindow::set_cursor dedups against the real OS cursor, so push
-                        // unconditionally — the chrome path (backend thread) can change the
-                        // cursor out from under any copy Entry might otherwise cache.
-                        entry->window->set_cursor(entry->tree->desired_cursor());
-                    }
-                    if (auto* kp = std::get_if<KeyPress>(&ev)) {
-                        if (global_key_handler) global_key_handler(*kp);
-                        widget_detail::route_key_press(*entry->tree, ev, *kp);
-                    }
-                    if (std::get_if<TextInput>(&ev))
-                        widget_detail::route_text_input(*entry->tree, ev);
+                        bool needs_publish = false;
+                        if (auto* resize = std::get_if<WindowResize>(&ev)) {
+                            entry->width = resize->width;
+                            entry->height = resize->height;
+                            needs_publish = true;
+                        }
+                        if (entry->current_snap) {
+                            if (auto* mm = std::get_if<MouseMove>(&ev))
+                                widget_detail::route_mouse_move(*entry->tree, *entry->current_snap, *mm);
+                            if (auto* mb = std::get_if<MouseButton>(&ev))
+                                widget_detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
+                            if (auto* ms = std::get_if<MouseScroll>(&ev))
+                                widget_detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
+                            entry->window->set_cursor(entry->tree->desired_cursor());
+                        }
+                        if (auto* kp = std::get_if<KeyPress>(&ev)) {
+                            if (global_key_handler) global_key_handler(*kp);
+                            widget_detail::route_key_press(*entry->tree, ev, *kp);
+                        }
+                        if (std::get_if<TextInput>(&ev))
+                            widget_detail::route_text_input(*entry->tree, ev);
 
-                    entry->tree->drain_shared();
-                    if (post_dispatch_hook) post_dispatch_hook();
-                    if (needs_publish) publish_entry(wid, *entry);
-                    registry.for_each_dirty([&](WindowId id, WindowRegistry::Entry& e) {
-                        publish_entry(id, e);
-                    });
-                    schedule_tick();
+                        entry->tree->drain_shared();
+                        if (post_dispatch_hook) post_dispatch_hook();
+                        if (needs_publish) publish_entry(wid, *entry);
+                        registry.for_each_dirty([&](WindowId id, WindowRegistry::Entry& e) {
+                            publish_entry(id, e);
+                        });
+                        schedule_tick();
+                    };
+                    if (wrapper_for_dispatch && *wrapper_for_dispatch) (*wrapper_for_dispatch)(do_dispatch);
+                    else do_dispatch();
                 })
             );
         });

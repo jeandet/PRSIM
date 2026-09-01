@@ -31,6 +31,7 @@ from ._prism_ext import (
     _txn_commit,
     _txn_abort,
     _run_headless as _run_headless_impl,
+    _is_running,
 )
 
 __all__ = [

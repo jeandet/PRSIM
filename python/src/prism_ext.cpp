@@ -28,17 +28,32 @@ using namespace prism::app;
 // Holds weak_ptrs to the mutation queue so post after model_app returns is not UAF.
 static std::mutex g_handle_mutex;
 static std::optional<AppContext::PostHandle> g_post_handle;
-static bool g_has_handle = false;
+static std::atomic<bool> g_has_handle{false};
 static std::atomic<bool> g_app_closed{false};
 
 enum class PostResult { Posted, NoApp, Closed };
+
+static void drain_queue_loop(const std::shared_ptr<mpsc_queue<std::function<void()>>>& q,
+                             const std::shared_ptr<std::atomic<bool>>& sf,
+                             const std::shared_ptr<std::function<void()>>& tp) {
+    do {
+        prism::app::detail_in_mutation_batch = true;
+        while (auto f = q->pop()) (*f)();
+        prism::app::detail_in_mutation_batch = false;
+        if (tp && *tp) (*tp)();
+        sf->store(false, std::memory_order_release);
+        if (q->empty()) break;
+        bool exp = false;
+        if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
+    } while (true);
+}
 
 static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_logic_thread) {
     if (!allow_logic_thread && prism::app::detail_is_logic_thread) return PostResult::NoApp;
     std::optional<AppContext::PostHandle> hopt;
     {
         std::lock_guard<std::mutex> lk(g_handle_mutex);
-        if (!g_has_handle || !g_post_handle) {
+        if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) {
             return g_app_closed.load(std::memory_order_acquire) ? PostResult::Closed : PostResult::NoApp;
         }
         hopt = *g_post_handle;
@@ -62,29 +77,13 @@ static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_
         auto tp = tail;
         auto sch = h.sched;
         exec::start_detached(stdexec::schedule(sch) | stdexec::then([qq, sf, tp, sch] {
+            // AppContext::post's drain is now wrapped via logic_wrapper; keep GIL here too
+            // for the try_post path which bypasses AppContext::post.
             if (Py_IsInitialized()) {
                 nb::gil_scoped_acquire gil;
-                do {
-                    prism::app::detail_in_mutation_batch = true;
-                    while (auto f = qq->pop()) (*f)();
-                    prism::app::detail_in_mutation_batch = false;
-                    if (tp && *tp) (*tp)();
-                    sf->store(false, std::memory_order_release);
-                    if (qq->empty()) break;
-                    bool exp = false;
-                    if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
-                } while (true);
+                drain_queue_loop(qq, sf, tp);
             } else {
-                do {
-                    prism::app::detail_in_mutation_batch = true;
-                    while (auto f = qq->pop()) (*f)();
-                    prism::app::detail_in_mutation_batch = false;
-                    if (tp && *tp) (*tp)();
-                    sf->store(false, std::memory_order_release);
-                    if (qq->empty()) break;
-                    bool exp = false;
-                    if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
-                } while (true);
+                drain_queue_loop(qq, sf, tp);
             }
         }));
     }
@@ -130,7 +129,7 @@ inline void txn_flush_batch() {
             std::optional<AppContext::PostHandle> hopt;
             {
                 std::lock_guard<std::mutex> lk(g_handle_mutex);
-                if (g_has_handle && g_post_handle) hopt = *g_post_handle;
+                if (g_has_handle.load(std::memory_order_acquire) && g_post_handle) hopt = *g_post_handle;
             }
             if (hopt) {
                 auto tail = hopt->drain_publish.lock();
@@ -149,7 +148,7 @@ inline void txn_flush_batch() {
     PostResult pr;
     {
         std::lock_guard<std::mutex> lk(g_handle_mutex);
-        if (!g_has_handle || !g_post_handle) pr = PostResult::NoApp;
+        if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) pr = PostResult::NoApp;
         else if (g_app_closed.load(std::memory_order_acquire)) pr = PostResult::Closed;
         else pr = PostResult::Posted; // will attempt post below
     }
@@ -640,34 +639,40 @@ NB_MODULE(_prism_ext, m) {
         void quit() override {}
     };
 
+    m.def("_is_running", [](){ return g_has_handle.load(std::memory_order_acquire); });
     m.def("_run_headless", [](PyModel& model, int delay_ms){
         {
-            std::lock_guard<std::mutex> lk(g_handle_mutex);
-            if (g_has_handle) throw std::runtime_error("prism.run already running");
+            bool expected = false;
+            if (!g_has_handle.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+                throw std::runtime_error("prism.run already running");
             g_app_closed.store(false, std::memory_order_release);
         }
         nb::gil_scoped_release release;
         auto backend = Backend{std::make_unique<DelayHeadlessBackend>(delay_ms)};
         auto& window = backend.create_window({});
         auto setup = [](AppContext& ctx){
+            // Install GIL wrapper for logic-thread drains (mouse/tick) — SDL-free core hook
+            ctx.set_logic_wrapper([](std::function<void()> fn){
+                if (Py_IsInitialized()) { nb::gil_scoped_acquire g; fn(); } else fn();
+            });
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();
-            g_has_handle = true;
             g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
         {
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle.reset();
-            g_has_handle = false;
             g_app_closed.store(true, std::memory_order_release);
         }
+        g_has_handle.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("delay_ms")=100);
 
     m.def("run", [](PyModel& model, std::string title){
         {
-            std::lock_guard<std::mutex> lk(g_handle_mutex);
-            if (g_has_handle) throw std::runtime_error("prism.run already running");
+            bool expected = false;
+            if (!g_has_handle.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+                throw std::runtime_error("prism.run already running");
             g_app_closed.store(false, std::memory_order_release);
         }
         // Must be called from main thread on macOS
@@ -677,17 +682,19 @@ NB_MODULE(_prism_ext, m) {
         cfg.title = title.c_str();
         auto& window = backend.create_window(cfg);
         auto setup = [](AppContext& ctx){
+            ctx.set_logic_wrapper([](std::function<void()> fn){
+                if (Py_IsInitialized()) { nb::gil_scoped_acquire g; fn(); } else fn();
+            });
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();
-            g_has_handle = true;
             g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
         {
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle.reset();
-            g_has_handle = false;
             g_app_closed.store(true, std::memory_order_release);
         }
+        g_has_handle.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("title")="PRISM App");
 }
