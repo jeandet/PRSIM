@@ -72,9 +72,10 @@ public:
         std::weak_ptr<mpsc_queue<std::function<void()>>> queue;
         std::weak_ptr<std::atomic<bool>> scheduled;
         std::weak_ptr<std::atomic<bool>> closed;
+        std::weak_ptr<std::function<void()>> drain_publish;
         scheduler_type sched;
     };
-    PostHandle post_handle() const { return {queue_, scheduled_, closed_, sched_}; }
+    PostHandle post_handle() const { return {queue_, scheduled_, closed_, drain_publish_, sched_}; }
 
     void post(std::function<void()> fn) {
         if (!fn) return;

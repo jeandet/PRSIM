@@ -39,6 +39,7 @@ endif
 prism_inc = include_directories('include')
 
 subdir('src')
+subdir('python')
 subdir('tests')
 subdir('examples')
 subdir('benchmarks')

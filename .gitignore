@@ -5,3 +5,8 @@ subprojects/*/
 compile_commands.json
 *.swp
 *~
+python/prism/*.so
+python/prism/__pycache__/
+.serena/
+.superpowers/
+.vscode/
