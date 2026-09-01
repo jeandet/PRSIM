@@ -238,6 +238,26 @@ struct SlotChannel : SlotBase {
     void build(ViewBuilder& vb) override { (void)vb; /* invisible — drain via PyModel::drain */ }
     void drain() override { channel.drain_notifications(); }
 };
+template <typename T>
+struct SlotList : SlotBase {
+    List<T> list;
+    explicit SlotList(std::vector<T> init = {}) { for (auto v : init) list.push_back(v); }
+    void build(ViewBuilder& vb) override { vb.list(list); }
+};
+
+// --- List dispatch helper (mirrors field_set_dispatch but for arbitrary op) ---
+inline void list_op_dispatch(std::function<void()> fn) {
+    if (txn_active()) { txn_queue.emplace_back(std::move(fn)); return; }
+    if (!prism::app::detail_is_logic_thread) {
+        auto fn_copy = fn;
+        auto res = try_post_via_handle_impl([fn_copy = std::move(fn_copy)]() mutable { fn_copy(); }, false);
+        if (res == PostResult::Posted) return;
+        if (res == PostResult::Closed) return;
+    }
+    if (prism::app::detail_is_logic_thread && Py_IsInitialized()) {
+        nb::gil_scoped_acquire g; fn();
+    } else fn();
+}
 
 // Bound handle — references Field owned by PyModel via shared_ptr<SlotBase> (no Model cycle).
 // Holding the Slot directly keeps the Field/SenderHub alive even after the Model is GC'd.
@@ -366,6 +386,66 @@ struct BoundDerived {
         return d->on_change().connect(std::move(wrapper));
     }
 };
+template <typename T>
+struct ListHandle {
+    List<T> list;
+    void push(T v) {
+        List<T>* p = &list;
+        list_op_dispatch([p, v = std::move(v)]() mutable { p->push_back(std::move(v)); });
+    }
+    void erase(size_t i) {
+        List<T>* p = &list;
+        list_op_dispatch([p, i](){ if (i < p->size()) p->erase(i); });
+    }
+    void set(size_t i, T v) {
+        List<T>* p = &list;
+        list_op_dispatch([p, i, v = std::move(v)]() mutable { if (i < p->size()) p->set(i, std::move(v)); });
+    }
+    void replace_all(nb::list py) {
+        std::vector<T> vec; vec.reserve(nb::len(py));
+        for (auto h : py) vec.push_back(nb::cast<T>(h));
+        List<T>* p = &list;
+        list_op_dispatch([p, vec = std::move(vec)]() mutable { p->replace_all(vec); });
+    }
+    size_t size() const { return list.size(); }
+    T get(size_t i) const { return i < list.size() ? list[i] : T{}; }
+    nb::list to_list() const {
+        nb::list out; for (size_t i=0;i<list.size();++i) out.append(list[i]); return out;
+    }
+    Connection observe_insert(nb::callable cb) {
+        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        return list.on_insert().connect(std::move(w));
+    }
+    Connection observe_remove(nb::callable cb) {
+        auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        return list.on_remove().connect(std::move(w));
+    }
+    Connection observe_update(nb::callable cb) {
+        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        return list.on_update().connect(std::move(w));
+    }
+};
+template <typename T>
+struct BoundList {
+    std::shared_ptr<SlotBase> owner;
+    List<T>* list = nullptr;
+    void push(T v) { if(list) { auto* p=list; list_op_dispatch([p, v=std::move(v)]() mutable { p->push_back(std::move(v)); }); } }
+    void erase(size_t i) { if(list) { auto* p=list; list_op_dispatch([p,i](){ if(i<p->size()) p->erase(i); }); } }
+    void set(size_t i, T v) { if(list) { auto* p=list; list_op_dispatch([p,i,v=std::move(v)]() mutable { if(i<p->size()) p->set(i,std::move(v)); }); } }
+    void replace_all(nb::list py) { if(!list) return; std::vector<T> vec; vec.reserve(nb::len(py)); for(auto h:py) vec.push_back(nb::cast<T>(h)); auto* p=list; list_op_dispatch([p, vec=std::move(vec)]() mutable { p->replace_all(vec); }); }
+    size_t size() const { return list ? list->size() : 0; }
+    T get(size_t i) const { return list && i<list->size() ? (*list)[i] : T{}; }
+    nb::list to_list() const { nb::list out; if(!list) return out; for(size_t i=0;i<list->size();++i) out.append((*list)[i]); return out; }
+    Connection observe_insert(nb::callable cb) {
+        if(!list) return {}; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_insert().connect(std::move(w));
+    }
+    Connection observe_remove(nb::callable cb) {
+        if(!list) return {}; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_remove().connect(std::move(w));
+    }
+    Connection observe_update(nb::callable cb) {
+        if(!list) return {}; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_update().connect(std::move(w));
+    }
+};
 
 // helper to attach a single dep to a derived slot
 template <typename FH>
@@ -445,7 +525,16 @@ inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
     else if (nb::isinstance<BoundDerived<double>>(h)) vb.widget_generic<double>(*nb::cast<BoundDerived<double>&>(h).derived);
     else if (nb::isinstance<BoundDerived<std::string>>(h)) vb.widget_generic<std::string>(*nb::cast<BoundDerived<std::string>&>(h).derived);
     else if (nb::isinstance<BoundDerived<bool>>(h)) vb.widget_generic<bool>(*nb::cast<BoundDerived<bool>&>(h).derived);
-    else throw std::runtime_error("ViewBuilder.widget: unsupported handle type");
+    else if (nb::isinstance<BoundList<int>>(h)) vb.list(*nb::cast<BoundList<int>&>(h).list);
+    else if (nb::isinstance<BoundList<double>>(h)) vb.list(*nb::cast<BoundList<double>&>(h).list);
+    else if (nb::isinstance<BoundList<std::string>>(h)) vb.list(*nb::cast<BoundList<std::string>&>(h).list);
+     else throw std::runtime_error("ViewBuilder.widget: unsupported handle type");
+}
+inline void py_list_dispatch(ViewBuilder& vb, nb::object h) {
+    if (nb::isinstance<BoundList<int>>(h)) vb.list(*nb::cast<BoundList<int>&>(h).list);
+    else if (nb::isinstance<BoundList<double>>(h)) vb.list(*nb::cast<BoundList<double>&>(h).list);
+    else if (nb::isinstance<BoundList<std::string>>(h)) vb.list(*nb::cast<BoundList<std::string>&>(h).list);
+    else throw std::runtime_error("ViewBuilder.list: unsupported handle type");
 }
 
 struct PyModel {
@@ -536,6 +625,29 @@ struct PyModel {
         slots.push_back(s);
         return {s, p};
     }
+    std::pair<std::shared_ptr<SlotBase>, List<int>*> add_list_int_slot(std::vector<int> v) {
+        auto s = std::make_shared<SlotList<int>>(std::move(v));
+        auto* p = &s->list;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, List<double>*> add_list_float_slot(std::vector<double> v) {
+        auto s = std::make_shared<SlotList<double>>(std::move(v));
+        auto* p = &s->list;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, List<std::string>*> add_list_str_slot(std::vector<std::string> v) {
+        auto s = std::make_shared<SlotList<std::string>>(std::move(v));
+        auto* p = &s->list;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    // List<bool> disabled due to vector<bool> proxy issues — Python bool lists map to List<int> via __init__.py
+
     // Derived slots — vector-based deps (avoid immutable tuple assignment)
     template <typename T>
     std::pair<std::shared_ptr<SlotBase>, SlotDerived<T>*> add_derived_slot_vec(nb::object fn, const std::vector<nb::object>& deps) {
@@ -724,8 +836,42 @@ NB_MODULE(_prism_ext, m) {
         .def_prop_ro("value", &BoundDerived<bool>::get).def("get", &BoundDerived<bool>::get)
         .def("observe", &BoundDerived<bool>::observe, nb::keep_alive<0, 1>());
 
+    nb::class_<ListHandle<int>>(m, "ListInt")
+        .def(nb::init<>()).def("push", &ListHandle<int>::push).def("erase", &ListHandle<int>::erase)
+        .def("set", &ListHandle<int>::set).def("replace_all", &ListHandle<int>::replace_all)
+        .def("size", &ListHandle<int>::size).def("get", &ListHandle<int>::get).def("to_list", &ListHandle<int>::to_list)
+        .def("observe_insert", &ListHandle<int>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &ListHandle<int>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &ListHandle<int>::observe_update, nb::keep_alive<0,1>());
+    nb::class_<ListHandle<double>>(m, "ListFloat")
+        .def(nb::init<>()).def("push", &ListHandle<double>::push).def("erase", &ListHandle<double>::erase)
+        .def("set", &ListHandle<double>::set).def("replace_all", &ListHandle<double>::replace_all)
+        .def("size", &ListHandle<double>::size).def("get", &ListHandle<double>::get).def("to_list", &ListHandle<double>::to_list)
+        .def("observe_insert", &ListHandle<double>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &ListHandle<double>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &ListHandle<double>::observe_update, nb::keep_alive<0,1>());
+    nb::class_<ListHandle<std::string>>(m, "ListStr")
+        .def(nb::init<>()).def("push", &ListHandle<std::string>::push).def("erase", &ListHandle<std::string>::erase)
+        .def("set", &ListHandle<std::string>::set).def("replace_all", &ListHandle<std::string>::replace_all)
+        .def("size", &ListHandle<std::string>::size).def("get", &ListHandle<std::string>::get).def("to_list", &ListHandle<std::string>::to_list)
+        .def("observe_insert", &ListHandle<std::string>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &ListHandle<std::string>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &ListHandle<std::string>::observe_update, nb::keep_alive<0,1>());
+    // List<bool> disabled — vector<bool> proxy incompatible with const T& Signal; use int list for bool data
+
+
+    nb::class_<BoundList<int>>(m, "BoundListInt")
+        .def("push", &BoundList<int>::push).def("erase", &BoundList<int>::erase).def("set", &BoundList<int>::set).def("replace_all", &BoundList<int>::replace_all)
+        .def("size", &BoundList<int>::size).def("get", &BoundList<int>::get).def("to_list", &BoundList<int>::to_list)
+        .def("observe_insert", &BoundList<int>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &BoundList<int>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &BoundList<int>::observe_update, nb::keep_alive<0,1>());
+    nb::class_<BoundList<double>>(m, "BoundListFloat")
+        .def("push", &BoundList<double>::push).def("erase", &BoundList<double>::erase).def("set", &BoundList<double>::set).def("replace_all", &BoundList<double>::replace_all)
+        .def("size", &BoundList<double>::size).def("get", &BoundList<double>::get).def("to_list", &BoundList<double>::to_list)
+        .def("observe_insert", &BoundList<double>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &BoundList<double>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &BoundList<double>::observe_update, nb::keep_alive<0,1>());
+    nb::class_<BoundList<std::string>>(m, "BoundListStr")
+        .def("push", &BoundList<std::string>::push).def("erase", &BoundList<std::string>::erase).def("set", &BoundList<std::string>::set).def("replace_all", &BoundList<std::string>::replace_all)
+        .def("size", &BoundList<std::string>::size).def("get", &BoundList<std::string>::get).def("to_list", &BoundList<std::string>::to_list)
+        .def("observe_insert", &BoundList<std::string>::observe_insert, nb::keep_alive<0,1>()).def("observe_remove", &BoundList<std::string>::observe_remove, nb::keep_alive<0,1>()).def("observe_update", &BoundList<std::string>::observe_update, nb::keep_alive<0,1>());
+    // BoundList<bool> disabled — see above
+
+
     nb::class_<ViewBuilder>(m, "ViewBuilder")
         .def("widget", [](ViewBuilder& vb, nb::object h){ py_widget_dispatch(vb, h); }, nb::arg("handle"))
+        .def("list", [](ViewBuilder& vb, nb::object h){ py_list_dispatch(vb, h); }, nb::arg("handle"))
         .def("hstack", [](ViewBuilder& vb, nb::args args){
             // hstack(handle1, handle2, ...) -> Row container with those widgets
             // single callable arg -> container with callable body (for lambda capturing vb)
@@ -825,7 +971,23 @@ NB_MODULE(_prism_ext, m) {
                 for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
                 auto [owner, p] = self.add_derived_slot_vec<bool>(fn, v);
                 BoundDerived<bool> h; h.owner = std::move(owner); h.derived = p; return h;
-            });
+            })
+        .def("_add_list_int_internal", [](PyModel& self, nb::list py){
+                std::vector<int> vec; vec.reserve(nb::len(py)); for(auto h: py) vec.push_back(nb::cast<int>(h));
+                auto [owner, p] = self.add_list_int_slot(std::move(vec));
+                BoundList<int> h; h.owner = std::move(owner); h.list = p; return h;
+            }, nb::arg("values") = nb::list())
+        .def("_add_list_float_internal", [](PyModel& self, nb::list py){
+                std::vector<double> vec; vec.reserve(nb::len(py)); for(auto h: py) vec.push_back(nb::cast<double>(h));
+                auto [owner, p] = self.add_list_float_slot(std::move(vec));
+                BoundList<double> h; h.owner = std::move(owner); h.list = p; return h;
+            }, nb::arg("values") = nb::list())
+        .def("_add_list_str_internal", [](PyModel& self, nb::list py){
+                std::vector<std::string> vec; vec.reserve(nb::len(py)); for(auto h: py) vec.push_back(nb::cast<std::string>(h));
+                auto [owner, p] = self.add_list_str_slot(std::move(vec));
+                BoundList<std::string> h; h.owner = std::move(owner); h.list = p; return h;
+            }, nb::arg("values") = nb::list());
+
 
     m.def("_txn_begin", [](){
         txn_marks.push_back(txn_queue.size());

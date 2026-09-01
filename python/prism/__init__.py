@@ -29,6 +29,12 @@ from ._prism_ext import (
     BoundDerivedFloat,
     BoundDerivedStr,
     BoundDerivedBool,
+    BoundListInt,
+    BoundListFloat,
+    BoundListStr,
+    ListInt,
+    ListFloat,
+    ListStr,
     Connection,
     is_logic_thread,
     run as _run,
@@ -48,6 +54,7 @@ __all__ = [
     "channel",
     "derived",
     "transaction",
+    "list_field",
     "FieldInt",
     "FieldFloat",
     "FieldStr",
@@ -64,6 +71,12 @@ __all__ = [
     "BoundDerivedFloat",
     "BoundDerivedStr",
     "BoundDerivedBool",
+    "BoundListInt",
+    "BoundListFloat",
+    "BoundListStr",
+    "ListInt",
+    "ListFloat",
+    "ListStr",
     "Connection",
     "is_logic_thread",
     "run",
@@ -336,6 +349,46 @@ def derived(fn=None, *deps, type_hint=None):
     return decorator
 
 
+class _ListDescriptor:
+    def __init__(self, default=None):
+        self.default = list(default) if default is not None else []
+        self.name = None
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def _allocate(self, instance):
+        cache = instance.__dict__.setdefault("_prism_fields", {})
+        if self.name in cache:
+            return cache[self.name]
+        # infer type from first element
+        vals = self.default
+        if not vals:
+            h = instance._add_list_str_internal([])  # default empty str list
+        elif isinstance(vals[0], bool):
+            # bool lists map to int list due to vector<bool> proxy constraints
+            h = instance._add_list_int_internal([int(v) for v in vals])
+        elif isinstance(vals[0], int):
+            h = instance._add_list_int_internal(vals)
+        elif isinstance(vals[0], float):
+            h = instance._add_list_float_internal(vals)
+        elif isinstance(vals[0], str):
+            h = instance._add_list_str_internal(vals)
+        else:
+            h = instance._add_list_str_internal([str(x) for x in vals])
+        cache[self.name] = h
+        return h
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._allocate(instance)
+
+
+def list_field(default=None):
+    return _ListDescriptor(default)
+
+
 class Model(_ModelBase):
     def __init__(self, **kwargs):
         super().__init__()
@@ -349,6 +402,7 @@ class Model(_ModelBase):
                         _SharedDescriptor,
                         _ChannelDescriptor,
                         _DerivedDescriptor,
+                        _ListDescriptor,
                     ),
                 ):
                     attr._allocate(self)
