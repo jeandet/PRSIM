@@ -62,6 +62,10 @@ public:
         return *this;
     }
 
+    // The hub (source) must outlive any Connection returned from it.
+    // Cross-object subscriptions are allowed but the source's lifetime
+    // must strictly contain the observer's — disconnect before the hub
+    // is destroyed, or use an owning handle (e.g. Python Bound* owner).
     [[nodiscard]] Connection connect(Callback cb) {
         uint64_t id;
         {

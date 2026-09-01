@@ -12,8 +12,11 @@ A render backend takes an immutable `SceneSnapshot` and puts pixels on screen. T
 class BackendBase {
 public:
     virtual ~BackendBase();
-    virtual void run(std::function<void(const InputEvent&)> event_cb) = 0;
-    virtual void submit(std::shared_ptr<const SceneSnapshot> snap) = 0;
+    virtual Window& create_window(WindowConfig cfg) = 0;
+    virtual Window* request_window(WindowConfig cfg) = 0;
+    virtual void close_window(WindowId id) = 0;
+    virtual void run(std::function<void(const WindowEvent&)> event_cb) = 0;
+    virtual void submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) = 0;
     virtual void wake() = 0;
     virtual void quit() = 0;
     virtual void wait_ready() {}

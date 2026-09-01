@@ -10,6 +10,7 @@ license = {text="MIT"}
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+dynamic = ["version"]
 
 [tool.pytest.ini_options]
 pythonpath = ["builddir/python"]

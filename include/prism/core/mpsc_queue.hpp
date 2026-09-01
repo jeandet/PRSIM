@@ -15,7 +15,7 @@ inline constexpr std::size_t cache_line_size = 64;
 #endif
 
 // Lock-free multi-producer single-consumer queue.
-// Intrusive Michael-Scott variant with pooled nodes.
+// Intrusive Michael-Scott variant with heap-allocated nodes.
 template <typename T>
 class mpsc_queue {
     struct node {

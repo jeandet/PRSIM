@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <optional>
 
 namespace prism::backends {
@@ -14,10 +15,22 @@ using namespace prism::app;
 const char* SoftwareBackend::resolve_font_path(const RenderConfig& cfg) {
     if (cfg.font_path) return cfg.font_path;
 #ifdef PRISM_FONT_PATH
-    return PRISM_FONT_PATH;
-#else
-    return nullptr;
+    {
+        // Build-machine absolute path is valid in builddir but not in installed wheels.
+        // Check existence first; fall back to installed datadir.
+        std::error_code ec;
+        if (std::filesystem::exists(PRISM_FONT_PATH, ec)) return PRISM_FONT_PATH;
+    }
 #endif
+#ifdef PRISM_FONT_INSTALL_PATH
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(PRISM_FONT_INSTALL_PATH, ec)) return PRISM_FONT_INSTALL_PATH;
+        // Also try prefix-relative: <install_prefix>/PRISM_FONT_INSTALL_PATH
+        // meson installs datadir relative to prefix; at runtime prefix may differ.
+    }
+#endif
+    return nullptr;
 }
 
 SoftwareBackend::SoftwareBackend(RenderConfig cfg)
@@ -32,6 +45,7 @@ SoftwareBackend::~SoftwareBackend() {
 }
 
 Window& SoftwareBackend::create_window(WindowConfig cfg) {
+    std::lock_guard<std::mutex> lk(windows_mutex_);
     auto id = ++next_id_;
     auto window = std::make_unique<SdlWindow>(id, cfg);
     auto& ref = *window;
@@ -56,13 +70,20 @@ void SoftwareBackend::drain_window_requests() {
         auto req = *req_opt;
         Window* result = nullptr;
         if (running_.load(std::memory_order_relaxed)) {
-            auto id = ++next_id_;
+            WindowId id;
+            {
+                std::lock_guard<std::mutex> lk(windows_mutex_);
+                id = ++next_id_;
+            }
             auto win = std::make_unique<SdlWindow>(id, req->cfg);
             win->ensure_created();
             SDL_StartTextInput(win->sdl_window());
-            auto [it, _] = windows_.emplace(id, std::move(win));
-            snapshots_[id];
-            result = it->second.get();
+            {
+                std::lock_guard<std::mutex> lk(windows_mutex_);
+                auto [it, _] = windows_.emplace(id, std::move(win));
+                snapshots_[id];
+                result = it->second.get();
+            }
         }
         {
             std::lock_guard lock(req->m);
@@ -80,12 +101,14 @@ void SoftwareBackend::close_window(WindowId id) {
 
 void SoftwareBackend::drain_close_requests() {
     while (auto id_opt = close_requests_.pop()) {
+        std::lock_guard<std::mutex> lk(windows_mutex_);
         windows_.erase(*id_opt);
         snapshots_.erase(*id_opt);
     }
 }
 
 WindowId SoftwareBackend::sdl_id_to_prism_id(uint32_t sdl_window_id) const {
+    std::lock_guard<std::mutex> lk(windows_mutex_);
     for (auto& [id, win] : windows_) {
         if (SDL_GetWindowID(win->sdl_window()) == sdl_window_id)
             return id;
@@ -103,9 +126,12 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
     }
 
     // Create SDL windows (deferred from create_window()) and start text input
-    for (auto& [id, win] : windows_) {
-        win->ensure_created();
-        SDL_StartTextInput(win->sdl_window());
+    {
+        std::lock_guard<std::mutex> lk(windows_mutex_);
+        for (auto& [id, win] : windows_) {
+            win->ensure_created();
+            SDL_StartTextInput(win->sdl_window());
+        }
     }
 
     ready_.store(true, std::memory_order_release);
@@ -151,8 +177,11 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             if (wid == 0 && pressed_window_ != 0)
                 wid = pressed_window_;
             // For single-window case, fall back to first window
-            if (wid == 0 && windows_.size() == 1)
-                wid = windows_.begin()->first;
+            {
+                std::lock_guard<std::mutex> lk(windows_mutex_);
+                if (wid == 0 && windows_.size() == 1)
+                    wid = windows_.begin()->first;
+            }
 
             if (ev.type != SDL_EVENT_MOUSE_MOTION || (pending_motion && pending_motion->window != wid))
                 flush_pending_motion();
@@ -290,12 +319,23 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
 
         if (!running_.load(std::memory_order_relaxed)) break;
 
-        // Render any pending snapshots
-        for (auto& [id, snap_slot] : snapshots_) {
-            auto snap = snap_slot.snapshot.load(std::memory_order_acquire);
-            if (snap) {
-                if (auto it = windows_.find(id); it != windows_.end())
-                    it->second->render_snapshot(*snap, font_);
+        // Render any pending snapshots — collect under lock, render outside
+        {
+            std::vector<std::pair<WindowId, std::shared_ptr<const SceneSnapshot>>> to_render;
+            {
+                std::lock_guard<std::mutex> lk(windows_mutex_);
+                for (auto& [id, snap_slot] : snapshots_) {
+                    auto snap = snap_slot.snapshot.load(std::memory_order_acquire);
+                    if (snap) to_render.emplace_back(id, std::move(snap));
+                }
+            }
+            for (auto& [id, snap] : to_render) {
+                SdlWindow* win = nullptr;
+                {
+                    std::lock_guard<std::mutex> lk(windows_mutex_);
+                    if (auto it = windows_.find(id); it != windows_.end()) win = it->second.get();
+                }
+                if (win) win->render_snapshot(*snap, font_);
             }
         }
     }
@@ -304,6 +344,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
 }
 
 void SoftwareBackend::submit(WindowId window, std::shared_ptr<const SceneSnapshot> snap) {
+    std::lock_guard<std::mutex> lk(windows_mutex_);
     if (auto it = snapshots_.find(window); it != snapshots_.end())
         it->second.snapshot.store(std::move(snap), std::memory_order_release);
 }

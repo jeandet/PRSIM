@@ -43,6 +43,7 @@ public:
 
 private:
     RenderConfig render_config_;
+    mutable std::mutex windows_mutex_;
     std::unordered_map<WindowId, std::unique_ptr<SdlWindow>> windows_;
     uint32_t next_id_ = 0;
     TTF_Font* font_ = nullptr;
@@ -50,7 +51,8 @@ private:
     std::atomic<bool> ready_{false};
     WindowId pressed_window_ = 0;
 
-    // Per-window snapshot storage
+    // Per-window snapshot storage — guarded by windows_mutex_ except for
+    // per-slot atomic snapshot pointer itself.
     struct WindowSnapshot {
         std::atomic<std::shared_ptr<const SceneSnapshot>> snapshot;
     };

@@ -78,7 +78,7 @@ struct TextArea {
     T value{};
     std::string placeholder{};
     size_t max_length = 0;  // 0 = unlimited
-    int rows = 6;           // visible rows
+    size_t rows = 6;        // visible rows
 };
 
 template <Numeric T = double>

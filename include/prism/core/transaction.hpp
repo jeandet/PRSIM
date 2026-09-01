@@ -66,6 +66,8 @@ private:
         while (!tx.queue.empty()) {
             if (wave++ >= max_waves) {
                 assert(false && "transaction flush: dependency cycle detected");
+                tx.queue.clear();
+                tx.queue.shrink_to_fit();
                 break;
             }
             std::vector<core::DeferredEmit> coalesced;

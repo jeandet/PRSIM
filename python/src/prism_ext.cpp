@@ -29,6 +29,7 @@ using namespace prism::app;
 static std::mutex g_handle_mutex;
 static std::optional<AppContext::PostHandle> g_post_handle;
 static std::atomic<bool> g_has_handle{false};
+static std::atomic<bool> g_run_guard{false};
 static std::atomic<bool> g_app_closed{false};
 
 enum class PostResult { Posted, NoApp, Closed };
@@ -50,6 +51,12 @@ static void drain_queue_loop(const std::shared_ptr<mpsc_queue<std::function<void
 
 static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_logic_thread) {
     if (!allow_logic_thread && prism::app::detail_is_logic_thread) return PostResult::NoApp;
+    // Startup window: g_run_guard true but g_has_handle not yet set (setup hasn't run).
+    // Don't fall back to direct unsync write — spin briefly for handle to appear.
+    if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
+        for (int i = 0; i < 200 && !g_has_handle.load(std::memory_order_acquire); ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     std::optional<AppContext::PostHandle> hopt;
     {
         std::lock_guard<std::mutex> lk(g_handle_mutex);
@@ -391,6 +398,7 @@ struct SlotDerived : SlotBase {
     SenderHub<const T&> changed_;
     std::vector<Connection> deps_;
     std::vector<std::shared_ptr<SlotBase>> dep_owners_;
+    std::vector<nb::object> dep_keepalive_; // keeps standalone handles alive
     std::vector<Connection> observers_;
     SlotDerived() = default;
     SlotDerived(nb::object fn, T init) : py_fn(std::move(fn)), value_(std::move(init)) {}
@@ -537,6 +545,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         if (!ptr) return true;
         slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
         if constexpr (requires { h.owner; }) { if (h.owner) slot->dep_owners_.push_back(h.owner); }
+        slot->dep_keepalive_.push_back(dep);
         return true;
     };
     auto connect_shared = [&](auto* example) -> bool {
@@ -547,6 +556,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         if (!ptr) return true;
         slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
         if constexpr (requires { h.owner; }) { if (h.owner) slot->dep_owners_.push_back(h.owner); }
+        slot->dep_keepalive_.push_back(dep);
         return true;
     };
     auto connect_derived = [&](auto* example) -> bool {
@@ -557,6 +567,7 @@ void derived_attach_dep(SlotDerived<T>* slot, nb::object dep) {
         if (!ptr) return true;
         slot->deps_.push_back(ptr->on_change().connect([slot](const auto&){ slot->recompute(); }));
         if (h.owner) slot->dep_owners_.push_back(h.owner);
+        slot->dep_keepalive_.push_back(dep);
         return true;
     };
     // Bound handles
@@ -1101,11 +1112,11 @@ NB_MODULE(_prism_ext, m) {
         void quit() override {}
     };
 
-    m.def("_is_running", [](){ return g_has_handle.load(std::memory_order_acquire); });
+    m.def("_is_running", [](){ return g_has_handle.load(std::memory_order_acquire) || g_run_guard.load(std::memory_order_acquire); });
     m.def("_run_headless", [](PyModel& model, int delay_ms){
         {
             bool expected = false;
-            if (!g_has_handle.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+            if (!g_run_guard.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
                 throw std::runtime_error("prism.run already running");
             g_app_closed.store(false, std::memory_order_release);
         }
@@ -1119,6 +1130,7 @@ NB_MODULE(_prism_ext, m) {
             });
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();
+            g_has_handle.store(true, std::memory_order_release);
             g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
@@ -1128,12 +1140,13 @@ NB_MODULE(_prism_ext, m) {
             g_app_closed.store(true, std::memory_order_release);
         }
         g_has_handle.store(false, std::memory_order_release);
+        g_run_guard.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("delay_ms")=100);
 
     m.def("run", [](PyModel& model, std::string title){
         {
             bool expected = false;
-            if (!g_has_handle.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+            if (!g_run_guard.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
                 throw std::runtime_error("prism.run already running");
             g_app_closed.store(false, std::memory_order_release);
         }
@@ -1149,6 +1162,7 @@ NB_MODULE(_prism_ext, m) {
             });
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();
+            g_has_handle.store(true, std::memory_order_release);
             g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
@@ -1158,5 +1172,6 @@ NB_MODULE(_prism_ext, m) {
             g_app_closed.store(true, std::memory_order_release);
         }
         g_has_handle.store(false, std::memory_order_release);
+        g_run_guard.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("title")="PRISM App");
 }
