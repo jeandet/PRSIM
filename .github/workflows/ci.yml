@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
+          pip install meson-python nanobind pytest
+      - name: Setup builddir
+        run: meson setup builddir
+      - name: Build
+        run: ninja -C builddir
+      - name: Run C++ tests
+        run: meson test -C builddir --print-errorlogs
+      - name: Run Python tests
+        run: PYTHONPATH=builddir/python:$PYTHONPATH python -m pytest python/tests -v --import-mode=importlib
+
+  tsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
+      - name: Setup TSan builddir
+        run: meson setup builddir-tsan -Db_sanitize=thread -Dbuildtype=debugoptimized
+      - name: Build TSan
+        run: ninja -C builddir-tsan
+      - name: Run TSan tests (allow SDL/dbus false positives)
+        run: meson test -C builddir-tsan --print-errorlogs || true

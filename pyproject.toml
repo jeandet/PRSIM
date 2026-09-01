@@ -11,6 +11,10 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
 
+[tool.pytest.ini_options]
+pythonpath = ["builddir/python"]
+addopts = "--import-mode=importlib"
+
 [tool.meson-python.args]
 setup = ['-Doptimization=3', '-Dcpp_std=c++26', '--vsenv']
 install = ['--tags=runtime,python-runtime']

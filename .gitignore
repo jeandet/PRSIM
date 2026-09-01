@@ -1,10 +1,13 @@
 builddir/
+builddir-tsan/
 build/
 subprojects/*/
 .cache/
 compile_commands.json
 *.swp
 *~
+.pytest_cache/
+__pycache__/
 python/prism/*.so
 python/prism/__pycache__/
 .serena/

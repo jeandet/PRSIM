@@ -16,7 +16,6 @@
 #include <mutex>
 #include <optional>
 #include <vector>
-#include <deque>
 
 namespace nb = nanobind;
 using namespace prism::core;
@@ -39,9 +38,8 @@ static bool try_post_via_handle(std::function<void()> fn) {
     auto& h = *hopt;
     auto q = h.queue.lock();
     if (!q) return false;
-    if (auto c = h.closed.lock()) {
-        if (c->load(std::memory_order_acquire)) return false;
-    }
+    auto closed_flag = h.closed.lock();
+    if (!closed_flag || closed_flag->load(std::memory_order_acquire)) return false;
     auto sched_flag = h.scheduled.lock();
     if (!sched_flag) return false;
     auto tail = h.drain_publish.lock();
@@ -69,21 +67,44 @@ static bool try_post_via_handle(std::function<void()> fn) {
 }
 
 static void ensure_idle_wake() {
-    if (prism::app::detail_is_logic_thread) {
-        if (prism::app::detail_in_mutation_batch) return;
-        std::optional<AppContext::PostHandle> hopt;
-        {
-            std::lock_guard<std::mutex> lk(g_handle_mutex);
-            if (!g_has_handle || !g_post_handle) return;
-            hopt = *g_post_handle;
-        }
-        auto tp = hopt->drain_publish.lock();
-        if (tp && *tp) (*tp)();
-        return;
+    if (prism::app::detail_in_mutation_batch) return;
+    std::optional<AppContext::PostHandle> hopt;
+    {
+        std::lock_guard<std::mutex> lk(g_handle_mutex);
+        if (!g_has_handle || !g_post_handle) return;
+        hopt = *g_post_handle;
     }
-    // Off-thread: post a bare drain+publish wake.
-    std::function<void()> wake_fn = []{};
-    (void)try_post_via_handle(std::move(wake_fn));
+    auto& h = *hopt;
+    auto q = h.queue.lock();
+    if (!q) return;
+    auto closed_flag = h.closed.lock();
+    if (!closed_flag || closed_flag->load(std::memory_order_acquire)) return;
+    auto sched_flag = h.scheduled.lock();
+    if (!sched_flag) return;
+    auto tail = h.drain_publish.lock();
+    // Coalesced wake: push no-op and schedule one drain_publish tail per batch.
+    // Works from any thread (including logic_thread) so rapid Shared/Channel
+    // sets coalesce into a single publish.
+    q->push([] {});
+    bool expected = false;
+    if (sched_flag->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+        auto qq = q;
+        auto sf = sched_flag;
+        auto tp = tail;
+        auto sch = h.sched;
+        exec::start_detached(stdexec::schedule(sch) | stdexec::then([qq, sf, tp, sch] {
+            do {
+                prism::app::detail_in_mutation_batch = true;
+                while (auto f = qq->pop()) (*f)();
+                prism::app::detail_in_mutation_batch = false;
+                if (tp && *tp) (*tp)();
+                sf->store(false, std::memory_order_release);
+                if (qq->empty()) break;
+                bool exp = false;
+                if (!sf->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
+            } while (true);
+        }));
+    }
 }
 
 // Transaction buffering — Python thread-local coalescing into one logic-thread closure.
@@ -122,7 +143,7 @@ inline void txn_flush_batch() {
 }
 
 template <typename T>
-inline bool txn_buffer_or_dispatch(Field<T>* field, T v) {
+inline bool txn_buffer_or_dispatch(Field<T>* field, const T& v) {
     if (!txn_active()) return false;
     T copy = v;
     txn_queue.emplace_back([field, copy = std::move(copy)]() mutable {
@@ -134,7 +155,7 @@ inline bool txn_buffer_or_dispatch(Field<T>* field, T v) {
 // Helper to post or direct-set a Field.
 template <typename T>
 void field_set_dispatch(Field<T>* field, T v) {
-    if (txn_buffer_or_dispatch(field, std::move(v))) return;
+    if (txn_buffer_or_dispatch(field, v)) return;
     if (!prism::app::detail_is_logic_thread) {
         T copy = v;
         bool posted = try_post_via_handle([field, copy = std::move(copy)]() mutable {
