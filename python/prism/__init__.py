@@ -37,6 +37,10 @@ from ._prism_ext import (
     ListInt,
     ListFloat,
     ListStr,
+    BoundPlot,
+    PlotHandle,
+    BoundTree,
+    TreeHandle,
     Connection,
     is_logic_thread,
     run as _run,
@@ -57,6 +61,8 @@ __all__ = [
     "derived",
     "transaction",
     "list_field",
+    "plot_field",
+    "tree_field",
     "validator_for",
     "FieldInt",
     "FieldFloat",
@@ -80,6 +86,10 @@ __all__ = [
     "ListInt",
     "ListFloat",
     "ListStr",
+    "BoundPlot",
+    "PlotHandle",
+    "BoundTree",
+    "TreeHandle",
     "Connection",
     "is_logic_thread",
     "run",
@@ -444,6 +454,64 @@ def list_field(default=None):
     return _ListDescriptor(default)
 
 
+class _PlotDescriptor:
+    def __init__(self):
+        self.name = None
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def _allocate(self, instance):
+        cache = instance.__dict__.setdefault("_prism_fields", {})
+        if self.name in cache:
+            return cache[self.name]
+        h = instance._add_plot_internal()  # type: ignore[attr-defined]
+        cache[self.name] = h
+        return h
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._allocate(instance)
+
+
+class _TreeDescriptor:
+    def __init__(self, source=None):
+        # source can be dict {id: {label, children:[...], attrs:{}}} or object with methods
+        self.source = source
+        self.name = None
+
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def _allocate(self, instance):
+        cache = instance.__dict__.setdefault("_prism_fields", {})
+        if self.name in cache:
+            return cache[self.name]
+        # allow source to be callable returning dict/object, or direct
+        src = self.source() if callable(self.source) and not isinstance(self.source, dict) else self.source
+        if src is None:
+            src = {}
+        h = instance._add_tree_internal(src)  # type: ignore[attr-defined]
+        cache[self.name] = h
+        return h
+
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._allocate(instance)
+
+
+def plot_field():
+    """Descriptor for PlotModel — use as `plot = prism.plot_field()` then `self.plot.add_series(xs, ys)`."""
+    return _PlotDescriptor()
+
+
+def tree_field(source=None):
+    """Descriptor for TreeController — `tree = prism.tree_field({...})` or `tree = prism.tree_field(my_obj)`."""
+    return _TreeDescriptor(source)
+
+
 def validator_for(type_hint):
     """Build a pydantic TypeAdapter validator for Annotated types.
 
@@ -530,6 +598,8 @@ class Model(_ModelBase):
                         _ChannelDescriptor,
                         _DerivedDescriptor,
                         _ListDescriptor,
+                        _PlotDescriptor,
+                        _TreeDescriptor,
                     ),
                 ):
                     attr._allocate(self)

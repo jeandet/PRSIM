@@ -337,6 +337,12 @@ meson test -C builddir           # 73 C++ + Python bindings via meson test
 pytest python/tests -v           # direct pytest alternative
 ```
 
+Python examples (pure `prism.Model`, no C++ needed) live in [`python/examples/`](python/examples/README.md): `01_counter` (field), `02_mixer` (slider/checkbox + view), `03_validation_and_transaction` (Annotated/pydantic), `04_background_shared_channel` (Shared/Channel + threads), `05_lists_and_derived` (List + Derived).
+
+```bash
+PYTHONPATH=build/python python python/examples/01_counter.py
+```
+
 See [Python SDK design](doc/design/python-sdk.md) for threading (SenderHub snapshot + coalescing queue), GIL handling, and lifecycle details. `python/tests/test_prism_python.py` is the API reference by example.
 
 ## Core Abstractions: `Field<T>` and `State<T>`

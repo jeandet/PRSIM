@@ -9,6 +9,8 @@
 #include <prism/core/transaction.hpp>
 #include <prism/app/model_app.hpp>
 #include <prism/app/backend.hpp>
+#include <prism/widgets/plot.hpp>
+#include <prism/ui/tree.hpp>
 
 #include <prism/app/headless_window.hpp>
 #include <atomic>
@@ -288,6 +290,152 @@ struct SlotList : SlotBase {
     void build(ViewBuilder& vb) override { vb.list(list); }
 };
 
+// Plot support — Slot only (Bound* defined after list_op_dispatch)
+struct SlotPlot : SlotBase {
+    prism::plot::PlotModel plot;
+    void build(ViewBuilder& vb) override {
+        vb.canvas(plot)
+            .depends_on(plot.x_range).depends_on(plot.y_range)
+            .depends_on(plot.view).depends_on(plot.cursor)
+            .depends_on(plot.revision);
+    }
+};
+struct PlotHandle {
+    prism::plot::PlotModel plot;
+    void add_series(nb::list xs, nb::list ys, std::string color_str = "", float thickness = 2.f, bool fill = false) {
+        std::vector<double> vx, vy;
+        vx.reserve(nb::len(xs)); vy.reserve(nb::len(ys));
+        for (auto h : xs) vx.push_back(nb::cast<double>(h));
+        for (auto h : ys) vy.push_back(nb::cast<double>(h));
+        prism::plot::XYData data{std::move(vx), std::move(vy)};
+        prism::plot::SeriesStyle style; style.thickness=thickness; style.fill=fill;
+        if (!color_str.empty() && color_str.size()==7 && color_str[0]=='#') {
+            int r = std::stoi(color_str.substr(1,2), nullptr, 16);
+            int g = std::stoi(color_str.substr(3,2), nullptr, 16);
+            int b = std::stoi(color_str.substr(5,2), nullptr, 16);
+            style.color = Color::rgba((uint8_t)r,(uint8_t)g,(uint8_t)b);
+        }
+        plot.add_series(std::move(data), style);
+    }
+    void clear_series(){ plot.clear_series(); }
+    void notify(){ plot.notify(); }
+    void set_x_label(std::string s){ plot.x_label.set(std::move(s)); }
+    void set_y_label(std::string s){ plot.y_label.set(std::move(s)); }
+    std::string get_x_label() const { return plot.x_label.get(); }
+    std::string get_y_label() const { return plot.y_label.get(); }
+    void reset_view(){ plot.reset_view(); }
+};
+
+// Tree support — Python-backed TreeSource
+struct PythonTreeSource {
+    static prism::ui::TreeSource make(nb::object obj) {
+        auto held = std::make_shared<nb::object>(std::move(obj));
+        prism::ui::TreeSource src;
+        src.root_count = [held]() -> size_t {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "root_count")) return nb::cast<size_t>(o.attr("root_count")());
+            return 0;
+        };
+        src.root_at = [held](size_t i) -> prism::ui::TreeNodeId {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "root_at")) {
+                auto v = o.attr("root_at")(i);
+                // allow negative Python hash -> uint64_t
+                int64_t tmp = nb::cast<int64_t>(v);
+                return static_cast<prism::ui::TreeNodeId>(tmp);
+            }
+            return 0;
+        };
+        src.child_count = [held](prism::ui::TreeNodeId id) -> size_t {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "child_count")) return nb::cast<size_t>(o.attr("child_count")(id));
+            return 0;
+        };
+        src.child_at = [held](prism::ui::TreeNodeId id, size_t i) -> prism::ui::TreeNodeId {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "child_at")) {
+                auto v = o.attr("child_at")(id, i);
+                int64_t tmp = nb::cast<int64_t>(v);
+                return static_cast<prism::ui::TreeNodeId>(tmp);
+            }
+            return 0;
+        };
+        src.label = [held](prism::ui::TreeNodeId id) -> std::string {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "label")) return nb::cast<std::string>(o.attr("label")(id));
+            return std::to_string(id);
+        };
+        src.has_children = [held](prism::ui::TreeNodeId id) -> bool {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "has_children")) return nb::cast<bool>(o.attr("has_children")(id));
+            return false;
+        };
+        src.attributes = [held](prism::ui::TreeNodeId id) -> std::vector<std::pair<std::string,std::string>> {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            std::vector<std::pair<std::string,std::string>> out;
+            if (nb::hasattr(o, "attributes")) {
+                auto res = o.attr("attributes")(id);
+                if (!res.is_none()) {
+                    auto d = nb::cast<nb::dict>(res);
+                    for (auto kv : d) out.emplace_back(nb::cast<std::string>(kv.first), nb::cast<std::string>(kv.second));
+                }
+            }
+            return out;
+        };
+        // optional icon
+        src.icon = [held](prism::ui::TreeNodeId id) -> std::optional<std::string> {
+            nb::gil_scoped_acquire g;
+            auto o = *held;
+            if (nb::hasattr(o, "icon")) {
+                auto v = o.attr("icon")(id);
+                if (!v.is_none()) return nb::cast<std::string>(v);
+            }
+            return std::nullopt;
+        };
+        return src;
+    }
+};
+struct SlotTree : SlotBase {
+    std::shared_ptr<nb::object> py_src_holder;
+    prism::ui::TreeController ctrl;
+    explicit SlotTree(prism::ui::TreeSource src) : ctrl(std::move(src)) {}
+    explicit SlotTree(nb::object py_obj) : py_src_holder(std::make_shared<nb::object>(py_obj)), ctrl(PythonTreeSource::make(py_obj)) {}
+    void build(ViewBuilder& vb) override { vb.tree(ctrl); }
+};
+struct BoundTree {
+    std::shared_ptr<SlotBase> owner;
+    prism::ui::TreeController* ctrl = nullptr;
+    void refresh(){ if(ctrl) ctrl->refresh(); }
+    nb::list rows(){
+        if(!ctrl) return nb::list();
+        nb::gil_scoped_acquire g;
+        nb::list out;
+        for(size_t i=0;i<ctrl->rows.size();++i){
+            auto r = ctrl->rows[i];
+            nb::dict d;
+            d["label"] = r.label;
+            d["depth"] = r.depth;
+            d["has_children"] = r.has_children;
+            d["expanded"] = r.expanded;
+            d["selected"] = r.selected;
+            out.append(d);
+        }
+        return out;
+    }
+};
+struct TreeHandle {
+    std::shared_ptr<prism::ui::TreeController> ctrl;
+    TreeHandle(prism::ui::TreeSource src): ctrl(std::make_shared<prism::ui::TreeController>(std::move(src))){}
+    TreeHandle(nb::object py_obj): ctrl(std::make_shared<prism::ui::TreeController>(PythonTreeSource::make(py_obj))){}
+};
+
 // --- List dispatch helper (mirrors field_set_dispatch but for arbitrary op) ---
 inline void list_op_dispatch(std::function<void()> fn) {
     if (txn_active()) { txn_queue.emplace_back(std::move(fn)); return; }
@@ -529,6 +677,49 @@ struct BoundList {
     }
 };
 
+// BoundPlot — must be after list_op_dispatch
+struct BoundPlot {
+    std::shared_ptr<SlotBase> owner;
+    prism::plot::PlotModel* plot = nullptr;
+    void add_series(nb::list xs, nb::list ys, std::string color_str = "", float thickness = 2.f, bool fill = false) {
+        if (!plot) return;
+        std::vector<double> vx, vy;
+        vx.reserve(nb::len(xs)); vy.reserve(nb::len(ys));
+        for (auto h : xs) vx.push_back(nb::cast<double>(h));
+        for (auto h : ys) vy.push_back(nb::cast<double>(h));
+        auto* p = plot;
+        auto fn = [p, vx = std::move(vx), vy = std::move(vy), color_str, thickness, fill]() mutable {
+            prism::plot::XYData data{std::move(vx), std::move(vy)};
+            prism::plot::SeriesStyle style;
+            style.thickness = thickness;
+            style.fill = fill;
+            if (!color_str.empty() && color_str.size()==7 && color_str[0]=='#') {
+                int r = std::stoi(color_str.substr(1,2), nullptr, 16);
+                int g = std::stoi(color_str.substr(3,2), nullptr, 16);
+                int b = std::stoi(color_str.substr(5,2), nullptr, 16);
+                style.color = Color::rgba((uint8_t)r,(uint8_t)g,(uint8_t)b);
+            }
+            p->add_series(std::move(data), style);
+        };
+        list_op_dispatch(std::move(fn));
+    }
+    void clear_series() {
+        if (!plot) return;
+        auto* p = plot;
+        list_op_dispatch([p](){ p->clear_series(); });
+    }
+    void notify() {
+        if (!plot) return;
+        auto* p = plot;
+        list_op_dispatch([p](){ p->notify(); });
+    }
+    void set_x_label(std::string s) { if(plot) field_set_dispatch(&plot->x_label, std::move(s)); }
+    void set_y_label(std::string s) { if(plot) field_set_dispatch(&plot->y_label, std::move(s)); }
+    std::string get_x_label() const { if(!plot) return ""; return dispatch_sync_read<std::string>([p=plot](){ return p->x_label.get(); }); }
+    std::string get_y_label() const { if(!plot) return ""; return dispatch_sync_read<std::string>([p=plot](){ return p->y_label.get(); }); }
+    void reset_view() { if(plot){ auto* p=plot; list_op_dispatch([p](){ p->reset_view(); }); } }
+};
+
 // helper to attach a single dep to a derived slot
 template <typename FH>
 auto* field_ptr_of(FH& h) {
@@ -624,6 +815,21 @@ inline void py_list_dispatch(ViewBuilder& vb, nb::object h) {
     else if (nb::isinstance<BoundList<double>>(h)) vb.list(*nb::cast<BoundList<double>&>(h).list);
     else if (nb::isinstance<BoundList<std::string>>(h)) vb.list(*nb::cast<BoundList<std::string>&>(h).list);
     else throw std::runtime_error("ViewBuilder.list: unsupported handle type");
+}
+inline void py_canvas_dispatch(ViewBuilder& vb, nb::object h) {
+    if (nb::isinstance<BoundPlot>(h)) {
+        auto& b = nb::cast<BoundPlot&>(h);
+        vb.canvas(*b.plot).depends_on(b.plot->x_range).depends_on(b.plot->y_range).depends_on(b.plot->view).depends_on(b.plot->cursor).depends_on(b.plot->revision);
+    } else throw std::runtime_error("ViewBuilder.canvas: unsupported handle type (expected BoundPlot)");
+}
+inline void py_tree_dispatch(ViewBuilder& vb, nb::object h) {
+    if (nb::isinstance<nb::object>(h)) {
+        // placeholder to avoid unused warning if needed
+    }
+    if (nb::isinstance<BoundTree>(h)) {
+        auto& b = nb::cast<BoundTree&>(h);
+        if (b.ctrl) vb.tree(*b.ctrl);
+    } else throw std::runtime_error("ViewBuilder.tree: unsupported handle type (expected BoundTree)");
 }
 
 struct PyModel {
@@ -736,6 +942,21 @@ struct PyModel {
         return {s, p};
     }
     // List<bool> disabled due to vector<bool> proxy issues — Python bool lists map to List<int> via __init__.py
+
+    std::pair<std::shared_ptr<SlotBase>, prism::plot::PlotModel*> add_plot_slot() {
+        auto s = std::make_shared<SlotPlot>();
+        auto* p = &s->plot;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, prism::ui::TreeController*> add_tree_slot(nb::object py_obj) {
+        auto s = std::make_shared<SlotTree>(py_obj);
+        auto* p = &s->ctrl;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
 
     // Derived slots — vector-based deps (avoid immutable tuple assignment)
     template <typename T>
@@ -958,9 +1179,44 @@ NB_MODULE(_prism_ext, m) {
     // BoundList<bool> disabled — see above
 
 
+    nb::class_<BoundPlot>(m, "BoundPlot")
+        .def("add_series", &BoundPlot::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
+        .def("clear_series", &BoundPlot::clear_series)
+        .def("notify", &BoundPlot::notify)
+        .def("reset_view", &BoundPlot::reset_view)
+        .def_prop_rw("x_label", &BoundPlot::get_x_label, &BoundPlot::set_x_label)
+        .def_prop_rw("y_label", &BoundPlot::get_y_label, &BoundPlot::set_y_label);
+    nb::class_<PlotHandle>(m, "PlotHandle")
+        .def(nb::init<>())
+        .def("add_series", &PlotHandle::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
+        .def("clear_series", &PlotHandle::clear_series)
+        .def("notify", &PlotHandle::notify)
+        .def("reset_view", &PlotHandle::reset_view)
+        .def_prop_rw("x_label", &PlotHandle::get_x_label, &PlotHandle::set_x_label)
+        .def_prop_rw("y_label", &PlotHandle::get_y_label, &PlotHandle::set_y_label);
+    nb::class_<BoundTree>(m, "BoundTree")
+        .def("refresh", &BoundTree::refresh)
+        .def("rows", &BoundTree::rows);
+    nb::class_<TreeHandle>(m, "TreeHandle")
+        .def(nb::init<nb::object>(), nb::arg("source"))
+        .def("refresh", [](TreeHandle& h){ h.ctrl->refresh(); })
+        .def("rows", [](TreeHandle& h){
+            nb::gil_scoped_acquire g;
+            nb::list out;
+            for(size_t i=0;i<h.ctrl->rows.size();++i){
+                auto r=h.ctrl->rows[i];
+                nb::dict d;
+                d["label"]=r.label; d["depth"]=r.depth; d["has_children"]=r.has_children; d["expanded"]=r.expanded; d["selected"]=r.selected;
+                out.append(d);
+            }
+            return out;
+         });
+
     nb::class_<ViewBuilder>(m, "ViewBuilder")
         .def("widget", [](ViewBuilder& vb, nb::object h){ py_widget_dispatch(vb, h); }, nb::arg("handle"))
         .def("list", [](ViewBuilder& vb, nb::object h){ py_list_dispatch(vb, h); }, nb::arg("handle"))
+        .def("canvas", [](ViewBuilder& vb, nb::object h){ py_canvas_dispatch(vb, h); }, nb::arg("handle"))
+        .def("tree", [](ViewBuilder& vb, nb::object h){ py_tree_dispatch(vb, h); }, nb::arg("handle"))
         .def("hstack", [](ViewBuilder& vb, nb::args args){
             // hstack(handle1, handle2, ...) -> Row container with those widgets
             // single callable arg -> container with callable body (for lambda capturing vb)
@@ -1075,7 +1331,15 @@ NB_MODULE(_prism_ext, m) {
                 std::vector<std::string> vec; vec.reserve(nb::len(py)); for(auto h: py) vec.push_back(nb::cast<std::string>(h));
                 auto [owner, p] = self.add_list_str_slot(std::move(vec));
                 BoundList<std::string> h; h.owner = std::move(owner); h.list = p; return h;
-            }, nb::arg("values") = nb::list());
+            }, nb::arg("values") = nb::list())
+        .def("_add_plot_internal", [](PyModel& self){
+                auto [owner, p] = self.add_plot_slot();
+                BoundPlot h; h.owner = std::move(owner); h.plot = p; return h;
+            })
+        .def("_add_tree_internal", [](PyModel& self, nb::object py_obj){
+                auto [owner, p] = self.add_tree_slot(py_obj);
+                BoundTree h; h.owner = std::move(owner); h.ctrl = p; return h;
+            }, nb::arg("source"));
 
 
     m.def("_txn_begin", [](){

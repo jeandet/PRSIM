@@ -48,6 +48,8 @@ reference app.
 small feature screenshots embedded in the top-level README — not meant to be read as usage
 examples in their own right.
 
+Python counterparts live in [`../python/examples/`](../python/examples/README.md) — same ideas via `prism.Model` (`01_counter`, `02_mixer`, `03_validation_and_transaction`, `04_background_shared_channel`, `05_lists_and_derived`). Run with `PYTHONPATH=build/python python python/examples/01_counter.py`.
+
 ## Building and running
 
 ```bash
