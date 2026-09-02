@@ -73,10 +73,26 @@ class DictTreeSource:
 
 # Example data — mirrors showcase_tree.cpp: Sensors/Device hierarchy
 TREE_DATA = {
-    "Device": {"label": "Device (Controller)", "children": ["Sensors", "Firmware"], "attrs": {"name": "Controller", "firmware": "12"}},
-    "Sensors": {"label": "Sensors", "children": ["Battery", "Bus"], "attrs": {"count": "2"}},
-    "Battery": {"label": "battery_v = 3.7V", "children": [], "attrs": {"value": "3.7", "unit": "V"}},
-    "Bus": {"label": "bus_v = 12.1V", "children": [], "attrs": {"value": "12.1", "unit": "V"}},
+    "Device": {
+        "label": "Device (Controller)",
+        "children": ["Sensors", "Firmware"],
+        "attrs": {"name": "Controller", "firmware": "12"},
+    },
+    "Sensors": {
+        "label": "Sensors",
+        "children": ["Battery", "Bus"],
+        "attrs": {"count": "2"},
+    },
+    "Battery": {
+        "label": "battery_v = 3.7V",
+        "children": [],
+        "attrs": {"value": "3.7", "unit": "V"},
+    },
+    "Bus": {
+        "label": "bus_v = 12.1V",
+        "children": [],
+        "attrs": {"value": "12.1", "unit": "V"},
+    },
     "Firmware": {"label": "firmware = 12", "children": [], "attrs": {"version": "12"}},
 }
 
@@ -132,7 +148,11 @@ class FsTreeSource:
                 n = len(list(p.iterdir()))
                 return {"type": "dir", "entries": str(n)}
             else:
-                return {"type": "file", "size": str(st.st_size), "modified": str(int(st.st_mtime))}
+                return {
+                    "type": "file",
+                    "size": str(st.st_size),
+                    "modified": str(int(st.st_mtime)),
+                }
         except Exception as e:
             return {"error": str(e)}
 
@@ -150,9 +170,13 @@ class Browser(prism.Model):
         vb.widget(self.status)
 
 
-if __name__ == "__main__":
+def _main():
     m = Browser()
     # detail/selected are accessible via controller's detail Field internally;
     # for demo we just show row count after refresh
     print("initial rows:", len(m.tree.rows()))
     prism.run(m, title="Tree Browser — Python")
+
+
+if __name__ == "__main__":
+    _main()

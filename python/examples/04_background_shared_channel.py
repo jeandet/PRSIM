@@ -21,8 +21,8 @@ class SensorBoard(prism.Model):
     # latest-value sensor reading (background thread overwrites, UI drains)
     temperature = prism.shared(20.0)
     label = prism.field("Sensor idle")
-    events = prism.channel(0)          # lossless int event stream
-    log = prism.list_field([])         # growing log, displayed via vb.list
+    events = prism.channel(0)  # lossless int event stream
+    log = prism.list_field([])  # growing log, displayed via vb.list
 
     def view(self, vb):
         vb.vstack(self.temperature, self.label)
@@ -40,11 +40,13 @@ def sensor_thread(model: SensorBoard, stop: threading.Event):
         n += 1
 
 
-if __name__ == "__main__":
+def _main():
     m = SensorBoard()
 
     # observe Shared (fires on drain) and Channel (fires per send)
-    conn_s = SensorBoard.temperature.observe(m, lambda v: print(f"[shared] temp={v:.2f}"))
+    conn_s = SensorBoard.temperature.observe(
+        m, lambda v: print(f"[shared] temp={v:.2f}")
+    )
     conn_c = SensorBoard.events.observe(m, lambda v: m.log.push(f"event {v}"))
 
     # also periodic UI update from observer
@@ -63,3 +65,7 @@ if __name__ == "__main__":
     finally:
         stop.set()
         t.join(timeout=1)
+
+
+if __name__ == "__main__":
+    _main()

@@ -17,7 +17,7 @@ class Counter(prism.Model):
     label = prism.field("Hello, PRISM!")
 
 
-if __name__ == "__main__":
+def _main():
     m = Counter()
 
     # observe: type-safe via descriptor, no string name
@@ -28,3 +28,7 @@ if __name__ == "__main__":
 
     # blocking window; releases GIL around SDL pump
     prism.run(m, title="Counter — Python")
+
+
+if __name__ == "__main__":
+    _main()

@@ -32,21 +32,37 @@ class Mixer(prism.Model):
         vb.widget(self.count)
 
 
-if __name__ == "__main__":
+def _main():
     m = Mixer()
 
     # observe field
     c1 = Mixer.count.observe(m, lambda v: print(f"[observe] count={v}"))
 
     # background thread mutates from any thread (posted to logic thread)
+    # Use weakref so the thread doesn't keep Model alive past shutdown (would
+    # otherwise appear as a nanobind leak when m is a module global or held
+    # only by the thread's closure).
+    import weakref as _wr
+
+    _m_wr = _wr.ref(m)
+
     def worker():
         for i in range(5):
             time.sleep(1)
+            mm = _m_wr()
+            if mm is None:
+                break
             v = 50 + i
-            print(f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})")
-            m.count.value = v
+            print(
+                f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})"
+            )
+            mm.count.value = v
 
     t = threading.Thread(target=worker, daemon=True)
     t.start()
 
     prism.run(m, title="Mixer — Python")
+
+
+if __name__ == "__main__":
+    _main()

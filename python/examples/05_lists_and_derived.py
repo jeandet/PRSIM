@@ -34,9 +34,11 @@ class TodoApp(prism.Model):
     #     vb.widget(self.filter_len)
 
 
-if __name__ == "__main__":
+def _main():
     m = TodoApp()
-    print(f"initial items: {m.items.to_list()} summary={m.summary.value} filter_len={m.filter_len.value}")
+    print(
+        f"initial items: {m.items.to_list()} summary={m.summary.value} filter_len={m.filter_len.value}"
+    )
 
     # observe list mutations
     ins = []
@@ -53,7 +55,9 @@ if __name__ == "__main__":
     # derived recomputes automatically
     m.counter.value = 5
     m.filter_text.value = "hello"
-    print(f"derived after updates: summary={m.summary.value} filter_len={m.filter_len.value}")
+    print(
+        f"derived after updates: summary={m.summary.value} filter_len={m.filter_len.value}"
+    )
 
     # batch via transaction
     with prism.transaction():
@@ -64,3 +68,7 @@ if __name__ == "__main__":
     print(f"after txn: {m.items.to_list()} new_item={m.new_item.value}")
 
     prism.run(m, title="Lists + Derived — Python")
+
+
+if __name__ == "__main__":
+    _main()

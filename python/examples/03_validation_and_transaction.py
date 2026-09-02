@@ -32,7 +32,7 @@ class Settings(prism.Model):
         vb.vstack(self.volume, self.brightness, self.username)
 
 
-if __name__ == "__main__":
+def _main():
     m = Settings()
     print(f"initial volume={m.volume.value} brightness={m.brightness.value}")
 
@@ -58,6 +58,12 @@ if __name__ == "__main__":
         assert m.brightness.value == 60
         print("inside transaction (buffered)")
 
-    print(f"after transaction volume={m.volume.value} brightness={m.brightness.value} observed={seen}")
+    print(
+        f"after transaction volume={m.volume.value} brightness={m.brightness.value} observed={seen}"
+    )
 
     prism.run(m, title="Validation + Transaction — Python")
+
+
+if __name__ == "__main__":
+    _main()

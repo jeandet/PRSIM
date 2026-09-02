@@ -25,7 +25,9 @@ import importlib.util
 import pathlib as _pathlib
 
 # 07_file_tree has leading digit, so import via importlib
-_spec = importlib.util.spec_from_file_location("_07", _pathlib.Path(__file__).with_name("07_file_tree.py"))
+_spec = importlib.util.spec_from_file_location(
+    "_07", _pathlib.Path(__file__).with_name("07_file_tree.py")
+)
 _07 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_07)  # type: ignore
 DictTreeSource = _07.DictTreeSource
@@ -69,7 +71,7 @@ class Dashboard(prism.Model):
         self.status.value = f"tick={self.tick.value} f={f:.2f} a={a:.2f}"
 
 
-if __name__ == "__main__":
+def _main():
     m = Dashboard()
     m.rebuild_plot()
 
@@ -78,16 +80,34 @@ if __name__ == "__main__":
     m.amplitude.observe(lambda v: m.rebuild_plot())
     m.tick.observe(lambda v: m.rebuild_plot() if m.auto_sweep.value else None)
 
-    # Auto-sweep thread — demonstrates Shared<T> coalescing vs Channel loss-less
+    # Auto-sweep thread — use weakref + stop event so the thread doesn't keep
+    # Model alive past shutdown (would appear as nanobind leaked Model).
+    import weakref as _wr
+
+    stop = threading.Event()
+    _m_wr = _wr.ref(m)
+
     def sweeper():
-        while True:
+        while not stop.is_set():
             time.sleep(0.05)
-            if m.auto_sweep.value:
+            mm = _m_wr()
+            if mm is None or stop.is_set():
+                break
+            if mm.auto_sweep.value:
                 # Shared: latest value wins, coalesced
-                m.tick.value = (m.tick.value + 1) % 1000
+                mm.tick.value = (mm.tick.value + 1) % 1000
                 # nudge frequency slightly
-                m.frequency.value = 2.0 + 1.5 * math.sin(m.tick.value * 0.02)
+                mm.frequency.value = 2.0 + 1.5 * math.sin(mm.tick.value * 0.02)
 
-    threading.Thread(target=sweeper, daemon=True).start()
+    t = threading.Thread(target=sweeper, daemon=True)
+    t.start()
 
-    prism.run(m, title="Fancy Dashboard — Plot + Tree — Python")
+    try:
+        prism.run(m, title="Fancy Dashboard — Plot + Tree — Python")
+    finally:
+        stop.set()
+        t.join(timeout=1)
+
+
+if __name__ == "__main__":
+    _main()
