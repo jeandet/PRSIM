@@ -171,6 +171,50 @@ def test_observe_values():
     assert seen == [1, 2]
 
 
+def test_on_error_routes_observer_exception_and_app_keeps_running():
+    class M(Model):
+        a = field(0)
+        b = field(0)
+
+    m = M()
+    caught = []
+    try:
+        prism.on_error(lambda exc: caught.append(exc))
+
+        def bad_observer(v):
+            raise ValueError("x")
+
+        m.a.observe(bad_observer)
+        m.a.value = 1
+
+        assert len(caught) == 1
+        assert isinstance(caught[0], ValueError)
+        assert caught[0].args == ("x",)
+
+        # app keeps running: a subsequent set still fires a second observer
+        seen = []
+        m.b.observe(lambda v: seen.append(v))
+        m.b.value = 5
+        assert seen == [5]
+    finally:
+        prism.on_error(None)
+
+
+def test_on_error_none_restores_default_no_crash():
+    class M(Model):
+        a = field(0)
+
+    m = M()
+    prism.on_error(lambda exc: None)
+    prism.on_error(None)
+
+    def bad_observer(v):
+        raise RuntimeError("boom")
+
+    m.a.observe(bad_observer)
+    m.a.value = 1  # must not raise/crash; falls back to default stderr print
+
+
 def test_shared_basic():
     class M(Model):
         s = shared(10)

@@ -28,6 +28,10 @@ namespace nb = nanobind;
 using namespace prism::core;
 using namespace prism::app;
 
+// Defined near NB_MODULE below, alongside the rest of the prism.on_error() error hub —
+// forward-declared here since every Python callback wrapper in this file uses it.
+static void report_python_callback_error();
+
 // Global PostHandle for off-thread posting (set during prism.run, cleared after).
 // Holds weak_ptrs to the mutation queue so post after model_app returns is not UAF.
 static std::mutex g_handle_mutex;
@@ -301,7 +305,7 @@ struct FieldHandle {
         auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+            try { cb(val); } catch (...) { report_python_callback_error(); }
         };
         return field.on_change().connect(std::move(wrapper));
     }
@@ -575,7 +579,7 @@ struct BoundField {
         auto wrapper = [cb, f](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+            try { cb(val); } catch (...) { report_python_callback_error(); }
         };
         auto conn = f->on_change().connect(std::move(wrapper));
         if (owner_copy) conn.keep_alive(owner_copy);
@@ -603,7 +607,7 @@ struct SharedHandle {
         auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+            try { cb(val); } catch (...) { report_python_callback_error(); }
         };
         return shared.on_change().connect(std::move(wrapper));
     }
@@ -623,7 +627,7 @@ struct BoundShared {
         auto wrapper = [cb, s](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+            try { cb(val); } catch (...) { report_python_callback_error(); }
         };
         auto conn = s->on_change().connect(std::move(wrapper));
         if (owner_copy) conn.keep_alive(owner_copy);
@@ -648,7 +652,7 @@ struct ChannelHandle {
         auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+            try { cb(val); } catch (...) { report_python_callback_error(); }
         };
         return channel.on_receive().connect(std::move(wrapper));
     }
@@ -667,7 +671,7 @@ struct BoundChannel {
         auto wrapper = [cb, c](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
+            try { cb(val); } catch (...) { report_python_callback_error(); }
         };
         auto conn = c->on_receive().connect(std::move(wrapper));
         if (owner_copy) conn.keep_alive(owner_copy);
@@ -697,7 +701,7 @@ struct SlotDerived : SlotBase {
         {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire g;
-            try { nv = nb::cast<T>(py_fn()); } catch (nb::python_error& e) { e.restore(); PyErr_Print(); return; } catch (...) { return; }
+            try { nv = nb::cast<T>(py_fn()); } catch (...) { report_python_callback_error(); return; }
         }
         if (nv == value_) return;
         value_ = std::move(nv);
@@ -720,7 +724,7 @@ struct BoundDerived {
         if (!derived) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         auto* d = derived;
-        auto wrapper = [cb, d](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        auto wrapper = [cb, d](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(...){report_python_callback_error();} };
         auto conn = d->on_change().connect(std::move(wrapper));
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
@@ -764,15 +768,15 @@ struct ListHandle {
         });
     }
     Connection observe_insert(nb::callable cb) {
-        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
         return list.on_insert().connect(std::move(w));
     }
     Connection observe_remove(nb::callable cb) {
-        auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(...){report_python_callback_error();} };
         return list.on_remove().connect(std::move(w));
     }
     Connection observe_update(nb::callable cb) {
-        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
+        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
         return list.on_update().connect(std::move(w));
     }
 };
@@ -804,13 +808,13 @@ struct BoundList {
         });
     }
     Connection observe_insert(nb::callable cb) {
-        if(!list) throw nb::value_error("observe_insert(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_insert(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_remove(nb::callable cb) {
-        if(!list) throw nb::value_error("observe_remove(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_remove().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_remove(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(...){report_python_callback_error();} }; auto c=p->on_remove().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_update(nb::callable cb) {
-        if(!list) throw nb::value_error("observe_update(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_update().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_update(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} }; auto c=p->on_update().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
 };
 
@@ -1138,10 +1142,9 @@ struct PyModel {
                 nb::object vb_obj = nb::cast(&vb, nb::rv_policy::reference);
                 try {
                     cb(vb_obj);
-                } catch (nb::python_error& e) {
-                    e.restore();
-                    PyErr_Print();
-                } catch (...) {}
+                } catch (...) {
+                    report_python_callback_error();
+                }
                 return;
             }
         }
@@ -1318,7 +1321,91 @@ void bind_list(nb::module_& m, const char* suffix) {
         }, nb::arg("callback"));
 }
 
+// Module-wide Python error hub backing prism.on_error(). Mirrors g_observed_handles above:
+// a raw PyObject* the module owns, incref/decref'd explicitly under the GIL rather than a
+// `static nb::object` whose destructor would run (and decref into a torn-down interpreter)
+// during C++ static teardown after Py_Finalize. on_error() always decrefs the handler it
+// replaces, so nothing accumulates here.
+static std::mutex g_error_handler_mutex;
+static PyObject* g_error_handler = nullptr;
+
+// Same stderr fallback error_hub.hpp's default_error_handler prints for a plain C++
+// exception_ptr, plus the Python-specific case: a caught nb::python_error gets Python's
+// own traceback printer instead of ex.what().
+static void print_default_error(std::exception_ptr e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (nb::python_error& pe) {
+        pe.restore();
+        PyErr_Print();
+    } catch (const std::exception& ex) {
+        std::cerr << "[prism] unhandled exception in posted callback: " << ex.what() << '\n';
+    } catch (...) {
+        std::cerr << "[prism] unhandled exception in posted callback: <non-std exception>\n";
+    }
+}
+
+// Builds the object passed to a Python on_error handler: nb::python_error already carries
+// the original Python exception instance; anything else becomes a RuntimeError.
+static nb::object exception_to_python(std::exception_ptr e) {
+    try {
+        std::rethrow_exception(e);
+    } catch (nb::python_error& pe) {
+        return nb::borrow(pe.value());
+    } catch (const std::exception& ex) {
+        return nb::module_::import_("builtins").attr("RuntimeError")(ex.what());
+    } catch (...) {
+        return nb::module_::import_("builtins").attr("RuntimeError")("<non-std exception>");
+    }
+}
+
+// Installed once at module init as prism::core's process-wide unhandled-error hook (Task 1
+// — include/prism/core/error_hub.hpp). May run on any thread, with or without the GIL
+// already held by the caller, so it acquires the GIL itself and only if the interpreter is
+// up at all. If this handler throws, report_unhandled_error() (error_hub.hpp) is already
+// guarded to fall back to its own stderr default — never call it re-entrantly here.
+static void python_error_hub(std::exception_ptr e) {
+    if (!Py_IsInitialized()) {
+        print_default_error(e);
+        return;
+    }
+    nb::gil_scoped_acquire gil;
+    PyObject* handler_raw;
+    {
+        std::lock_guard<std::mutex> lk(g_error_handler_mutex);
+        handler_raw = g_error_handler;
+    }
+    if (!handler_raw) {
+        print_default_error(e);
+        return;
+    }
+    nb::object handler = nb::borrow(nb::handle(handler_raw));
+    handler(exception_to_python(e));
+}
+
+// Every Python callback wrapper below routes a caught exception here instead of printing
+// or silently swallowing it — see task-11-brief.md. Only valid inside a catch block
+// (relies on std::current_exception()).
+static void report_python_callback_error() {
+    prism::core::report_unhandled_error(std::current_exception());
+}
+
 NB_MODULE(_prism_ext, m) {
+    prism::core::set_unhandled_error_handler(python_error_hub);
+    m.def("_set_error_handler", [](nb::object handler) {
+        PyObject* new_raw = nullptr;
+        if (!handler.is_none()) {
+            handler.inc_ref();
+            new_raw = handler.ptr();
+        }
+        PyObject* old_raw;
+        {
+            std::lock_guard<std::mutex> lk(g_error_handler_mutex);
+            old_raw = g_error_handler;
+            g_error_handler = new_raw;
+        }
+        if (old_raw) nb::handle(old_raw).dec_ref();
+    }, nb::arg("handler").none());
     m.def("is_logic_thread", [](){ return detail_is_logic_thread; });
     m.attr("_observed_handles") = observed_handles();
 

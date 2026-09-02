@@ -50,6 +50,7 @@ from ._prism_ext import (
     _txn_abort,
     _run_headless as _run_headless_impl,
     _is_running,
+    _set_error_handler,
 )
 
 TreeNodeId = int
@@ -171,6 +172,7 @@ __all__ = [
     "Connection",
     "is_logic_thread",
     "run",
+    "on_error",
 ]
 
 
@@ -928,3 +930,10 @@ def _run_headless(model, delay_ms=100):
     quits after *delay_ms*.
     """
     return _run_headless_impl(model, delay_ms)
+
+
+def on_error(handler):
+    """Any thread. Called on the logic thread with the exception raised by an
+    observer/derived/worker callback. None restores the default (traceback to stderr).
+    """
+    _set_error_handler(handler)

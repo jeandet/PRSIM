@@ -56,6 +56,7 @@ PYTHONPATH=build/python python -c "import prism; from python.examples import 01_
 - Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — mirrors `TreeStorage` tier 2 (`ui/tree.hpp:40`). See `07_file_tree.py:DictTreeSource` and `FsTreeSource`.
 - `m.count.value` get/set uses the binding cache + posted queue (`doc/design/python-sdk.md` §2). `Shared`/`Channel` are the cross-thread latest/ordered primitives per `AGENTS.md`.
 - `prism.transaction()` buffers per-Python-thread and flushes as one closure on the logic thread.
+- `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived`/worker callback — `handler(exc)` runs on the logic thread with the original Python exception (or a `RuntimeError` wrapping a non-Python one). `prism.on_error(None)` restores the default, which prints a traceback to stderr; a raising handler itself falls back to that same default. A failing callback never stops the drain — the next event still fires.
 
 ## Threading guarantees
 
