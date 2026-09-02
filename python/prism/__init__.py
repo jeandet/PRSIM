@@ -165,11 +165,9 @@ def _patch_bound_observe():
         # capture orig in default arg to avoid late-binding
         def _wrap(self, *args, _orig=orig, **kwargs):  # type: ignore[no-untyped-def]
             conn = _orig(self, *args, **kwargs)
-            # global id->list keepalive (handles have no __dict__)
-            lst = _keepalive_by_handle.get(id(self))
-            if lst is None:
-                lst = []
-                _keepalive_by_handle[id(self)] = lst
+            # global id->list keepalive (handles have no __dict__); setdefault is
+            # atomic under the GIL so concurrent first-observe doesn't clobber.
+            lst = _keepalive_by_handle.setdefault(id(self), [])
             lst.append(conn)
             return conn
 

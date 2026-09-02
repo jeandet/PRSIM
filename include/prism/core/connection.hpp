@@ -15,13 +15,23 @@ public:
     Connection(std::shared_ptr<std::function<void()>> detach)
         : detach_(std::move(detach)) {}
 
+    // Keepalive: optional shared ownership that lives as long as the Connection
+    // does. Used by Python Bound* handles to keep their Slot alive even if the
+    // Model is freed before the Connection is disconnected (fixes UAF after
+    // removal of nanobind keep_alive on Bound* — see Python fix dea637d review).
+    explicit Connection(std::shared_ptr<std::function<void()>> detach,
+                        std::shared_ptr<void> keepalive)
+        : detach_(std::move(detach)), keepalive_(std::move(keepalive)) {}
+
     ~Connection() { disconnect(); }
 
-    Connection(Connection&& o) noexcept : detach_(std::move(o.detach_)) {}
+    Connection(Connection&& o) noexcept
+        : detach_(std::move(o.detach_)), keepalive_(std::move(o.keepalive_)) {}
     Connection& operator=(Connection&& o) noexcept {
         if (this != &o) {
             disconnect();
             detach_ = std::move(o.detach_);
+            keepalive_ = std::move(o.keepalive_);
         }
         return *this;
     }
@@ -33,10 +43,15 @@ public:
         if (auto d = std::move(detach_)) {
             if (*d) (*d)();
         }
+        keepalive_.reset();
     }
+
+    // Attach additional ownership without replacing detach — cheap extend.
+    void keep_alive(std::shared_ptr<void> h) { keepalive_ = std::move(h); }
 
 private:
     std::shared_ptr<std::function<void()>> detach_;
+    std::shared_ptr<void> keepalive_;
 };
 
 template <typename... Args>

@@ -505,13 +505,16 @@ struct BoundField {
     }
     Connection observe(nb::callable cb) {
         if (!field) return {};
+        auto owner_copy = owner;
         Field<T>* f = field;
         auto wrapper = [cb, f](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
         };
-        return f->on_change().connect(std::move(wrapper));
+        auto conn = f->on_change().connect(std::move(wrapper));
+        if (owner_copy) conn.keep_alive(owner_copy);
+        return conn;
     }
 };
 
@@ -541,13 +544,16 @@ struct BoundShared {
     }
     Connection observe(nb::callable cb) {
         if (!shared) return {};
+        auto owner_copy = owner;
         Shared<T>* s = shared;
         auto wrapper = [cb, s](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
         };
-        return s->on_change().connect(std::move(wrapper));
+        auto conn = s->on_change().connect(std::move(wrapper));
+        if (owner_copy) conn.keep_alive(owner_copy);
+        return conn;
     }
 };
 template <typename T>
@@ -572,13 +578,16 @@ struct BoundChannel {
     }
     Connection observe(nb::callable cb) {
         if (!channel) return {};
+        auto owner_copy = owner;
         Channel<T>* c = channel;
         auto wrapper = [cb, c](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (nb::python_error&) { PyErr_Print(); } catch (...) {}
         };
-        return c->on_receive().connect(std::move(wrapper));
+        auto conn = c->on_receive().connect(std::move(wrapper));
+        if (owner_copy) conn.keep_alive(owner_copy);
+        return conn;
     }
 };
 
@@ -625,9 +634,12 @@ struct BoundDerived {
     }
     Connection observe(nb::callable cb) {
         if (!derived) return {};
+        auto owner_copy = owner;
         auto* d = derived;
         auto wrapper = [cb, d](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
-        return d->on_change().connect(std::move(wrapper));
+        auto conn = d->on_change().connect(std::move(wrapper));
+        if (owner_copy) conn.keep_alive(owner_copy);
+        return conn;
     }
 };
 template <typename T>
@@ -706,13 +718,13 @@ struct BoundList {
         });
     }
     Connection observe_insert(nb::callable cb) {
-        if(!list) return {}; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_insert().connect(std::move(w));
+        if(!list) return {}; auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_remove(nb::callable cb) {
-        if(!list) return {}; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_remove().connect(std::move(w));
+        if(!list) return {}; auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_remove().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_update(nb::callable cb) {
-        if(!list) return {}; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; return p->on_update().connect(std::move(w));
+        if(!list) return {}; auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_update().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
 };
 
