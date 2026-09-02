@@ -6,6 +6,7 @@
 #include <prism/core/shared.hpp>
 #include <prism/core/channel.hpp>
 #include <prism/core/connection.hpp>
+#include <prism/core/error_hub.hpp>
 #include <prism/core/transaction.hpp>
 #include <prism/app/model_app.hpp>
 #include <prism/app/backend.hpp>
@@ -47,7 +48,13 @@ static void drain_queue_loop(const std::shared_ptr<mpsc_queue<std::function<void
                              const std::shared_ptr<std::function<void()>>& tp) {
     do {
         prism::app::detail_in_mutation_batch = true;
-        while (auto f = q->pop()) (*f)();
+        while (auto f = q->pop()) {
+            try {
+                (*f)();
+            } catch (...) {
+                prism::core::report_unhandled_error(std::current_exception());
+            }
+        }
         prism::app::detail_in_mutation_batch = false;
         if (tp && *tp) (*tp)();
         sf->store(false, std::memory_order_release);

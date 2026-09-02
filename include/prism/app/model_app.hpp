@@ -19,6 +19,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <prism/core/error_hub.hpp>
 #include <prism/core/mpsc_queue.hpp>
 
 namespace prism::app {
@@ -118,7 +119,13 @@ public:
                 auto do_drain = [&]{
                     do {
                         detail_in_mutation_batch = true;
-                        while (auto f = q->pop()) (*f)();
+                        while (auto f = q->pop()) {
+                            try {
+                                (*f)();
+                            } catch (...) {
+                                report_unhandled_error(std::current_exception());
+                            }
+                        }
                         detail_in_mutation_batch = false;
                         if (tail && *tail) (*tail)();
                         sched_flag->store(false, std::memory_order_release);
