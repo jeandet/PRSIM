@@ -855,3 +855,14 @@ def test_tree_field_dict_callable_and_none():
         assert any("missing TreeSource methods" in str(x.message) for x in w), (
             f"expected warning, got {w}"
         )
+
+
+def test_import_has_no_sys_modules_sweep():
+    """_atexit_clear must not walk sys.modules deleting user globals bound to
+    Model instances — that is a process-wide side effect of `import prism`
+    just to quiet nanobind's leak checker. See doc review 2026-09-02."""
+    import inspect
+
+    source = inspect.getsource(prism._atexit_clear)
+    assert "sys.modules" not in source
+    assert "modules.values" not in source

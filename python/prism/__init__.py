@@ -378,36 +378,9 @@ def _atexit_clear():
         _all_models.clear()
     except Exception:
         pass
-    # Break module-global strong refs that would keep Model instances alive
-    # past nanobind's leak check (e.g. `if __name__ == \"__main__\": m = Browser()` —
-    # m stays in __main__.__dict__). Deleting those entries lets the instance
-    # (and its type/functions) be freed before nanobind checks. This is a
-    # safety net; examples should still use `def _main(): m = ...` (function scope)
-    # so locals die naturally before atexit.
-    try:
-        import sys as _sys_mod
-
-        for _m in _models_snapshot:
-            for _mod in list(_sys_mod.modules.values()):
-                if _mod is None:
-                    continue
-                try:
-                    _d = vars(_mod)
-                except Exception:
-                    try:
-                        _d = getattr(_mod, "__dict__", None)
-                    except Exception:
-                        continue
-                if not isinstance(_d, dict):
-                    continue
-                for _k, _v in list(_d.items()):
-                    if _v is _m:
-                        try:
-                            del _d[_k]
-                        except Exception:
-                            pass
-    except Exception:
-        pass
+    # A Model left in a module global at interpreter exit stays alive past
+    # nanobind's leak check and may print a leak warning; that is acceptable.
+    # Examples should use `def _main(): m = ...` (function scope) to avoid it.
 
 
 _atexit_mod.register(_atexit_clear)
