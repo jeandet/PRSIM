@@ -1021,6 +1021,53 @@ def test_tree_field_dict_callable_and_none():
         )
 
 
+def test_tree_field_duck_typed_source_rows_length_matches_root_count():
+    """tree_field with a duck-typed (non-TreeSource-inheriting) six-method source
+    allocates rows() == root_count() root rows, with no explicit refresh() call."""
+    from prism import tree_field
+
+    class Duck:
+        def root_count(self):
+            return 3
+
+        def root_at(self, i):
+            return i
+
+        def child_count(self, nid):
+            return 0
+
+        def child_at(self, nid, i):
+            return 0
+
+        def label(self, nid):
+            return f"n{nid}"
+
+        def has_children(self, nid):
+            return False
+
+    class M(Model):
+        t = tree_field(Duck())
+
+    m = M()
+    assert len(m.t.rows()) == 3
+
+
+def test_tree_source_missing_method_yields_empty():
+    """Documents today's C++ fallback: a source missing root_count() (the method
+    that drives row count) renders as an empty tree instead of raising."""
+    from prism import tree_field
+
+    class NoRootCount:
+        def label(self, nid):
+            return "x"
+
+    class M(Model):
+        t = tree_field(NoRootCount())
+
+    m = M()
+    assert m.t.rows() == []
+
+
 def test_annotated_auto_field_without_prism_field():
     """`x: Annotated[int, Field(ge=0)] = 0` auto-creates a validated field
     without calling prism.field() (transparent Annotated path, task 7)."""
