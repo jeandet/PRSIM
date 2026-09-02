@@ -1,15 +1,14 @@
 """07_file_tree.py — Fancy Tree example (filesystem browser).
 
 Demonstrates:
-  - prism.tree_field(source) with Python object implementing TreeStorage protocol
+  - prism.tree_field(source) with ``prism.TreeSource`` Protocol
   - vb.tree(ctrl) — VirtualList + detail panel with handle splitter
   - Lazy child expansion (only expanded nodes queried)
 
-Protocol: source object must implement:
-  root_count() -> int, root_at(i) -> TreeNodeId,
-  child_count(id) -> int, child_at(id,i) -> TreeNodeId,
-  label(id) -> str, has_children(id) -> bool,
-  optional: attributes(id) -> dict, icon(id) -> str
+See ``prism.TreeSource`` (``python/prism/__init__.py``) for the
+structural protocol. Any object with the six required methods works;
+inheriting from the Protocol is optional but gives type-checker
+support.
 
 This example implements a simple filesystem-inspired source over an
 in-memory dict, plus a live OS directory variant (commented).
@@ -23,8 +22,8 @@ import pathlib
 import prism
 
 
-class DictTreeSource:
-    """Minimal TreeStorage over a nested dict: {id: {label, children:[ids], attrs:{}}}"""
+class DictTreeSource(prism.TreeSource):
+    """Minimal TreeSource over a nested dict: {id: {label, children:[ids], attrs:{}}}"""
 
     def __init__(self, data: dict, roots: list[str]):
         self._data = data
@@ -97,7 +96,7 @@ TREE_DATA = {
 }
 
 
-class FsTreeSource:
+class FsTreeSource(prism.TreeSource):
     """Live filesystem source — shows real directory tree (lazy)."""
 
     def __init__(self, root: pathlib.Path):
@@ -174,7 +173,7 @@ def _main():
     m = Browser()
     # detail/selected are accessible via controller's detail Field internally;
     # for demo we just show row count after refresh
-    print("initial rows:", len(m.tree.rows()))
+    print("initial rows:", len(m.tree.rows()))  # type: ignore[attr-defined]
     prism.run(m, title="Tree Browser — Python")
 
 

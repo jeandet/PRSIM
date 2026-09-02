@@ -1,4 +1,4 @@
-from typing import Annotated, get_args, get_origin
+from typing import Annotated, Protocol, get_args, get_origin, runtime_checkable
 
 from ._prism_ext import (
     Model as _ModelBase,
@@ -51,6 +51,42 @@ from ._prism_ext import (
     _is_running,
 )
 
+TreeNodeId = int
+
+
+@runtime_checkable
+class TreeSource(Protocol):
+    """Pythonic structural type for ``prism.tree_field(source)``.
+
+    C++ calls these with the GIL held (see ``python/src/prism_ext.cpp:365``
+    ``PythonTreeSource``). Only the six methods below are required;
+    ``attributes`` / ``icon`` are optional — ``hasattr`` is checked on the
+    C++ side and missing ones fall back to defaults.
+
+    Using a ``Protocol`` (not an ABC) keeps it duck-typed and avoids
+    inheritance requirements, while giving static checkers / IDEs a real
+    type to check against. Example::
+
+        class MySource(TreeSource):  # or just duck-type without inheriting
+            def root_count(self) -> int: ...
+            def root_at(self, i: int) -> TreeNodeId: ...
+            def child_count(self, nid: TreeNodeId) -> int: ...
+            def child_at(self, nid: TreeNodeId, i: int) -> TreeNodeId: ...
+            def label(self, nid: TreeNodeId) -> str: ...
+            def has_children(self, nid: TreeNodeId) -> bool: ...
+            # optional:
+            def attributes(self, nid: TreeNodeId) -> dict[str, str]: ...
+            def icon(self, nid: TreeNodeId) -> str | None: ...
+    """
+
+    def root_count(self) -> int: ...
+    def root_at(self, i: int) -> TreeNodeId: ...
+    def child_count(self, nid: TreeNodeId) -> int: ...
+    def child_at(self, nid: TreeNodeId, i: int) -> TreeNodeId: ...
+    def label(self, nid: TreeNodeId) -> str: ...
+    def has_children(self, nid: TreeNodeId) -> bool: ...
+
+
 __all__ = [
     "Model",
     "field",
@@ -63,6 +99,8 @@ __all__ = [
     "list_field",
     "plot_field",
     "tree_field",
+    "TreeSource",
+    "TreeNodeId",
     "validator_for",
     "FieldInt",
     "FieldFloat",
@@ -760,8 +798,15 @@ def plot_field():
     return _PlotDescriptor()
 
 
-def tree_field(source=None):
-    """Descriptor for TreeController — `tree = prism.tree_field({...})` or `tree = prism.tree_field(my_obj)`."""
+def tree_field(source: "TreeSource | dict | None" = None):  # type: ignore[name-defined]
+    """Descriptor for TreeController — ``tree = prism.tree_field(source)``.
+
+    ``source`` may be a ``TreeSource`` (``Protocol`` — duck-typed), a plain
+    dict ``{id: {label, children:[...], attrs:{}}}``, or ``None``. The
+    ``TreeSource`` protocol lives in ``prism.TreeSource`` — inheriting is
+    optional, structural matching is enough, but inheriting gives IDE
+    support.
+    """
     return _TreeDescriptor(source)
 
 
