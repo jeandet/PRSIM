@@ -309,6 +309,11 @@ class _FieldDescriptor:
         # allocate via Model's internal add_* (no keep_alive cycle — Model owns slots)
         kind = _kind_of(self.default)
         h = getattr(instance, f"_add_{kind}_internal")(self.default)
+        if self.validator is not None:
+            # Installed here so the C++ .value setter / .set() can run it too
+            # (prism_ext.cpp's apply_validator) — one validation path shared
+            # by `m.x = v`, `m.x.value = v` and `m.x.set(v)`.
+            h.__dict__["_prism_validator"] = self.validator
         cache[self.name] = h
         return h
 
@@ -317,14 +322,8 @@ class _FieldDescriptor:
             return self
         return self._allocate(instance)
 
-    def _validate(self, value):
-        if self.validator is not None:
-            return self.validator(value)
-        return value
-
     def __set__(self, instance, value):
-        h = self._allocate(instance)
-        h.value = self._validate(value)
+        self._allocate(instance).value = value
 
     # non-string, type-safe observe: M.volume.observe(m, cb) instead of m.observe('volume', cb)
     def observe(self, instance, callback):
@@ -386,6 +385,8 @@ class _SharedDescriptor:
             return cache[self.name]
         kind = _kind_of(self.default, "shared")
         h = getattr(instance, f"_add_shared_{kind}_internal")(self.default)
+        if self.validator is not None:
+            h.__dict__["_prism_validator"] = self.validator
         cache[self.name] = h
         return h
 
@@ -394,12 +395,8 @@ class _SharedDescriptor:
             return self
         return self._allocate(instance)
 
-    def _validate(self, value):
-        return self.validator(value) if self.validator is not None else value
-
     def __set__(self, instance, value):
-        h = self._allocate(instance)
-        h.value = self._validate(value)
+        self._allocate(instance).value = value
 
     def observe(self, instance, callback):
         return self._allocate(instance).observe(callback)

@@ -1195,6 +1195,31 @@ static nb::object keep_connection(nb::object self, Connection conn) {
     return result;
 }
 
+// Runs a user validator installed by field()/shared()'s Python descriptor
+// (as `handle.__dict__["_prism_validator"]`, see _FieldDescriptor._allocate
+// / _SharedDescriptor._allocate in python/prism/__init__.py) before a write
+// reaches the handle's underlying Field/Shared. GIL is already held here
+// (we're inside a Python call), so the validator runs synchronously on the
+// calling thread, before any off-thread dispatch. A rejecting validator's
+// exception (nb::python_error) propagates unchanged.
+template <typename T>
+T apply_validator(nb::object self, T v) {
+    nb::dict d = self.attr("__dict__");
+    if (!d.contains("_prism_validator")) return v;
+    nb::object validator = d["_prism_validator"];
+    return nb::cast<T>(validator(v));
+}
+
+// Shared body for a handle's `.value` setter and `.set()` method — same
+// validate-then-write on both, so `m.x = v`, `m.x.value = v` and
+// `m.x.set(v)` behave identically (the Python descriptor's __set__ just
+// delegates to `.value =`, giving a single validation path).
+template <typename Handle, typename T>
+void validated_set(nb::object self, T v) {
+    v = apply_validator<T>(self, std::move(v));
+    nb::cast<Handle&>(self).set(std::move(v));
+}
+
 // One templated registration per scalar handle family (Field/Bound/Shared/BoundShared/
 // Channel/BoundChannel/BoundDerived), instantiated once per T from NB_MODULE below.
 // Naming is not uniformly "<Family>" + suffix: BoundField<T> is historically named
@@ -1204,38 +1229,38 @@ void bind_scalar(nb::module_& m, const char* suffix) {
     std::string field_name = std::string("Field") + suffix;
     auto field_cls = nb::class_<FieldHandle<T>>(m, field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<T>(), nb::arg("value") = T{})
-        .def_prop_rw("value", &FieldHandle<T>::get, &FieldHandle<T>::set)
+        .def_prop_rw("value", &FieldHandle<T>::get, &validated_set<FieldHandle<T>, T>)
         .def("get", &FieldHandle<T>::get)
-        .def("set", &FieldHandle<T>::set);
+        .def("set", &validated_set<FieldHandle<T>, T>);
     field_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb));
     }, nb::keep_alive<0, 1>(), nb::arg("callback"));
 
     std::string bound_field_name = std::string("Bound") + suffix;
     nb::class_<BoundField<T>>(m, bound_field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def_prop_rw("value", &BoundField<T>::get, &BoundField<T>::set)
+        .def_prop_rw("value", &BoundField<T>::get, &validated_set<BoundField<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundField<T>&>(self).observe(cb));
         }, nb::arg("callback"))
         .def("get", &BoundField<T>::get)
-        .def("set", &BoundField<T>::set);
+        .def("set", &validated_set<BoundField<T>, T>);
 
     std::string shared_name = std::string("Shared") + suffix;
     auto shared_cls = nb::class_<SharedHandle<T>>(m, shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<T>(), nb::arg("value") = T{})
-        .def_prop_rw("value", &SharedHandle<T>::get, &SharedHandle<T>::set)
-        .def("get", &SharedHandle<T>::get).def("set", &SharedHandle<T>::set);
+        .def_prop_rw("value", &SharedHandle<T>::get, &validated_set<SharedHandle<T>, T>)
+        .def("get", &SharedHandle<T>::get).def("set", &validated_set<SharedHandle<T>, T>);
     shared_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<SharedHandle<T>&>(self).observe(cb));
     }, nb::keep_alive<0, 1>(), nb::arg("callback"));
 
     std::string bound_shared_name = std::string("BoundShared") + suffix;
     nb::class_<BoundShared<T>>(m, bound_shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def_prop_rw("value", &BoundShared<T>::get, &BoundShared<T>::set)
+        .def_prop_rw("value", &BoundShared<T>::get, &validated_set<BoundShared<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundShared<T>&>(self).observe(cb));
         }, nb::arg("callback"))
-        .def("get", &BoundShared<T>::get).def("set", &BoundShared<T>::set);
+        .def("get", &BoundShared<T>::get).def("set", &validated_set<BoundShared<T>, T>);
 
     std::string channel_name = std::string("Channel") + suffix;
     nb::class_<ChannelHandle<T>>(m, channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())

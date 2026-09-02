@@ -1084,10 +1084,10 @@ def test_annotated_auto_field_without_prism_field():
 
 def test_annotated_auto_field_validator_rejects_invalid_value():
     """Validator built from the transparent-Annotated path rejects an
-    invalid assignment end-to-end (task 7). Validation runs in the
-    descriptor's __set__, so it triggers on `m.count = -1` (attribute
-    set on the model) rather than `m.count.value = -1` (direct set on
-    the underlying handle, which bypasses the Python descriptor)."""
+    invalid assignment end-to-end (task 7). As of task 15, validation
+    runs on the handle itself (installed by the descriptor's
+    ``_allocate``), so `m.count = -1` (descriptor __set__) and
+    `m.count.value = -1` (direct handle write) both raise identically."""
     from pydantic import Field as PydanticField, ValidationError
 
     class M(Model):
@@ -1096,6 +1096,69 @@ def test_annotated_auto_field_validator_rejects_invalid_value():
     m = M()
     with pytest.raises(ValidationError):
         m.count = -1
+    with pytest.raises(ValidationError):
+        m.count.value = -1
+
+
+def _reject_negative(v):
+    if v < 0:
+        raise ValueError("must be non-negative")
+    return v
+
+
+def test_field_validator_applies_on_all_set_paths():
+    """Task 15: `m.count = v`, `m.count.value = v`, and `m.count.set(v)`
+    must all run the same validator, reject the same way, and leave the
+    value unchanged on rejection."""
+
+    class M(Model):
+        count = field(0, validator=_reject_negative)
+
+    m = M()
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        m.count = -1
+    assert m.count.value == 0
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        m.count.value = -1
+    assert m.count.value == 0
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        m.count.set(-1)
+    assert m.count.value == 0
+
+    m.count = 1
+    assert m.count.value == 1
+    m.count.value = 2
+    assert m.count.value == 2
+    m.count.set(3)
+    assert m.count.value == 3
+
+
+def test_shared_validator_applies_on_all_set_paths():
+    """Task 15: same guarantee as test_field_validator_applies_on_all_set_paths,
+    for prism.shared()."""
+
+    class M(Model):
+        level = shared(0, validator=_reject_negative)
+
+    m = M()
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        m.level = -1
+    assert m.level.value == 0
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        m.level.value = -1
+    assert m.level.value == 0
+
+    with pytest.raises(ValueError, match="must be non-negative"):
+        m.level.set(-1)
+    assert m.level.value == 0
+
+    m.level.value = 5
+    assert m.level.value == 5
 
 
 def test_annotated_bare_field_no_default_raises():
