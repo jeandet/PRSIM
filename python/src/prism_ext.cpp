@@ -33,6 +33,12 @@ static std::optional<AppContext::PostHandle> g_post_handle;
 static std::atomic<bool> g_has_handle{false};
 static std::atomic<bool> g_run_guard{false};
 static std::atomic<bool> g_app_closed{false};
+// simplify: g_app_closed is global, not per-generation. After run we clear it
+// immediately so next test's pre-run dispatch is NoApp (direct) not Closed.
+// This drops the post-close guarantee for late posts from the *old* Model
+// after the next run starts — acceptable: production runs once, pytest
+// reuses the same process sequentially. Proper per-generation tracking
+// would keep Closed for old-gen handles until next gen installs.
 
 enum class PostResult { Posted, NoApp, Closed };
 
