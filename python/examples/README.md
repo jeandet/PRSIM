@@ -29,12 +29,23 @@ PYTHONPATH=build/python python python/examples/05_lists_and_derived.py
 PYTHONPATH=build/python python python/examples/06_live_plot.py
 PYTHONPATH=build/python python python/examples/07_file_tree.py
 PYTHONPATH=build/python python python/examples/08_dashboard.py
+PYTHONPATH=build/python python python/examples/11_error_handling.py
 ```
 
-Each opens a window (`prism.run` blocks, releases GIL). Close the window to exit. Headless smoke test (no window):
+Each opens a window (`prism.run` blocks, releases GIL). Close the window to exit.
+
+`09_headless_multithread_stress.py` never opens a window — it drives
+`prism._run_headless()` directly and asserts exact counts, so it doubles as
+the pytest/CI check the `3.14t` free-threaded lane runs:
 
 ```bash
-PYTHONPATH=build/python python -c "import prism; from python.examples import 01_counter as m; prism._run_headless(m.Counter())"
+PYTHONPATH=build/python python python/examples/09_headless_multithread_stress.py
+```
+
+`11_error_handling.py` also runs without a display via `--headless`:
+
+```bash
+PYTHONPATH=build/python python python/examples/11_error_handling.py --headless
 ```
 
 ## Index
@@ -49,14 +60,17 @@ PYTHONPATH=build/python python -c "import prism; from python.examples import 01_
 | `06_live_plot.py` | `plot_field()` + `canvas(plot)`, live `add_series`/`notify`, sliders + thread jitter | `model_plot` / `showcase_plot` (`widgets/plot.hpp:282`) |
 | `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, `TreeStorage` Python object, lazy expansion, detail panel | `model_tree_browser` / `showcase_tree` (`ui/tree.hpp:182`) |
 | `08_dashboard.py` | Plot + Tree + Shared ticker in one `vstack`/`hstack` | `model_dashboard` / `model_system_monitor` |
+| `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`, no display; also the `3.14t` free-threaded CI check | — |
+| `11_error_handling.py` | `prism.on_error(handler)`, an observer + a worker that raise, `--headless` mode | — |
 
 ## Notes
 
 - `ViewBuilder` Python now exposes `widget`, `list`, `canvas` (`BoundPlot`), `tree` (`BoundTree`), `hstack`, `vstack` (`python/src/prism_ext.cpp:1242`). Plot uses the canvas escape hatch `vb.canvas(plot).depends_on(...)` (`app/view_builder.hpp:292`); Tree uses `vb.tree(ctrl)` (`app/view_builder.hpp:375`). See `python/prism/__init__.py:plot_field`/`tree_field`.
-- Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — mirrors `TreeStorage` tier 2 (`ui/tree.hpp:40`). See `07_file_tree.py:DictTreeSource` and `FsTreeSource`.
+- Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — mirrors `TreeStorage` tier 2 (`ui/tree.hpp:40`). See `tree_sources.py:DictTreeSource` and `FsTreeSource` (shared by `07_file_tree.py` and `08_dashboard.py`; the script directory is on `sys.path` when either is run directly, so `import tree_sources` just works).
 - `m.count.value` get/set uses the binding cache + posted queue (`doc/design/python-sdk.md` §2). `Shared`/`Channel` are the cross-thread latest/ordered primitives per `AGENTS.md`.
 - `prism.transaction()` buffers per-Python-thread and flushes as one closure on the logic thread.
-- `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived`/worker callback — `handler(exc)` runs on the logic thread with the original Python exception (or a `RuntimeError` wrapping a non-Python one). `prism.on_error(None)` restores the default, which prints a traceback to stderr; a raising handler itself falls back to that same default. A failing callback never stops the drain — the next event still fires.
+- `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived` callback or a `prism.worker()` fn — `handler(exc)` receives the original Python exception (or a `RuntimeError` wrapping a non-Python one). Observer/derived exceptions route through the logic thread; a `worker()` exception is instead caught and reported directly on that worker's own background thread (see `11_error_handling.py`) — write handlers that don't assume a single calling thread. `prism.on_error(None)` restores the default, which prints a traceback to stderr; a raising handler itself falls back to that same default. A failing callback never stops the drain — the next event still fires.
+- Known gotcha: `prism.derived(...)` + `prism._run_headless()` segfaults at teardown, even with zero threads involved — same family as the `view()` + `derived` headless race noted in `02_mixer.py`/`05_lists_and_derived.py`. `09_headless_multithread_stress.py` deliberately has no `derived` field for this reason.
 
 ## Threading guarantees
 

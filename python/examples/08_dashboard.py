@@ -1,15 +1,13 @@
 """08_dashboard.py — Fancy Dashboard combining Plot + Tree + Controls.
 
-Combines primitives from 06 and 07 into a single multi-pane app:
-  - Left: controls + status (sliders, checkbox)
-  - Center: live Plot (canvas) driven by controls + background thread
-  - Right: Tree browser (file structure) with detail panel
+Demonstrates:
+  - Plot + Tree + slider/checkbox controls composed in one Model
+  - prism.worker(interval=...) driving an auto-sweep from a background thread
+  - Shared<T> ticker observed to trigger a plot rebuild
 
-Layout: hstack([vstack(controls), canvas(plot), tree], with handles implicitly via Tree's internal hstack).
-Simplified: we place plot and tree as siblings in a hstack for a two-panel effect;
-PRISM's Tree internally already is hstack(list + handle + detail).
-
-This mirrors examples/model_dashboard and model_system_monitor's multi-widget approach.
+Layout is plot then tree stacked vertically for simplicity — Tree's own
+internal hstack already handles its list/detail split. This mirrors
+examples/model_dashboard and model_system_monitor's multi-widget approach.
 
 Run:
   PYTHONPATH=build/python python python/examples/08_dashboard.py
@@ -18,17 +16,7 @@ Run:
 import math
 
 import prism
-import importlib.util
-import pathlib as _pathlib
-
-# 07_file_tree has leading digit, so import via importlib
-_spec = importlib.util.spec_from_file_location(
-    "_07", _pathlib.Path(__file__).with_name("07_file_tree.py")
-)
-_07 = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_07)  # type: ignore
-DictTreeSource = _07.DictTreeSource
-TREE_DATA = _07.TREE_DATA
+from tree_sources import TREE_DATA, DictTreeSource
 
 
 class Dashboard(prism.Model):

@@ -2,6 +2,7 @@
 
 import gc
 import inspect
+import sys
 import threading
 import weakref
 from typing import Annotated
@@ -1291,3 +1292,30 @@ def test_worker_context_manager_starts_and_stops():
         assert counts["n"] > 0
 
     assert not w.is_alive
+
+
+def _load_example(name: str):
+    """Import an examples/*.py module by path (digit-prefixed, not importable by name)."""
+    import importlib.util
+    import pathlib
+
+    path = pathlib.Path(__file__).resolve().parent.parent / "examples" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def test_headless_multithread_stress_example_runs_and_converges():
+    """CI's 3.14t lane runs this: 8-thread ThreadPoolExecutor storm through a
+    headless app, with exact-count assertions inside main() itself."""
+    mod = _load_example("09_headless_multithread_stress")
+    mod.main()  # asserts channel count == 8000 and counter == 800 internally
+
+
+def test_headless_multithread_stress_example_gil_disabled_on_free_threaded_build():
+    import sysconfig
+
+    if not sysconfig.get_config_var("Py_GIL_DISABLED"):
+        pytest.skip("not a free-threaded (3.14t) build")
+    assert sys._is_gil_enabled() is False
