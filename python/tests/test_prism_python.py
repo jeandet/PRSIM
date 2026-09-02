@@ -93,6 +93,69 @@ def test_observe_callback_keyword_uniform():
     assert inserted == [(0, 7)]
 
 
+def test_observe_callback_keyword_shared_and_channel():
+    # Shared/Channel observe only fires on drain (app-loop or explicit); outside a running
+    # app there's nothing to drive that, same as test_shared_basic/test_channel_send below.
+    # This test only exercises that callback= is accepted as a keyword, not that it fires.
+    from prism._prism_ext import SharedInt as RawSharedInt, ChannelInt as RawChannelInt
+
+    s = RawSharedInt(0)
+    fired = []
+    conn = s.observe(callback=lambda v: fired.append(v))
+    s.value = 1
+    assert isinstance(fired, list)
+    conn.disconnect()
+
+    c = RawChannelInt()
+    received = []
+    conn2 = c.observe(callback=lambda v: received.append(v))
+    c.send(7)
+    assert isinstance(received, list)
+    conn2.disconnect()
+
+
+def test_observed_handles_tracks_standalone_handle_for_atexit():
+    """Standalone handles form a real reference cycle (handle -> keepalive list ->
+    Connection -> nanobind keep_alive<0,1>, invisible to the cyclic GC -> handle) that
+    Python's own GC can never collect. _observed_handles is how atexit finds and breaks
+    it before interpreter shutdown, instead of leaking forever.
+    """
+    from prism._prism_ext import FieldInt as RawFieldInt
+
+    h = RawFieldInt(1)
+    fired = []
+    h.observe(lambda v: fired.append(v))
+    assert h in prism._prism_ext._observed_handles
+
+    prism._atexit_clear()
+
+    assert h.__dict__["_prism_keepalive"] == []
+    h.value = 2
+    assert fired == []
+    assert h not in prism._prism_ext._observed_handles
+
+
+def test_observed_handles_model_owned_handle_still_works():
+    """A Model-owned handle is also registered in _observed_handles (harmless — Bound*
+    handles get visited by both _all_models and _observed_handles at atexit, and
+    _disconnect_keepalive is idempotent), but observe()/disconnect() behave the same
+    as ever for ordinary Model usage.
+    """
+
+    class M(Model):
+        count = field(0)
+
+    m = M()
+    seen = []
+    conn = m.count.observe(lambda v: seen.append(v))
+    assert m.count in prism._prism_ext._observed_handles
+    m.count.value = 5
+    assert seen == [5]
+    conn.disconnect()
+    m.count.value = 6
+    assert seen == [5]
+
+
 def test_observe_values():
     class M(Model):
         count = field(0)

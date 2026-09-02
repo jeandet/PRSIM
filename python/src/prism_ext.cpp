@@ -1158,16 +1158,40 @@ struct PyModel {
     }
 };
 
+// simplify: leaked by design. A weakref.WeakSet tracking every observed handle needs one
+// long-lived Python object shared across all observe() calls. A `static nb::object` local
+// would run its Py_DECREF destructor during C++ static teardown, which happens after
+// Py_Finalize — decref'ing into an already-torn-down interpreter is UB. A raw PyObject*
+// that is created once and never released sidesteps that: nothing ever runs its destructor.
+// python/prism/__init__.py's _atexit_clear() empties this set (while the interpreter is
+// still fully alive) before shutdown, so the only thing actually leaked is one now-empty
+// WeakSet container. Upgrade path: a Py_AtExit callback if a hard release guarantee is
+// ever needed instead of relying on atexit ordering.
+static PyObject* g_observed_handles = nullptr;
+
+static nb::handle observed_handles() {
+    if (!g_observed_handles) {
+        nb::object ws = nb::module_::import_("weakref").attr("WeakSet")();
+        g_observed_handles = ws.release().ptr();
+    }
+    return nb::handle(g_observed_handles);
+}
+
 // Appends the Connection returned by an observe*() call to self.__dict__["_prism_keepalive"]
 // (creating the list on first use) so a fire-and-forget `handle.observe(cb)` keeps firing —
-// nothing else holds a reference to the Connection once the caller drops it. Wraps the
-// Connection into a Python object exactly once and returns that same object.
+// nothing else holds a reference to the Connection once the caller drops it. Also registers
+// self in the module-level _observed_handles WeakSet so python/prism/__init__.py's atexit
+// cleanup can find and disconnect standalone (non-Model) handles that would otherwise leak:
+// handle -> keepalive list -> Connection -> (nanobind keep_alive<0,1>, invisible to the
+// cyclic GC) -> handle is a real reference cycle Python's GC can never break on its own.
+// Wraps the Connection into a Python object exactly once and returns that same object.
 static nb::object keep_connection(nb::object self, Connection conn) {
     nb::object result = nb::cast(std::move(conn));
     nb::dict d = self.attr("__dict__");
     if (!d.contains("_prism_keepalive")) d["_prism_keepalive"] = nb::list();
     nb::list keepalive = d["_prism_keepalive"];
     keepalive.append(result);
+    observed_handles().attr("add")(self);
     return result;
 }
 
@@ -1271,6 +1295,7 @@ void bind_list(nb::module_& m, const char* suffix) {
 
 NB_MODULE(_prism_ext, m) {
     m.def("is_logic_thread", [](){ return detail_is_logic_thread; });
+    m.attr("_observed_handles") = observed_handles();
 
     nb::class_<Connection>(m, "Connection", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("disconnect", &Connection::disconnect)
