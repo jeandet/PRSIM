@@ -1,6 +1,7 @@
 """Python bindings pytest suite — P2/P3 gates from doc/design/python-sdk.md §6."""
 
 import gc
+import inspect
 import threading
 import weakref
 from typing import Annotated
@@ -41,6 +42,55 @@ def test_standalone_field_handle():
     conn.disconnect()
     h.value = 30
     assert fired == [20]
+
+
+def test_prism_ext_observe_is_not_python_monkeypatched():
+    """observe() must be the C++ binding itself, not prism.__init__'s _wrap() patch.
+
+    Python always runs a package's __init__.py before any of its submodules, so
+    `from prism._prism_ext import FieldInt` cannot dodge prism/__init__.py — but it can
+    still tell a genuine nanobind method apart from a Python function pasted over it by
+    the (now-removed) monkey-patch: the patch replaced the class attribute with a plain
+    `def _wrap(self, *args, **kwargs)` closure, which inspect.isfunction() would catch.
+    """
+    from prism._prism_ext import FieldInt as RawFieldInt
+
+    assert not inspect.isfunction(RawFieldInt.observe)
+
+
+def test_prism_ext_bypass_observe_keepalive():
+    """FieldInt.observe(cb), called fire-and-forget with no local reference to the
+    returned Connection, must keep firing — the keepalive lives in handle.__dict__
+    (`_prism_keepalive`), written by the C++ observe() binding itself.
+    """
+    from prism._prism_ext import FieldInt as RawFieldInt
+
+    h = RawFieldInt(1)
+    fired = []
+    h.observe(lambda v: fired.append(v))  # fire-and-forget: no local reference kept
+    assert len(h.__dict__["_prism_keepalive"]) == 1
+    h.value = 2
+    assert fired == [2]
+
+    h.__dict__["_prism_keepalive"][0].disconnect()
+    h.value = 3
+    assert fired == [2]
+
+
+def test_observe_callback_keyword_uniform():
+    from prism._prism_ext import FieldInt as RawFieldInt, ListInt as RawListInt
+
+    h = RawFieldInt(0)
+    fired = []
+    h.observe(callback=lambda v: fired.append(v))
+    h.value = 1
+    assert fired == [1]
+
+    lst = RawListInt()
+    inserted = []
+    lst.observe_insert(callback=lambda idx, v: inserted.append((idx, v)))
+    lst.push(7)
+    assert inserted == [(0, 7)]
 
 
 def test_observe_values():

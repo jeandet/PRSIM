@@ -1158,6 +1158,19 @@ struct PyModel {
     }
 };
 
+// Appends the Connection returned by an observe*() call to self.__dict__["_prism_keepalive"]
+// (creating the list on first use) so a fire-and-forget `handle.observe(cb)` keeps firing —
+// nothing else holds a reference to the Connection once the caller drops it. Wraps the
+// Connection into a Python object exactly once and returns that same object.
+static nb::object keep_connection(nb::object self, Connection conn) {
+    nb::object result = nb::cast(std::move(conn));
+    nb::dict d = self.attr("__dict__");
+    if (!d.contains("_prism_keepalive")) d["_prism_keepalive"] = nb::list();
+    nb::list keepalive = d["_prism_keepalive"];
+    keepalive.append(result);
+    return result;
+}
+
 // One templated registration per scalar handle family (Field/Bound/Shared/BoundShared/
 // Channel/BoundChannel/BoundDerived), instantiated once per T from NB_MODULE below.
 // Naming is not uniformly "<Family>" + suffix: BoundField<T> is historically named
@@ -1170,16 +1183,16 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def_prop_rw("value", &FieldHandle<T>::get, &FieldHandle<T>::set)
         .def("get", &FieldHandle<T>::get)
         .def("set", &FieldHandle<T>::set);
-    if constexpr (std::is_same_v<T, int>) {
-        field_cls.def("observe", &FieldHandle<T>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"));
-    } else {
-        field_cls.def("observe", &FieldHandle<T>::observe, nb::keep_alive<0, 1>());
-    }
+    field_cls.def("observe", [](nb::object self, nb::callable cb) {
+        return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb));
+    }, nb::keep_alive<0, 1>(), nb::arg("callback"));
 
     std::string bound_field_name = std::string("Bound") + suffix;
     nb::class_<BoundField<T>>(m, bound_field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<T>::get, &BoundField<T>::set)
-        .def("observe", &BoundField<T>::observe)
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundField<T>&>(self).observe(cb));
+        }, nb::arg("callback"))
         .def("get", &BoundField<T>::get)
         .def("set", &BoundField<T>::set);
 
@@ -1188,30 +1201,38 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def(nb::init<T>(), nb::arg("value") = T{})
         .def_prop_rw("value", &SharedHandle<T>::get, &SharedHandle<T>::set)
         .def("get", &SharedHandle<T>::get).def("set", &SharedHandle<T>::set);
-    if constexpr (std::is_same_v<T, int>) {
-        shared_cls.def("observe", &SharedHandle<T>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"));
-    } else {
-        shared_cls.def("observe", &SharedHandle<T>::observe, nb::keep_alive<0, 1>());
-    }
+    shared_cls.def("observe", [](nb::object self, nb::callable cb) {
+        return keep_connection(self, nb::cast<SharedHandle<T>&>(self).observe(cb));
+    }, nb::keep_alive<0, 1>(), nb::arg("callback"));
 
     std::string bound_shared_name = std::string("BoundShared") + suffix;
     nb::class_<BoundShared<T>>(m, bound_shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<T>::get, &BoundShared<T>::set)
-        .def("observe", &BoundShared<T>::observe)
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundShared<T>&>(self).observe(cb));
+        }, nb::arg("callback"))
         .def("get", &BoundShared<T>::get).def("set", &BoundShared<T>::set);
 
     std::string channel_name = std::string("Channel") + suffix;
     nb::class_<ChannelHandle<T>>(m, channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def(nb::init<>()).def("send", &ChannelHandle<T>::send).def("observe", &ChannelHandle<T>::observe, nb::keep_alive<0, 1>());
+        .def(nb::init<>()).def("send", &ChannelHandle<T>::send)
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<ChannelHandle<T>&>(self).observe(cb));
+        }, nb::keep_alive<0, 1>(), nb::arg("callback"));
 
     std::string bound_channel_name = std::string("BoundChannel") + suffix;
     nb::class_<BoundChannel<T>>(m, bound_channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def("send", &BoundChannel<T>::send).def("observe", &BoundChannel<T>::observe);
+        .def("send", &BoundChannel<T>::send)
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundChannel<T>&>(self).observe(cb));
+        }, nb::arg("callback"));
 
     std::string bound_derived_name = std::string("BoundDerived") + suffix;
     nb::class_<BoundDerived<T>>(m, bound_derived_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<T>::get).def("get", &BoundDerived<T>::get)
-        .def("observe", &BoundDerived<T>::observe);
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundDerived<T>&>(self).observe(cb));
+        }, nb::arg("callback"));
 }
 
 // List<bool>/BoundList<bool> are deliberately never instantiated — vector<bool> proxy is
@@ -1223,13 +1244,29 @@ void bind_list(nb::module_& m, const char* suffix) {
         .def(nb::init<>()).def("push", &ListHandle<T>::push).def("erase", &ListHandle<T>::erase)
         .def("set", &ListHandle<T>::set).def("replace_all", &ListHandle<T>::replace_all)
         .def("size", &ListHandle<T>::size).def("get", &ListHandle<T>::get).def("to_list", &ListHandle<T>::to_list)
-        .def("observe_insert", &ListHandle<T>::observe_insert, nb::keep_alive<0, 1>()).def("observe_remove", &ListHandle<T>::observe_remove, nb::keep_alive<0, 1>()).def("observe_update", &ListHandle<T>::observe_update, nb::keep_alive<0, 1>());
+        .def("observe_insert", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_insert(cb));
+        }, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        .def("observe_remove", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_remove(cb));
+        }, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        .def("observe_update", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_update(cb));
+        }, nb::keep_alive<0, 1>(), nb::arg("callback"));
 
     std::string bound_list_name = std::string("BoundList") + suffix;
     nb::class_<BoundList<T>>(m, bound_list_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("push", &BoundList<T>::push).def("erase", &BoundList<T>::erase).def("set", &BoundList<T>::set).def("replace_all", &BoundList<T>::replace_all)
         .def("size", &BoundList<T>::size).def("get", &BoundList<T>::get).def("to_list", &BoundList<T>::to_list)
-        .def("observe_insert", &BoundList<T>::observe_insert).def("observe_remove", &BoundList<T>::observe_remove).def("observe_update", &BoundList<T>::observe_update);
+        .def("observe_insert", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_insert(cb));
+        }, nb::arg("callback"))
+        .def("observe_remove", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_remove(cb));
+        }, nb::arg("callback"))
+        .def("observe_update", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_update(cb));
+        }, nb::arg("callback"));
 }
 
 NB_MODULE(_prism_ext, m) {
