@@ -1,3 +1,4 @@
+from collections.abc import Callable as _Callable
 from typing import Annotated, Protocol, get_args, get_origin, runtime_checkable
 
 from ._prism_ext import (
@@ -59,9 +60,14 @@ class TreeSource(Protocol):
     """Pythonic structural type for ``prism.tree_field(source)``.
 
     C++ calls these with the GIL held (see ``python/src/prism_ext.cpp:365``
-    ``PythonTreeSource``). Only the six methods below are required;
-    ``attributes`` / ``icon`` are optional — ``hasattr`` is checked on the
-    C++ side and missing ones fall back to defaults.
+    ``PythonTreeSource``). All six methods below are needed for a useful
+    tree, but C++ will not raise if any are missing — each is
+    ``hasattr``-gated on the C++ side with a silent fallback
+    (``root_count`` → 0, ``label`` → ``str(id)``, ``has_children`` →
+    false, etc.; see ``prism_ext.cpp:373-414``). A source missing
+    ``child_at`` etc. will simply render as empty/leaf rather than error,
+    so consider these *behaviourally* required and ``attributes``/``icon``
+    the truly optional ones.
 
     Using a ``Protocol`` (not an ABC) keeps it duck-typed and avoids
     inheritance requirements, while giving static checkers / IDEs a real
@@ -91,13 +97,20 @@ class TreeSource(Protocol):
 class TableSource(Protocol):
     """Pythonic structural type for future ``prism.table_field(source)``.
 
-    Mirrors C++ ``ColumnStorage`` (``include/prism/ui/table.hpp:35``)
-    and ``TableSource`` (``table.hpp:27``). Not yet wired to a Python
-    binding — added now so table adapters can be written against a typed
-    protocol and work unchanged once ``table_field`` lands.
+    The typed form mirrors the C++ ``TableSource`` struct
+    (``include/prism/ui/table.hpp:27``) — the runtime container whose
+    ``header`` member is optional (consumer checks
+    ``source.header ? source.header(col) : \"\"``, see ``table.hpp:272``).
+    The ``ColumnStorage`` *concept* at ``table.hpp:35`` conversely requires
+    ``header()`` unconditionally at compile time; the distinction matters
+    only once a Python binding exists.
 
-    Only the three methods below are required; ``header`` is optional
-    (C++ falls back to ``\"\"`` / auto-generated headers)::
+    Not yet wired to a Python binding — added now so table adapters can be
+    written against a typed protocol and work unchanged once
+    ``table_field`` lands. The three methods below will be required;
+    ``header`` will be optional (a future ``PythonTableSource`` binding is
+    intended to mirror ``PythonTreeSource`` via ``hasattr`` and fall back
+    to ``\"\"`` when missing)::
 
         class MyTable(TableSource):
             def column_count(self) -> int: ...
@@ -126,6 +139,8 @@ __all__ = [
     "TreeSource",
     "TreeNodeId",
     "TableSource",
+    "is_tree_source",
+    "is_table_source",
     "validator_for",
     "FieldInt",
     "FieldFloat",
@@ -787,6 +802,34 @@ class _PlotDescriptor:
         return self._allocate(instance)
 
 
+_TREE_METHODS = (
+    "root_count",
+    "root_at",
+    "child_count",
+    "child_at",
+    "label",
+    "has_children",
+)
+
+
+def _tree_missing_methods(obj: object) -> list[str]:
+    return [m for m in _TREE_METHODS if not hasattr(obj, m)]
+
+
+def is_tree_source(obj: object) -> bool:
+    """Return ``True`` if *obj* conforms to :class:`TreeSource` (``isinstance`` check).
+
+    Exists to make ``@runtime_checkable`` actually exercised — and as a
+    public helper for user code / tests.
+    """
+    return isinstance(obj, TreeSource)  # type: ignore[arg-type]
+
+
+def is_table_source(obj: object) -> bool:
+    """Return ``True`` if *obj* conforms to :class:`TableSource`."""
+    return isinstance(obj, TableSource)  # type: ignore[arg-type]
+
+
 class _TreeDescriptor:
     def __init__(self, source=None):
         # source can be dict {id: {label, children:[...], attrs:{}}} or object with methods
@@ -808,6 +851,28 @@ class _TreeDescriptor:
         )
         if src is None:
             src = {}
+        # Exercise @runtime_checkable: warn when a non-dict source looks
+        # intentionally tree-like but is missing methods — catches typos
+        # (e.g. ``childs_at``) that C++ would otherwise silently fallback to
+        # empty/leaf (prism_ext.cpp:373-414).
+        if not isinstance(src, dict):
+            try:
+                if not is_tree_source(src):
+                    missing = _tree_missing_methods(src)
+                    # only warn when partially implements (has some tree methods but not all)
+                    has_some = len(missing) < len(_TREE_METHODS) and len(missing) > 0
+                    has_any = any(hasattr(src, m) for m in _TREE_METHODS)
+                    if has_some or (has_any and missing):
+                        import warnings
+
+                        warnings.warn(
+                            f"tree source {type(src).__name__!r} missing TreeSource methods {missing}; "
+                            "C++ will fallback to defaults (empty/leaf) — check for typos",
+                            UserWarning,
+                            stacklevel=4,
+                        )
+            except Exception:
+                pass
         h = instance._add_tree_internal(src)  # type: ignore[attr-defined]
         cache[self.name] = h
         return h
@@ -823,16 +888,23 @@ def plot_field():
     return _PlotDescriptor()
 
 
-def tree_field(source: "TreeSource | dict | None" = None):  # type: ignore[name-defined]
+TreeSourceLike = TreeSource | dict  # type: ignore[valid-type]
+TreeFieldSource = TreeSourceLike | _Callable[[], TreeSourceLike] | None  # type: ignore[valid-type]
+
+
+def tree_field(source: TreeFieldSource = None):  # type: ignore[assignment]
     """Descriptor for TreeController — ``tree = prism.tree_field(source)``.
 
     ``source`` may be a ``TreeSource`` (``Protocol`` — duck-typed), a plain
-    dict ``{id: {label, children:[...], attrs:{}}}``, or ``None``. The
+    dict ``{id: {label, children:[...], attrs:{}}}``, a zero-arg callable
+    returning either (``lambda: make_source()`` / factory), or ``None``
+    (empty tree). The factory form is evaluated lazily at
+    ``_TreeDescriptor._allocate`` (``__init__.py:804-808``). The
     ``TreeSource`` protocol lives in ``prism.TreeSource`` — inheriting is
     optional, structural matching is enough, but inheriting gives IDE
     support.
     """
-    return _TreeDescriptor(source)
+    return _TreeDescriptor(source)  # type: ignore[arg-type]
 
 
 def validator_for(type_hint):

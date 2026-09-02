@@ -601,3 +601,197 @@ def test_gc_observe_torture():
     assert not errors
     for c in conns:
         c.disconnect()
+
+
+def test_tree_source_protocol_isinstance():
+    """TreeSource Protocol @runtime_checkable exercised via is_tree_source helper."""
+    import warnings
+
+    from prism import TreeSource, is_tree_source
+
+    class Full(TreeSource):
+        def root_count(self):
+            return 1
+
+        def root_at(self, i):
+            return 0
+
+        def child_count(self, nid):
+            return 0
+
+        def child_at(self, nid, i):
+            return 0
+
+        def label(self, nid):
+            return "x"
+
+        def has_children(self, nid):
+            return False
+
+    # duck-typed without inheriting also passes
+    class Duck:
+        def root_count(self):
+            return 1
+
+        def root_at(self, i):
+            return 0
+
+        def child_count(self, nid):
+            return 0
+
+        def child_at(self, nid, i):
+            return 0
+
+        def label(self, nid):
+            return "x"
+
+        def has_children(self, nid):
+            return False
+
+    assert is_tree_source(Full())
+    assert is_tree_source(Duck())
+    assert isinstance(Full(), TreeSource)
+    assert isinstance(Duck(), TreeSource)
+
+    class Partial:
+        def root_count(self):
+            return 1
+
+        def label(self, nid):
+            return "x"
+
+    assert not is_tree_source(Partial())
+    assert not isinstance(Partial(), TreeSource)
+
+    # optional methods not required for isinstance
+    class FullWithOptional(Full):
+        def attributes(self, nid):
+            return {}
+
+        def icon(self, nid):
+            return None
+
+    assert is_tree_source(FullWithOptional())
+
+
+def test_table_source_protocol_isinstance():
+    """TableSource Protocol @runtime_checkable."""
+    from prism import TableSource, is_table_source
+
+    class Full(TableSource):
+        def column_count(self):
+            return 2
+
+        def row_count(self):
+            return 3
+
+        def cell_text(self, r, c):
+            return "x"
+
+    class Duck:
+        def column_count(self):
+            return 1
+
+        def row_count(self):
+            return 1
+
+        def cell_text(self, r, c):
+            return "y"
+
+    class Partial:
+        def column_count(self):
+            return 1
+
+    assert is_table_source(Full())
+    assert is_table_source(Duck())
+    assert isinstance(Full(), TableSource)
+    assert not is_table_source(Partial())
+    # header optional — full without header still counts
+    assert is_table_source(Full())
+
+    class WithHeader(Full):
+        def header(self, c):
+            return "h"
+
+    assert is_table_source(WithHeader())
+
+
+def test_tree_field_dict_callable_and_none():
+    """tree_field supports dict, TreeSource, callable factory, and None (empty)."""
+    import warnings
+
+    from prism import TreeSource, tree_field
+
+    class Src(TreeSource):
+        def root_count(self):
+            return 1
+
+        def root_at(self, i):
+            return 42
+
+        def child_count(self, nid):
+            return 0
+
+        def child_at(self, nid, i):
+            return 0
+
+        def label(self, nid):
+            return f"n{nid}"
+
+        def has_children(self, nid):
+            return False
+
+    # dict source
+    class M1(Model):
+        t = tree_field({"1": {"label": "root", "children": []}})
+
+    m1 = M1()
+    assert m1.t.rows() is not None  # smoke: allocation succeeded
+
+    # TreeSource direct
+    class M2(Model):
+        t = tree_field(Src())
+
+    m2 = M2()
+    assert m2.t.rows() is not None
+
+    # callable factory
+    class M3(Model):
+        t = tree_field(lambda: Src())
+
+    m3 = M3()
+    assert m3.t.rows() is not None
+
+    # callable returning dict
+    class M4(Model):
+        t = tree_field(lambda: {"1": {"label": "a"}})
+
+    m4 = M4()
+    assert m4.t.rows() is not None
+
+    # None -> empty
+    class M5(Model):
+        t = tree_field(None)
+
+    m5 = M5()
+    assert m5.t.rows() == [] or isinstance(m5.t.rows(), list)
+
+    # partial source warns (C++ would fallback silently) — ensure warning path exercised
+    class PartialSrc:
+        def root_count(self):
+            return 1
+
+        def label(self, nid):
+            return "x"
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+
+        class M6(Model):
+            t = tree_field(PartialSrc())
+
+        m6 = M6()
+        _ = m6.t.rows()
+        assert any("missing TreeSource methods" in str(x.message) for x in w), (
+            f"expected warning, got {w}"
+        )
