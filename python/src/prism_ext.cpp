@@ -290,6 +290,11 @@ struct SlotList : SlotBase {
     void build(ViewBuilder& vb) override { vb.list(list); }
 };
 
+// Forward declarations for dispatch helpers used by Plot/Tree handles
+inline void list_op_dispatch(std::function<void()> fn);
+template <typename T> T dispatch_sync_read(std::function<T()> reader);
+template <typename T> void field_set_dispatch(Field<T>* field, T v);
+
 // Plot support — Slot only (Bound* defined after list_op_dispatch)
 struct SlotPlot : SlotBase {
     prism::plot::PlotModel plot;
@@ -307,23 +312,27 @@ struct PlotHandle {
         vx.reserve(nb::len(xs)); vy.reserve(nb::len(ys));
         for (auto h : xs) vx.push_back(nb::cast<double>(h));
         for (auto h : ys) vy.push_back(nb::cast<double>(h));
-        prism::plot::XYData data{std::move(vx), std::move(vy)};
-        prism::plot::SeriesStyle style; style.thickness=thickness; style.fill=fill;
-        if (!color_str.empty() && color_str.size()==7 && color_str[0]=='#') {
-            int r = std::stoi(color_str.substr(1,2), nullptr, 16);
-            int g = std::stoi(color_str.substr(3,2), nullptr, 16);
-            int b = std::stoi(color_str.substr(5,2), nullptr, 16);
-            style.color = Color::rgba((uint8_t)r,(uint8_t)g,(uint8_t)b);
-        }
-        plot.add_series(std::move(data), style);
+        auto* p = &plot;
+        auto fn = [p, vx = std::move(vx), vy = std::move(vy), color_str, thickness, fill]() mutable {
+            prism::plot::XYData data{std::move(vx), std::move(vy)};
+            prism::plot::SeriesStyle style; style.thickness=thickness; style.fill=fill;
+            if (!color_str.empty() && color_str.size()==7 && color_str[0]=='#') {
+                int r = std::stoi(color_str.substr(1,2), nullptr, 16);
+                int g = std::stoi(color_str.substr(3,2), nullptr, 16);
+                int b = std::stoi(color_str.substr(5,2), nullptr, 16);
+                style.color = Color::rgba((uint8_t)r,(uint8_t)g,(uint8_t)b);
+            }
+            p->add_series(std::move(data), style);
+        };
+        list_op_dispatch(std::move(fn));
     }
-    void clear_series(){ plot.clear_series(); }
-    void notify(){ plot.notify(); }
-    void set_x_label(std::string s){ plot.x_label.set(std::move(s)); }
-    void set_y_label(std::string s){ plot.y_label.set(std::move(s)); }
-    std::string get_x_label() const { return plot.x_label.get(); }
-    std::string get_y_label() const { return plot.y_label.get(); }
-    void reset_view(){ plot.reset_view(); }
+    void clear_series(){ auto* p=&plot; list_op_dispatch([p](){ p->clear_series(); }); }
+    void notify(){ auto* p=&plot; list_op_dispatch([p](){ p->notify(); }); }
+    void set_x_label(std::string s){ field_set_dispatch(&plot.x_label, std::move(s)); }
+    void set_y_label(std::string s){ field_set_dispatch(&plot.y_label, std::move(s)); }
+    std::string get_x_label() const { auto* p=&plot; return dispatch_sync_read<std::string>([p](){ return p->x_label.get(); }); }
+    std::string get_y_label() const { auto* p=&plot; return dispatch_sync_read<std::string>([p](){ return p->y_label.get(); }); }
+    void reset_view(){ auto* p=&plot; list_op_dispatch([p](){ p->reset_view(); }); }
 };
 
 // Tree support — Python-backed TreeSource
@@ -412,22 +421,25 @@ struct SlotTree : SlotBase {
 struct BoundTree {
     std::shared_ptr<SlotBase> owner;
     prism::ui::TreeController* ctrl = nullptr;
-    void refresh(){ if(ctrl) ctrl->refresh(); }
+    void refresh(){ if(ctrl){ auto* p=ctrl; list_op_dispatch([p](){ p->refresh(); }); } }
     nb::list rows(){
         if(!ctrl) return nb::list();
-        nb::gil_scoped_acquire g;
-        nb::list out;
-        for(size_t i=0;i<ctrl->rows.size();++i){
-            auto r = ctrl->rows[i];
-            nb::dict d;
-            d["label"] = r.label;
-            d["depth"] = r.depth;
-            d["has_children"] = r.has_children;
-            d["expanded"] = r.expanded;
-            d["selected"] = r.selected;
-            out.append(d);
-        }
-        return out;
+        auto* p = ctrl;
+        return dispatch_sync_read<nb::list>([p](){
+            nb::gil_scoped_acquire g;
+            nb::list out;
+            for(size_t i=0;i<p->rows.size();++i){
+                auto r = p->rows[i];
+                nb::dict d;
+                d["label"] = r.label;
+                d["depth"] = r.depth;
+                d["has_children"] = r.has_children;
+                d["expanded"] = r.expanded;
+                d["selected"] = r.selected;
+                out.append(d);
+            }
+            return out;
+        });
     }
 };
 struct TreeHandle {
@@ -823,9 +835,6 @@ inline void py_canvas_dispatch(ViewBuilder& vb, nb::object h) {
     } else throw std::runtime_error("ViewBuilder.canvas: unsupported handle type (expected BoundPlot)");
 }
 inline void py_tree_dispatch(ViewBuilder& vb, nb::object h) {
-    if (nb::isinstance<nb::object>(h)) {
-        // placeholder to avoid unused warning if needed
-    }
     if (nb::isinstance<BoundTree>(h)) {
         auto& b = nb::cast<BoundTree&>(h);
         if (b.ctrl) vb.tree(*b.ctrl);
@@ -1199,17 +1208,20 @@ NB_MODULE(_prism_ext, m) {
         .def("rows", &BoundTree::rows);
     nb::class_<TreeHandle>(m, "TreeHandle")
         .def(nb::init<nb::object>(), nb::arg("source"))
-        .def("refresh", [](TreeHandle& h){ h.ctrl->refresh(); })
+        .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch([p](){ p->refresh(); }); })
         .def("rows", [](TreeHandle& h){
-            nb::gil_scoped_acquire g;
-            nb::list out;
-            for(size_t i=0;i<h.ctrl->rows.size();++i){
-                auto r=h.ctrl->rows[i];
-                nb::dict d;
-                d["label"]=r.label; d["depth"]=r.depth; d["has_children"]=r.has_children; d["expanded"]=r.expanded; d["selected"]=r.selected;
-                out.append(d);
-            }
-            return out;
+            auto* p = h.ctrl.get();
+            return dispatch_sync_read<nb::list>([p](){
+                nb::gil_scoped_acquire g;
+                nb::list out;
+                for(size_t i=0;i<p->rows.size();++i){
+                    auto r=p->rows[i];
+                    nb::dict d;
+                    d["label"]=r.label; d["depth"]=r.depth; d["has_children"]=r.has_children; d["expanded"]=r.expanded; d["selected"]=r.selected;
+                    out.append(d);
+                }
+                return out;
+            });
          });
 
     nb::class_<ViewBuilder>(m, "ViewBuilder")

@@ -134,6 +134,7 @@ def test_transaction_abort():
 
 def test_multithread_field_storm():
     """N-thread concurrent sets — TSan gate in C++, functional gate here."""
+
     class M(Model):
         x = field(0)
 
@@ -181,6 +182,7 @@ def test_shared_multithread_storm():
 
 def test_connection_gc_from_workers():
     """Connection GC from any thread (3.14t finalizers) — must not UAF."""
+
     class M(Model):
         count = field(0)
 
@@ -210,6 +212,7 @@ def test_connection_gc_from_workers():
 
 def test_bound_field_survives_model_gc():
     """BoundField keeps Slot alive after Model GC — del m; h.value ok."""
+
     class M(Model):
         count = field(10)
 
@@ -264,6 +267,7 @@ def test_shared_channel_survive_gc():
 
 def test_transaction_multithread():
     """Concurrent transactions from different threads — per-thread buffers."""
+
     class M(Model):
         a = field(0)
 
@@ -409,3 +413,105 @@ def test_nested_transaction_abort_outer_preserved():
     # Outer commits: a=10, b=30 should be visible; inner's b=20 discarded
     assert m.a.value == 10
     assert m.b.value == 30
+
+
+def test_plot_and_tree_thread_dispatch():
+    """PlotHandle/TreeHandle/BoundTree must not race when called off logic thread (handover MEDIUM)."""
+    import time
+
+    # Standalone PlotHandle — off-thread add_series/clear/notify via list_op_dispatch
+    ph = prism.PlotHandle()
+    errors = []
+
+    def plot_worker():
+        try:
+            for i in range(20):
+                ph.add_series([0.0, 1.0], [float(i), float(i + 1)])
+            ph.clear_series()
+            ph.add_series([0.0], [1.0])
+            ph.notify()
+            ph.reset_view()
+            ph.x_label = "X"
+            assert ph.x_label == "X"
+        except Exception as e:
+            errors.append(e)
+
+    # BoundPlot via Model — same dispatch path
+    class PlotModel(Model):
+        pass
+
+    pm = PlotModel()
+    bp = pm._add_plot_internal()  # BoundPlot
+
+    def bound_plot_worker():
+        try:
+            for i in range(20):
+                bp.add_series([0.0, 1.0], [float(i), float(i + 1)])
+            bp.clear_series()
+        except Exception as e:
+            errors.append(e)
+
+    # Tree — Python source
+    class Src:
+        def root_count(self):
+            return 1
+
+        def root_at(self, i):
+            return 0
+
+        def child_count(self, nid):
+            return 0
+
+        def child_at(self, nid, i):
+            return 0
+
+        def label(self, nid):
+            return "root"
+
+        def has_children(self, nid):
+            return False
+
+    th = prism.TreeHandle(Src())
+
+    def tree_worker():
+        try:
+            for _ in range(20):
+                th.refresh()
+                _ = th.rows()
+        except Exception as e:
+            errors.append(e)
+
+    # Run with headless app so dispatch has a live queue to test the posted path
+    class Dummy(Model):
+        x = field(0)
+
+    dm = Dummy()
+    t = threading.Thread(target=lambda: prism._run_headless(dm, delay_ms=300))
+    t.start()
+    for _ in range(100):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
+
+    threads = [
+        threading.Thread(target=plot_worker),
+        threading.Thread(target=bound_plot_worker),
+        threading.Thread(target=tree_worker),
+    ]
+    for th_ in threads:
+        th_.start()
+    for th_ in threads:
+        th_.join()
+    t.join()
+    assert not errors, f"errors: {errors}"
+
+    # Also direct BoundTree via Model
+    class TreeModel(Model):
+        pass
+
+    tm = TreeModel()
+    bt = tm._add_tree_internal(Src())
+    # Pre-run direct calls still work (NoApp fallback)
+    bt.refresh()
+    rows = bt.rows()
+    assert isinstance(rows, list)
