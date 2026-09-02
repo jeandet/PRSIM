@@ -55,8 +55,9 @@ static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_
     if (!allow_logic_thread && prism::app::detail_is_logic_thread) return PostResult::NoApp;
     // Startup window: g_run_guard true but g_has_handle not yet set (setup hasn't run).
     // Don't fall back to direct unsync write — spin briefly for handle to appear.
+    // 1000ms survives slow debug/CI runners; still NoApp/Closed check below handles overflow.
     if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
-        for (int i = 0; i < 200 && !g_has_handle.load(std::memory_order_acquire); ++i)
+        for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     std::optional<AppContext::PostHandle> hopt;
@@ -119,16 +120,36 @@ T dispatch_sync_read(std::function<T()> reader) {
     if (prism::app::detail_is_logic_thread) return reader();
     // Startup window: spin briefly like write path before falling back to direct.
     if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
-        for (int i = 0; i < 200 && !g_has_handle.load(std::memory_order_acquire); ++i)
+        for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    // Pre-run or post-close: direct read (single-threaded / drained)
+    // Pre-run or post-close: direct read (single-threaded / drained).
+    // Shutdown narrow window: closed=true but a drain continuation may still
+    // be queued; wait briefly for the queue to empty before unsync read.
     {
-        std::lock_guard<std::mutex> lk(g_handle_mutex);
-        if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) return reader();
-        if (g_app_closed.load(std::memory_order_acquire)) return reader();
-        auto closed_flag = g_post_handle->closed.lock();
-        if (!closed_flag || closed_flag->load(std::memory_order_acquire)) return reader();
+        std::shared_ptr<mpsc_queue<std::function<void()>>> qcopy;
+        bool do_direct = false;
+        {
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) return reader();
+            if (g_app_closed.load(std::memory_order_acquire)) {
+                qcopy = g_post_handle->queue.lock();
+                do_direct = true;
+            } else {
+                auto closed_flag = g_post_handle->closed.lock();
+                if (!closed_flag || closed_flag->load(std::memory_order_acquire)) {
+                    qcopy = g_post_handle->queue.lock();
+                    do_direct = true;
+                }
+            }
+        }
+        if (do_direct) {
+            if (qcopy) {
+                for (int i = 0; i < 50 && !qcopy->empty(); ++i)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            return reader();
+        }
     }
     auto prom = std::make_shared<std::promise<T>>();
     auto fut = prom->get_future();

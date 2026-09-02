@@ -110,6 +110,12 @@ test_software_backend_chrome_cursor = executable('test_software_backend_chrome_c
 )
 test('software_backend_chrome_cursor', test_software_backend_chrome_cursor)
 
+test_software_backend_concurrent = executable('test_software_backend_concurrent',
+  files('test_software_backend_concurrent.cpp'),
+  dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],
+)
+test('software_backend_concurrent', test_software_backend_concurrent)
+
 test_model_app_chrome_cursor = executable('test_model_app_chrome_cursor',
   files('test_model_app_chrome_cursor.cpp'),
   dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],

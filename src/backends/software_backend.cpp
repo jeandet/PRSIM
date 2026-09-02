@@ -1,6 +1,7 @@
 #include <prism/backends/software_backend.hpp>
 #include <prism/ui/window_chrome.hpp>
 
+#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -59,6 +60,8 @@ SoftwareBackend::~SoftwareBackend() {
 }
 
 Window& SoftwareBackend::create_window(WindowConfig cfg) {
+    // Pre-run only; after run() use request_window() (queued, thread-safe).
+    assert(!ready_.load(std::memory_order_acquire) && "create_window after run(): use request_window()");
     std::lock_guard<std::mutex> lk(windows_mutex_);
     auto id = ++next_id_;
     auto window = std::make_unique<SdlWindow>(id, cfg);
@@ -207,41 +210,48 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 break;
             case SDL_EVENT_WINDOW_RESIZED: {
                 int rh = ev.window.data2;
-                auto it_w = windows_.find(wid);
-                if (it_w != windows_.end() &&
-                    it_w->second->decoration_mode() == DecorationMode::Custom)
-                    rh -= static_cast<int>(WindowChrome::title_bar_h.raw());
+                {
+                    std::lock_guard<std::mutex> lk(windows_mutex_);
+                    auto it_w = windows_.find(wid);
+                    if (it_w != windows_.end() &&
+                        it_w->second->decoration_mode() == DecorationMode::Custom)
+                        rh -= static_cast<int>(WindowChrome::title_bar_h.raw());
+                }
                 event_cb(WindowEvent{wid, WindowResize{ev.window.data1, rh}});
                 break;
             }
             case SDL_EVENT_MOUSE_MOTION: {
-                auto it_w = windows_.find(wid);
-                if (it_w != windows_.end() && it_w->second->in_resize()) {
-                    it_w->second->update_resize(
-                        static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
-                    break;
-                }
-                if (it_w != windows_.end() &&
-                    it_w->second->decoration_mode() == DecorationMode::Custom) {
-                    int ww, wh;
-                    SDL_GetWindowSize(it_w->second->sdl_window(), &ww, &wh);
-                    auto zone = WindowChrome::hit_test(
-                        static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y), ww, wh);
-                    if (zone != WindowChrome::HitZone::Client) {
-                        it_w->second->set_cursor(WindowChrome::cursor_for(zone));
+                {
+                    std::lock_guard<std::mutex> lk(windows_mutex_);
+                    auto it_w = windows_.find(wid);
+                    if (it_w != windows_.end() && it_w->second->in_resize()) {
+                        it_w->second->update_resize(
+                            static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
                         break;
                     }
+                    if (it_w != windows_.end() &&
+                        it_w->second->decoration_mode() == DecorationMode::Custom) {
+                        int ww, wh;
+                        SDL_GetWindowSize(it_w->second->sdl_window(), &ww, &wh);
+                        auto zone = WindowChrome::hit_test(
+                            static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y), ww, wh);
+                        if (zone != WindowChrome::HitZone::Client) {
+                            it_w->second->set_cursor(WindowChrome::cursor_for(zone));
+                            break;
+                        }
+                    }
+                    float my = ev.motion.y;
+                    if (it_w != windows_.end() &&
+                        it_w->second->decoration_mode() == DecorationMode::Custom)
+                        my -= WindowChrome::title_bar_h.raw();
+                    pending_motion = WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}};
                 }
-                float my = ev.motion.y;
-                if (it_w != windows_.end() &&
-                    it_w->second->decoration_mode() == DecorationMode::Custom)
-                    my -= WindowChrome::title_bar_h.raw();
-                pending_motion = WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}};
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
                 SDL_CaptureMouse(true);
                 pressed_window_ = wid;
+                std::lock_guard<std::mutex> lk(windows_mutex_);
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom) {
@@ -282,6 +292,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             case SDL_EVENT_MOUSE_BUTTON_UP: {
                 SDL_CaptureMouse(false);
                 pressed_window_ = 0;
+                std::lock_guard<std::mutex> lk(windows_mutex_);
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() && it_w->second->in_resize()) {
                     it_w->second->end_resize();
@@ -300,6 +311,7 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             }
             case SDL_EVENT_MOUSE_WHEEL: {
                 float wy = ev.wheel.mouse_y;
+                std::lock_guard<std::mutex> lk(windows_mutex_);
                 auto it_w = windows_.find(wid);
                 if (it_w != windows_.end() &&
                     it_w->second->decoration_mode() == DecorationMode::Custom)

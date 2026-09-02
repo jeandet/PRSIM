@@ -66,6 +66,7 @@ graph TB
 | [stdexec integration](stdexec-integration.md) | run_loop event loops, prism::then/on pipe adaptors, AppContext | **Implemented** |
 | [canvas escape hatch](../../docs/superpowers/specs/2026-03-29-canvas-escape-hatch-design.md) | `vb.canvas(model)` — custom DrawList rendering in expandable area | **Implemented** |
 | [dynamic-node-tree.md](dynamic-node-tree.md) | Node intermediate layer, vstack/hstack variadic API, pre-C++26 support | **Implemented** |
+| widget-tree (`widget_tree.hpp` + `widget_tree_layout.hpp`/`traversal.hpp` + `view_builder.hpp`) | Persistent tree, per-field Widget<T> wiring, layout/traversal split (1198+168+81 lines) | **Implemented** |
 | [python-sdk.md](python-sdk.md) | nanobind wrapping, fully multi-threaded, GIL-free Python 3.14+, posted-mutation queue | **Design** |
 | [widget-model.md](widget-model.md) | Persistent widgets from Field<T> via reflection | **Superseded** by field/sender/widget spec |
 | [reactivity.md](reactivity.md) | Sender/observer pattern, Field<T> change propagation | **Superseded** by field/sender/widget spec |
