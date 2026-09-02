@@ -256,7 +256,9 @@ def _patch_bound_observe():
                 lst.append(conn)
                 try:
                     _observed_handles.add(self)  # type: ignore[attr-defined]
-                except Exception:
+                except TypeError:
+                    # self doesn't support weak references (exotic subclass);
+                    # atexit cleanup then relies on the id-keyed fallback map.
                     pass
             except (AttributeError, TypeError):
                 lst = _keepalive_by_handle.setdefault(id(self), [])
@@ -386,6 +388,34 @@ def _atexit_clear():
 _atexit_mod.register(_atexit_clear)
 
 
+_KIND_NAME_BY_TYPE = {bool: "bool", int: "int", float: "float", str: "str"}
+
+
+def _kind_of(value, who="field"):
+    """Classify *value* into the scalar kind the C++ side stores it as.
+
+    Accepts either a representative value (``0``, ``0.0``, ``""``, ``False``)
+    or the type itself (``int``, ``float``, ``str``, ``bool``) — the latter
+    is how ``derived(..., type_hint=float)`` names a kind without a sample
+    value. bool is checked before int because bool is an int subclass in
+    Python.
+    """
+    if isinstance(value, type) and value in _KIND_NAME_BY_TYPE:
+        return _KIND_NAME_BY_TYPE[value]
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, int):
+        return "int"
+    if isinstance(value, float):
+        return "float"
+    if isinstance(value, str):
+        return "str"
+    hint = "; use list_field() for lists" if isinstance(value, list) else ""
+    raise TypeError(
+        f"prism.{who}(): unsupported default type {type(value).__name__}{hint}"
+    )
+
+
 class _FieldDescriptor:
     def __init__(self, default, kind=None, meta=None, validator=None):
         self.default = default
@@ -402,17 +432,8 @@ class _FieldDescriptor:
         if self.name in cache:
             return cache[self.name]
         # allocate via Model's internal add_* (no keep_alive cycle — Model owns slots)
-        # bool is subclass of int, check bool first
-        if isinstance(self.default, bool):
-            h = instance._add_bool_internal(self.default)
-        elif isinstance(self.default, int):
-            h = instance._add_int_internal(self.default)
-        elif isinstance(self.default, float):
-            h = instance._add_float_internal(self.default)
-        elif isinstance(self.default, str):
-            h = instance._add_str_internal(self.default)
-        else:
-            h = instance._add_int_internal(int(self.default))
+        kind = _kind_of(self.default)
+        h = getattr(instance, f"_add_{kind}_internal")(self.default)
         cache[self.name] = h
         return h
 
@@ -476,16 +497,8 @@ class _SharedDescriptor:
         cache = instance.__dict__.setdefault("_prism_fields", {})
         if self.name in cache:
             return cache[self.name]
-        if isinstance(self.default, bool):
-            h = instance._add_shared_bool_internal(self.default)
-        elif isinstance(self.default, int):
-            h = instance._add_shared_int_internal(self.default)
-        elif isinstance(self.default, float):
-            h = instance._add_shared_float_internal(self.default)
-        elif isinstance(self.default, str):
-            h = instance._add_shared_str_internal(self.default)
-        else:
-            h = instance._add_shared_int_internal(int(self.default))
+        kind = _kind_of(self.default, "shared")
+        h = getattr(instance, f"_add_shared_{kind}_internal")(self.default)
         cache[self.name] = h
         return h
 
@@ -524,17 +537,8 @@ class _ChannelDescriptor:
         cache = instance.__dict__.setdefault("_prism_fields", {})
         if self.name in cache:
             return cache[self.name]
-        th = self.type_hint
-        if isinstance(th, bool):
-            h = instance._add_channel_bool_internal()
-        elif isinstance(th, int):
-            h = instance._add_channel_int_internal()
-        elif isinstance(th, float):
-            h = instance._add_channel_float_internal()
-        elif isinstance(th, str):
-            h = instance._add_channel_str_internal()
-        else:
-            h = instance._add_channel_int_internal()
+        kind = _kind_of(self.type_hint, "channel")
+        h = getattr(instance, f"_add_channel_{kind}_internal")()
         cache[self.name] = h
         return h
 
@@ -572,49 +576,29 @@ class _DerivedDescriptor:
         if self.name in cache:
             return cache[self.name]
         # resolve deps: str -> getattr(instance, name)
-        dep_handles = []
-        for d in self.deps:
-            if isinstance(d, str):
-                dep_handles.append(getattr(instance, d))
-            else:
-                dep_handles.append(d)
-        # infer type from probe call if not hinted; also build wrapped call_fn
+        dep_handles = [
+            getattr(instance, d) if isinstance(d, str) else d for d in self.deps
+        ]
+        # build call_fn from fn's signature; also build a same-shape probe that
+        # calls fn directly (no weakref indirection needed — instance is in scope)
         import inspect
+        import weakref as _wr
 
         sig = inspect.signature(self.fn)
         n_params = len(sig.parameters)
         n_deps = len(dep_handles)
 
-        # collect current dep values for probe of (a,b) style
-        def _dep_vals():
-            vals = []
-            for h in dep_handles:
-                try:
-                    vals.append(h.value)
-                except Exception:
-                    vals.append(0)
-            return vals
-
-        import weakref as _wr
-
         if n_params == 1 and n_deps >= 1:
             # self-style: fn(instance) — break Model->slot->py_fn->instance cycle via weakref
             wref = _wr.ref(instance)
             orig = self.fn
-            probe_fn = lambda: orig(wref()) if wref() is not None else orig(instance)  # type: ignore[no-untyped-call]
             call_fn = lambda _w=wref, _f=orig: _f(_w()) if _w() is not None else None  # type: ignore[no-untyped-call]
-            try:
-                probe = probe_fn()
-            except Exception:
-                probe = 0
+            probe_fn = lambda: orig(instance)  # type: ignore[no-untyped-call]
         elif n_params == n_deps and n_deps > 0:
-            vals = _dep_vals()
-            probe_fn = lambda: self.fn(*vals)  # type: ignore[no-untyped-call]
             # break cycle: capture weakref + dep names (strings) not handles
             wref2 = _wr.ref(instance)
             dep_names = tuple(d if isinstance(d, str) else None for d in self.deps)
-            has_str_names = all(n is not None for n in dep_names)
-            if has_str_names:
+            if all(n is not None for n in dep_names):
                 orig2 = self.fn
                 call_fn = (
                     lambda _w=wref2, _f=orig2, _ns=dep_names: _f(
@@ -626,38 +610,24 @@ class _DerivedDescriptor:
             else:
                 # fallback: captures handles strongly (rare)
                 call_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
+            probe_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
+        else:
+            call_fn = self.fn
+            probe_fn = self.fn
+
+        if self.type_hint is not None:
+            kind = _kind_of(self.type_hint, "derived")
+        else:
             try:
                 probe = probe_fn()
-            except Exception:
-                probe = vals[0] if vals else 0
-        else:
-            # try no-arg
-            try:
-                probe = self.fn()  # type: ignore[no-untyped-call]
-                call_fn = self.fn
-            except Exception:
-                # fallback: try with dep vals
-                vals = _dep_vals()
-                try:
-                    probe = self.fn(*vals)  # type: ignore[no-untyped-call]
-                    call_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
-                except Exception:
-                    probe = 0
-                    call_fn = self.fn
-        th = self.type_hint
-        if th is None:
-            th = probe
-        if isinstance(th, bool):
-            h = instance._add_derived_bool_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
-        elif isinstance(th, int):
-            h = instance._add_derived_int_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
-        elif isinstance(th, float):
-            h = instance._add_derived_float_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
-        elif isinstance(th, str):
-            h = instance._add_derived_str_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
-        else:
-            # fallback int
-            h = instance._add_derived_int_internal(call_fn, *dep_handles)  # type: ignore[attr-defined]
+            except Exception as exc:
+                raise TypeError(
+                    f"derived '{self.name}': probe call raised {exc!r}; "
+                    "pass type_hint=int|float|str|bool to skip probing"
+                ) from exc
+            kind = _kind_of(probe, "derived")
+
+        h = getattr(instance, f"_add_derived_{kind}_internal")(call_fn, *dep_handles)  # type: ignore[attr-defined]
         cache[self.name] = h
         return h
 
@@ -719,17 +689,13 @@ class _ListDescriptor:
         vals = self.default
         if not vals:
             h = instance._add_list_str_internal([])  # default empty str list
-        elif isinstance(vals[0], bool):
-            # bool lists map to int list due to vector<bool> proxy constraints
-            h = instance._add_list_int_internal([int(v) for v in vals])
-        elif isinstance(vals[0], int):
-            h = instance._add_list_int_internal(vals)
-        elif isinstance(vals[0], float):
-            h = instance._add_list_float_internal(vals)
-        elif isinstance(vals[0], str):
-            h = instance._add_list_str_internal(vals)
         else:
-            h = instance._add_list_str_internal([str(x) for x in vals])
+            kind = _kind_of(vals[0], "list_field")
+            if kind == "bool":
+                # bool lists map to int list due to vector<bool> proxy constraints
+                h = instance._add_list_int_internal([int(v) for v in vals])
+            else:
+                h = getattr(instance, f"_add_list_{kind}_internal")(vals)
         cache[self.name] = h
         return h
 
@@ -846,7 +812,11 @@ class _TreeDescriptor:
                             UserWarning,
                             stacklevel=4,
                         )
-            except Exception:
+            except TypeError:
+                # isinstance() against a runtime_checkable Protocol can raise
+                # TypeError for objects with unusual attribute access; the
+                # check is a best-effort diagnostic warning, not required
+                # for correctness, so skip it rather than fail allocation.
                 pass
         h = instance._add_tree_internal(src)  # type: ignore[attr-defined]
         cache[self.name] = h
@@ -914,7 +884,10 @@ class Model(_ModelBase):
                 continue
             try:
                 v = validator_for(hint)
-            except Exception:
+            except RuntimeError:
+                # validator_for raises RuntimeError when pydantic is missing
+                # or hint isn't a valid pydantic type; treat as "no
+                # auto-validator" for this annotation.
                 v = None
             cur = cls.__dict__.get(name, None)
             if isinstance(cur, (_FieldDescriptor, _SharedDescriptor)):
@@ -960,7 +933,9 @@ class Model(_ModelBase):
         # register for atexit cleanup before nanobind leak check
         try:
             _all_models.add(self)  # type: ignore[name-defined]
-        except Exception:
+        except TypeError:
+            # self doesn't support weak references (rare, exotic subclass);
+            # atexit cleanup then simply won't cover this instance.
             pass
         # Allocate descriptors eagerly so view ordering matches class definition order
         for cls in reversed(type(self).__mro__):
@@ -980,12 +955,7 @@ class Model(_ModelBase):
                     attr._allocate(self)
         # Apply kwargs overrides
         for k, v in kwargs.items():
-            if hasattr(type(self), k) and isinstance(
-                getattr(type(self), k), (_FieldDescriptor, _SharedDescriptor)
-            ):
-                setattr(self, k, v)
-            else:
-                setattr(self, k, v)
+            setattr(self, k, v)
         # If subclass overrides view(), register trampoline. Use weakref to break
         # Model -> _c_model -> py_view_cb -> bound method -> Model cycle (would leak).
         for cls in type(self).__mro__:

@@ -4,6 +4,8 @@ import gc
 import threading
 import weakref
 
+import pytest
+
 import prism
 from prism import Model, field, shared, channel, transaction
 
@@ -622,6 +624,54 @@ def test_derived_basic_and_gc():
     _ = alias.value  # still alive via owner shared_ptr
     alias = None
     gc.collect()
+
+
+def test_derived_probe_raises_gives_actionable_type_error():
+    """No type_hint + a probe that raises -> loud TypeError naming the fix (task 4)."""
+    from prism import derived
+
+    class M(Model):
+        a = field(2)
+        bad = derived(lambda self: 1 / 0, "a")
+
+    with pytest.raises(TypeError, match="type_hint=int\\|float\\|str\\|bool"):
+        M()
+
+
+def test_derived_type_hint_skips_probing():
+    """type_hint given -> probe (which would raise) is never called (task 4)."""
+    from prism import derived
+
+    class M(Model):
+        a = field(2)
+        ok = derived(lambda self: 1 / 0, "a", type_hint=float)
+
+    m = M()
+    assert isinstance(m.ok, prism.BoundDerivedFloat)
+
+
+def test_field_unsupported_list_default_raises():
+    class M(Model):
+        bad = field([1, 2])
+
+    with pytest.raises(TypeError, match="list_field"):
+        M()
+
+
+def test_field_unsupported_none_default_raises():
+    class M(Model):
+        bad = field(None)
+
+    with pytest.raises(TypeError):
+        M()
+
+
+def test_model_kwargs_override_sets_field():
+    class M(Model):
+        a = field(1)
+
+    m = M(a=5)
+    assert m.a.value == 5
 
 
 def test_gc_observe_torture():
