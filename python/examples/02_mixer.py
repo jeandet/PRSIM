@@ -14,9 +14,6 @@ Run:
   PYTHONPATH=build/python python python/examples/02_mixer.py
 """
 
-import threading
-import time
-
 import prism
 
 
@@ -38,28 +35,23 @@ def _main():
     # observe field
     c1 = Mixer.count.observe(m, lambda v: print(f"[observe] count={v}"))
 
-    # background thread mutates from any thread (posted to logic thread)
-    # Use weakref so the thread doesn't keep Model alive past shutdown (would
-    # otherwise appear as a nanobind leak when m is a module global or held
-    # only by the thread's closure).
-    import weakref as _wr
+    # background thread mutates from any thread (posted to logic thread).
+    # prism.worker() is stopped by run() on exit, so 'm' can be captured
+    # directly — no weakref needed (see prism/__init__.py: function-scoped
+    # Model + a stopped worker avoids the nanobind leak-check false positive).
+    values = iter(range(50, 55))
 
-    _m_wr = _wr.ref(m)
+    def bump(stop):
+        v = next(values, None)
+        if v is None:
+            stop.set()
+            return
+        print(
+            f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})"
+        )
+        m.count.value = v
 
-    def worker():
-        for i in range(5):
-            time.sleep(1)
-            mm = _m_wr()
-            if mm is None:
-                break
-            v = 50 + i
-            print(
-                f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})"
-            )
-            mm.count.value = v
-
-    t = threading.Thread(target=worker, daemon=True)
-    t.start()
+    prism.worker(bump, interval=1.0)
 
     prism.run(m, title="Mixer — Python")
 

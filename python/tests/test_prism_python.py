@@ -1235,3 +1235,58 @@ def test_import_has_no_sys_modules_sweep():
     source = inspect.getsource(prism._atexit_clear)
     assert "sys.modules" not in source
     assert "modules.values" not in source
+
+
+def test_worker_interval_ticks_and_stop_halts_it():
+    import time
+
+    counts = {"n": 0}
+
+    def tick(stop):
+        counts["n"] += 1
+
+    w = prism.worker(tick, interval=0.01)
+    time.sleep(0.05)
+    assert counts["n"] > 0
+
+    w.stop()
+    assert not w.is_alive
+
+    n_at_stop = counts["n"]
+    time.sleep(0.05)
+    assert counts["n"] == n_at_stop
+
+
+def test_worker_raising_fn_routes_to_on_error_and_thread_exits():
+    caught = []
+    try:
+        prism.on_error(lambda exc: caught.append(exc))
+
+        def boom(stop):
+            raise ValueError("worker boom")
+
+        w = prism.worker(boom)
+        w.stop()  # joins; one-shot fn has already run and raised by now
+
+        assert len(caught) == 1
+        assert isinstance(caught[0], ValueError)
+        assert caught[0].args == ("worker boom",)
+        assert not w.is_alive
+    finally:
+        prism.on_error(None)
+
+
+def test_worker_context_manager_starts_and_stops():
+    import time
+
+    counts = {"n": 0}
+
+    def tick(stop):
+        counts["n"] += 1
+
+    with prism.worker(tick, interval=0.01) as w:
+        time.sleep(0.03)
+        assert w.is_alive
+        assert counts["n"] > 0
+
+    assert not w.is_alive

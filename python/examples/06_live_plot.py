@@ -11,7 +11,6 @@ Run:
 """
 
 import math
-import threading
 import time
 
 import prism
@@ -74,14 +73,19 @@ def _main():
     m.show_cos.observe(lambda v: m.rebuild())
 
     # background: simulate live sensor jitter via Shared-like periodic update
-    def jitter():
-        for i in range(30):
-            time.sleep(0.5)
-            with prism.transaction():
-                m.frequency.value = 2.0 + 0.5 * math.sin(time.time())
+    # (30 ticks at 0.5s, same as the original range(30) loop). prism.worker()
+    # is stopped by run() on exit, so 'm' is captured directly, no weakref.
+    ticks_left = [30]
 
-    t = threading.Thread(target=jitter, daemon=True)
-    t.start()
+    def jitter(stop):
+        if ticks_left[0] <= 0:
+            stop.set()
+            return
+        ticks_left[0] -= 1
+        with prism.transaction():
+            m.frequency.value = 2.0 + 0.5 * math.sin(time.time())
+
+    prism.worker(jitter, interval=0.5)
 
     prism.run(m, title="Live Plot — Python")
 

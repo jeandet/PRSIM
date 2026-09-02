@@ -173,11 +173,15 @@ __all__ = [
     "is_logic_thread",
     "run",
     "on_error",
+    "worker",
+    "Worker",
 ]
 
 
 import weakref as _wr_mod
 import atexit as _atexit_mod
+import threading as _threading_mod
+import traceback as _traceback_mod
 
 from . import _prism_ext
 
@@ -920,7 +924,10 @@ def run(model, title="PRISM App"):
     Starts the app event loop for *model* and returns once the window
     closes, so other Python threads can run while it blocks.
     """
-    return _run(model, title)
+    try:
+        return _run(model, title)
+    finally:
+        _stop_all_workers()
 
 
 def _run_headless(model, delay_ms=100):
@@ -929,11 +936,98 @@ def _run_headless(model, delay_ms=100):
     Test-only variant of :func:`run` that uses a headless backend and
     quits after *delay_ms*.
     """
-    return _run_headless_impl(model, delay_ms)
+    try:
+        return _run_headless_impl(model, delay_ms)
+    finally:
+        _stop_all_workers()
+
+
+# Mirror of the handler installed via _set_error_handler: the C++ side has no
+# getter, but Worker._run needs the current handler from plain Python threads
+# that never go through prism::core's callback machinery. on_error() keeps
+# both in sync.
+_error_handler = None
 
 
 def on_error(handler):
     """Any thread. Called on the logic thread with the exception raised by an
     observer/derived/worker callback. None restores the default (traceback to stderr).
     """
+    global _error_handler
+    _error_handler = handler
     _set_error_handler(handler)
+
+
+def _report_worker_error(exc):
+    if _error_handler is not None:
+        _error_handler(exc)
+    else:
+        _traceback_mod.print_exception(type(exc), exc, exc.__traceback__)
+
+
+# WeakSet so a Worker the caller never assigns still gets swept here without
+# being kept alive by this set alone; run()/_run_headless() stop every live
+# worker on exit so nothing outlives the app.
+_live_workers: _wr_mod.WeakSet = _wr_mod.WeakSet()
+
+
+def _stop_all_workers():
+    for w in list(_live_workers):
+        try:
+            w.stop()
+        except Exception:
+            pass
+
+
+class Worker:
+    """Any thread. Runs fn on a background thread; exceptions go to prism.on_error()."""
+
+    def __init__(self, fn, *, interval=None, daemon=True, name=None):
+        self._fn = fn
+        self._interval = interval
+        self._stop = _threading_mod.Event()
+        self._thread = _threading_mod.Thread(target=self._run, daemon=daemon, name=name)
+
+    def _run(self):
+        try:
+            if self._interval is None:
+                self._fn(self._stop)
+            else:
+                while not self._stop.is_set():
+                    self._fn(self._stop)
+                    self._stop.wait(self._interval)
+        except Exception as exc:
+            _report_worker_error(exc)
+
+    @property
+    def is_alive(self):
+        return self._thread.is_alive()
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.stop()
+        return False
+
+
+def worker(fn, *, interval=None, daemon=True, name=None):
+    """Any thread. Runs fn on a background thread; exceptions go to prism.on_error().
+
+    Calls ``fn(stop: threading.Event)`` once if *interval* is None, else
+    repeatedly every *interval* seconds (via ``stop.wait``) until
+    ``.stop()`` sets the event. Starts immediately and returns the
+    :class:`Worker`; still-running workers are stopped when ``run()`` /
+    ``_run_headless()`` return.
+    """
+    w = Worker(fn, interval=interval, daemon=daemon, name=name)
+    _live_workers.add(w)
+    return w.start()

@@ -16,9 +16,6 @@ Run:
 """
 
 import math
-import threading
-import time
-import pathlib
 
 import prism
 import importlib.util
@@ -80,33 +77,18 @@ def _main():
     m.amplitude.observe(lambda v: m.rebuild_plot())
     m.tick.observe(lambda v: m.rebuild_plot() if m.auto_sweep.value else None)
 
-    # Auto-sweep thread — use weakref + stop event so the thread doesn't keep
-    # Model alive past shutdown (would appear as nanobind leaked Model).
-    import weakref as _wr
+    # Auto-sweep worker: stopped by run() on exit, so 'm' is captured
+    # directly, no weakref needed.
+    def sweeper(stop):
+        if m.auto_sweep.value:
+            # Shared: latest value wins, coalesced
+            m.tick.value = (m.tick.value + 1) % 1000
+            # nudge frequency slightly
+            m.frequency.value = 2.0 + 1.5 * math.sin(m.tick.value * 0.02)
 
-    stop = threading.Event()
-    _m_wr = _wr.ref(m)
+    prism.worker(sweeper, interval=0.05)
 
-    def sweeper():
-        while not stop.is_set():
-            time.sleep(0.05)
-            mm = _m_wr()
-            if mm is None or stop.is_set():
-                break
-            if mm.auto_sweep.value:
-                # Shared: latest value wins, coalesced
-                mm.tick.value = (mm.tick.value + 1) % 1000
-                # nudge frequency slightly
-                mm.frequency.value = 2.0 + 1.5 * math.sin(mm.tick.value * 0.02)
-
-    t = threading.Thread(target=sweeper, daemon=True)
-    t.start()
-
-    try:
-        prism.run(m, title="Fancy Dashboard — Plot + Tree — Python")
-    finally:
-        stop.set()
-        t.join(timeout=1)
+    prism.run(m, title="Fancy Dashboard — Plot + Tree — Python")
 
 
 if __name__ == "__main__":
