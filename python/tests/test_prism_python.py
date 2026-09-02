@@ -1319,3 +1319,13 @@ def test_headless_multithread_stress_example_gil_disabled_on_free_threaded_build
     if not sysconfig.get_config_var("Py_GIL_DISABLED"):
         pytest.skip("not a free-threaded (3.14t) build")
     assert sys._is_gil_enabled() is False
+
+
+def test_worker_pool_plot_example_plots_at_least_one_window():
+    mod = _load_example("10_worker_pool_plot")
+    mod.main(headless=True)  # asserts windows_done >= 1 internally
+
+
+def test_asyncio_bridge_example_completes_a_round_trip():
+    mod = _load_example("12_asyncio_bridge")
+    mod.main(headless=True)  # asserts round_trips >= 1 internally

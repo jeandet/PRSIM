@@ -29,7 +29,9 @@ PYTHONPATH=build/python python python/examples/05_lists_and_derived.py
 PYTHONPATH=build/python python python/examples/06_live_plot.py
 PYTHONPATH=build/python python python/examples/07_file_tree.py
 PYTHONPATH=build/python python python/examples/08_dashboard.py
+PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py
 PYTHONPATH=build/python python python/examples/11_error_handling.py
+PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py
 ```
 
 Each opens a window (`prism.run` blocks, releases GIL). Close the window to exit.
@@ -42,10 +44,12 @@ the pytest/CI check the `3.14t` free-threaded lane runs:
 PYTHONPATH=build/python python python/examples/09_headless_multithread_stress.py
 ```
 
-`11_error_handling.py` also runs without a display via `--headless`:
+`11_error_handling.py`, `10_worker_pool_plot.py` and `12_asyncio_bridge.py` also run without a display via `--headless`:
 
 ```bash
 PYTHONPATH=build/python python python/examples/11_error_handling.py --headless
+PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py --headless
+PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py --headless
 ```
 
 ## Index
@@ -61,7 +65,9 @@ PYTHONPATH=build/python python python/examples/11_error_handling.py --headless
 | `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, `TreeStorage` Python object, lazy expansion, detail panel | `model_tree_browser` / `showcase_tree` (`ui/tree.hpp:182`) |
 | `08_dashboard.py` | Plot + Tree + Shared ticker in one `vstack`/`hstack` | `model_dashboard` / `model_system_monitor` |
 | `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`, no display; also the `3.14t` free-threaded CI check | — |
+| `10_worker_pool_plot.py` | `ThreadPoolExecutor(max_workers=4)` computing a pure-Python (`cmath`) FFT spectrum per window inside a `prism.worker`, results crossing to the plot via a JSON `channel(str)`, windows/sec status, `--headless` mode | — |
 | `11_error_handling.py` | `prism.on_error(handler)`, an observer + a worker that raise, `--headless` mode | — |
+| `12_asyncio_bridge.py` | asyncio event loop inside a `prism.worker`, `asyncio.run_coroutine_threadsafe` from an observer, a coroutine feeding a `channel` back to the logic thread, `--headless` mode | — |
 
 ## Notes
 
