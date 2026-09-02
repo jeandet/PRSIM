@@ -9,10 +9,16 @@ Demonstrates:
   - A pure-Python radix-2 FFT (cmath, no numpy) computing a magnitude
     spectrum per window on the pool threads.
   - Each spectrum crossing back to the logic thread through a
-    prism.channel(str): channels only carry scalars (int/float/str/bool),
-    so a window's spectrum is serialized to a JSON string.
+    prism.channel(str) as a JSON string. Two reasons: channels only carry
+    scalars (int/float/str/bool), not a list; and plot.clear_series/
+    add_series/notify are each a separate thread-dispatched post, so
+    calling them straight from 4 pool threads would interleave between
+    windows — routing through the channel's single logic-thread observer
+    applies all three atomically per window.
   - The channel observer (logic thread, single-threaded) redraws the plot
-    and updates a "N windows, R windows/sec" status field.
+    and updates a "N windows, R windows/sec" status field. A
+    `replace_series(xs, ys)` primitive that did clear+add+notify in one
+    post would make the JSON hop unnecessary — not adding it here.
   - prism._run_headless() for --headless / CI: runs for 1s then asserts
     at least one window was plotted.
 

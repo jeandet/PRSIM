@@ -9,8 +9,12 @@ Demonstrates:
     prism.channel — the only thread-safe way into the model from the loop
     thread.
   - Clean shutdown: a watcher thread waits on the prism.worker stop event,
-    then calls loop.call_soon_threadsafe(loop.stop) and is joined before
-    the loop is closed.
+    then calls loop.call_soon_threadsafe(loop.stop) and is joined; once
+    run_forever() returns, shutdown_loop() cancels any still-pending
+    tasks (e.g. a _fetch() coroutine mid asyncio.sleep) and runs the loop
+    once more to let them finish cancelling, before closing it — a
+    coroutine destroyed while pending would otherwise print an "was
+    destroyed but it is pending" warning to stderr.
   - prism._run_headless() for --headless / CI: runs for 1s then asserts
     the round trip happened at least once.
 
@@ -39,6 +43,18 @@ async def _fetch(model: AsyncioBridge, request: int) -> None:
     model.results.send(float(request) * 1.5)
 
 
+def shutdown_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Cancel any pending tasks and let the loop run them to completion
+    before closing it — closing with a task still pending mid-await
+    prints "Task was destroyed but it is pending!" to stderr."""
+    pending = asyncio.all_tasks(loop)
+    for task in pending:
+        task.cancel()
+    if pending:
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+    loop.close()
+
+
 def main(headless: bool = False) -> None:
     m = AsyncioBridge()
     loop = asyncio.new_event_loop()
@@ -52,7 +68,7 @@ def main(headless: bool = False) -> None:
         watcher.start()
         loop.run_forever()
         watcher.join()
-        loop.close()
+        shutdown_loop(loop)
 
     prism.worker(run_loop)
 
