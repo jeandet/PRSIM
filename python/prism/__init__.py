@@ -463,10 +463,18 @@ class _FieldDescriptor:
 
 
 def field(default, validator=None):
+    """Value may be set from any thread (posted to the logic thread).
+
+    Plain scalar field descriptor: ``count = prism.field(0)``.
+    """
     return _FieldDescriptor(default, validator=validator)
 
 
 def slider(default, min=0.0, max=1.0, validator=None):
+    """Value may be set from any thread (posted to the logic thread).
+
+    Float field descriptor rendered as a slider widget.
+    """
     return _FieldDescriptor(
         float(default),
         kind="slider",
@@ -476,6 +484,10 @@ def slider(default, min=0.0, max=1.0, validator=None):
 
 
 def checkbox(default, label=None, validator=None):
+    """Value may be set from any thread (posted to the logic thread).
+
+    Bool field descriptor rendered as a checkbox widget.
+    """
     return _FieldDescriptor(
         bool(default),
         kind="checkbox",
@@ -552,12 +564,18 @@ class _ChannelDescriptor:
 
 
 def shared(default, validator=None):
-    """Cross-thread latest-value slot. Standalone handles are drained on every app tick while an app runs."""
+    """Value may be set from any thread; writes apply directly, not posted.
+
+    Cross-thread latest-value slot. Standalone handles are drained on every app tick while an app runs.
+    """
     return _SharedDescriptor(default, validator=validator)
 
 
 def channel(type_hint=0):
-    """Cross-thread FIFO event stream. Standalone handles are drained on every app tick while an app runs."""
+    """May be sent from any thread; events queue and drain on the logic thread.
+
+    Cross-thread FIFO event stream. Standalone handles are drained on every app tick while an app runs.
+    """
     return _ChannelDescriptor(type_hint)
 
 
@@ -644,7 +662,9 @@ class _DerivedDescriptor:
 
 
 def derived(fn=None, *deps, type_hint=None):
-    """Descriptor factory: @derived('a','b') or derived(lambda self: ..., 'a').
+    """Read-only; computed on the logic thread.
+
+    Descriptor factory: @derived('a','b') or derived(lambda self: ..., 'a').
 
     Usage:
       class M(Model):
@@ -656,6 +676,8 @@ def derived(fn=None, *deps, type_hint=None):
         a = field(1)
         total = derived(lambda self: self.a.value*2, 'a', type_hint=0)
     When used as @derived('a') decorator on method, method is compute.
+    ``type_hint`` accepts either a sample value (``type_hint=0.0``) or a
+    bare type (``type_hint=float``) — both select the same ``float`` kind.
     """
     if fn is not None and callable(fn) and not deps and type_hint is None:
         # called as @derived without args -> fn is the function, no deps yet (must be supplied elsewhere)
@@ -719,6 +741,7 @@ class _ListDescriptor:
 
 
 def list_field(default=None):
+    """Mutations may be called from any thread (dispatched to the logic thread)."""
     return _ListDescriptor(default)
 
 
@@ -829,7 +852,10 @@ class _TreeDescriptor:
 
 
 def plot_field():
-    """Descriptor for PlotModel — use as `plot = prism.plot_field()` then `self.plot.add_series(xs, ys)`."""
+    """Mutations may be called from any thread (dispatched to the logic thread).
+
+    Descriptor for PlotModel — use as `plot = prism.plot_field()` then `self.plot.add_series(xs, ys)`.
+    """
     return _PlotDescriptor()
 
 
@@ -873,7 +899,10 @@ def validator_for(type_hint):
 
 class Model(_ModelBase):
     def observe(self, descriptor, callback):
-        """Instance convenience for non-string observe: m.observe(M.volume, cb)."""
+        """May be called from any thread; the callback itself fires on the logic thread.
+
+        Instance convenience for non-string observe: m.observe(M.volume, cb).
+        """
         return descriptor.observe(self, callback)
 
     def __init_subclass__(cls, **kwargs):
@@ -910,9 +939,12 @@ class Model(_ModelBase):
                         default = ""
                     elif base is bool:
                         default = False
-                    else:
-                        # generic fallback
-                        default = 0
+                    elif get_origin(base) is not list:
+                        raise TypeError(
+                            f"{cls.__name__}.{name}: Annotated[{base!r}, ...] has "
+                            "no recognized scalar default; give an explicit "
+                            "default or use prism.field(...)"
+                        )
                 # detect list
                 origin = get_origin(base) if base is not None else None
                 if origin is list:
@@ -921,9 +953,13 @@ class Model(_ModelBase):
                     setattr(cls, name, descr)
                     descr.__set_name__(cls, name)
                 else:
-                    # scalar field – infer default if still None
+                    # scalar field – default must already be resolved above
                     if default is None:
-                        default = 0
+                        raise TypeError(
+                            f"{cls.__name__}.{name}: no explicit default for "
+                            "Annotated field; give one (e.g. `= 0`) or use "
+                            "prism.field(...)"
+                        )
                     descr2 = _FieldDescriptor(default, validator=v)
                     setattr(cls, name, descr2)
                     descr2.__set_name__(cls, name)
@@ -938,6 +974,8 @@ class Model(_ModelBase):
             # atexit cleanup then simply won't cover this instance.
             pass
         # Allocate descriptors eagerly so view ordering matches class definition order
+        # Eager allocation here is what makes the check-then-act in _allocate safe:
+        # no other thread can see the instance before __init__ returns.
         for cls in reversed(type(self).__mro__):
             for name, attr in cls.__dict__.items():
                 if isinstance(
@@ -991,12 +1029,30 @@ class _TransactionCtx:
 
 
 def transaction():
+    """Buffers writes per calling thread; flushes as one batch on exit, no rollback.
+
+    ``with prism.transaction():`` — field writes made inside the block are
+    buffered on the calling thread and applied together when the block
+    exits normally. If the block raises, the buffered writes are simply
+    discarded (never applied) — there is no rollback of state outside
+    the block.
+    """
     return _TransactionCtx()
 
 
 def run(model, title="PRISM App"):
+    """Blocks the calling thread until the window closes; releases the GIL.
+
+    Starts the app event loop for *model* and returns once the window
+    closes, so other Python threads can run while it blocks.
+    """
     return _run(model, title)
 
 
 def _run_headless(model, delay_ms=100):
+    """Blocks the calling thread until the headless app exits; releases the GIL.
+
+    Test-only variant of :func:`run` that uses a headless backend and
+    quits after *delay_ms*.
+    """
     return _run_headless_impl(model, delay_ms)

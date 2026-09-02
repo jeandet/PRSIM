@@ -3,6 +3,7 @@
 import gc
 import threading
 import weakref
+from typing import Annotated
 
 import pytest
 
@@ -905,6 +906,57 @@ def test_tree_field_dict_callable_and_none():
         assert any("missing TreeSource methods" in str(x.message) for x in w), (
             f"expected warning, got {w}"
         )
+
+
+def test_annotated_auto_field_without_prism_field():
+    """`x: Annotated[int, Field(ge=0)] = 0` auto-creates a validated field
+    without calling prism.field() (transparent Annotated path, task 7)."""
+    from pydantic import Field as PydanticField
+
+    class M(Model):
+        count: Annotated[int, PydanticField(ge=0)] = 0
+
+    m = M()
+    assert m.count.value == 0
+    m.count.value = 5
+    assert m.count.value == 5
+
+
+def test_annotated_auto_field_validator_rejects_invalid_value():
+    """Validator built from the transparent-Annotated path rejects an
+    invalid assignment end-to-end (task 7). Validation runs in the
+    descriptor's __set__, so it triggers on `m.count = -1` (attribute
+    set on the model) rather than `m.count.value = -1` (direct set on
+    the underlying handle, which bypasses the Python descriptor)."""
+    from pydantic import Field as PydanticField, ValidationError
+
+    class M(Model):
+        count: Annotated[int, PydanticField(ge=0)] = 0
+
+    m = M()
+    with pytest.raises(ValidationError):
+        m.count = -1
+
+
+def test_annotated_bare_field_no_default_raises():
+    """A bare Annotated field with no explicit default and a base type
+    prism doesn't know a scalar default for must raise TypeError instead
+    of silently defaulting to 0 (task 7, no-silent-fallbacks)."""
+
+    with pytest.raises(TypeError, match="explicit default"):
+
+        class M(Model):
+            x: Annotated[dict, "meta"]
+
+
+def test_annotated_explicit_none_default_raises():
+    """An explicit `= None` default on an Annotated scalar field must
+    raise TypeError instead of silently becoming 0 (task 7)."""
+
+    with pytest.raises(TypeError, match="explicit default"):
+
+        class M(Model):
+            x: Annotated[int, "meta"] = None
 
 
 def test_import_has_no_sys_modules_sweep():
