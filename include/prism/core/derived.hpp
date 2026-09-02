@@ -18,6 +18,12 @@ struct Derived {
         (subscribe(sources), ...);
     }
 
+    // subscribe() captures `this` in the source's on_change callback (see the
+    // SenderHub move-hazard comment in connection.hpp) — moving a Derived
+    // would leave that callback pointing at the moved-from object.
+    Derived(Derived&&) = delete;
+    Derived& operator=(Derived&&) = delete;
+
     const T& get() const { return value_; }
     operator const T&() const { return value_; }
 

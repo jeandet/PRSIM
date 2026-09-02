@@ -187,6 +187,7 @@ void model_app(Backend& backend, Window& window, Model& model,
     std::function<void()> post_dispatch_hook;
     bool tick_scheduled = false;
 
+    // Destroyed by run() with the GIL released — queued closures must never capture nb::object.
     auto mutation_queue = std::make_shared<mpsc_queue<std::function<void()>>>();
     auto mutation_scheduled = std::make_shared<std::atomic<bool>>(false);
     auto mutation_closed = std::make_shared<std::atomic<bool>>(false);

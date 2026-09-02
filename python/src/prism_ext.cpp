@@ -77,6 +77,11 @@ static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_
     // Don't fall back to direct unsync write — spin briefly for handle to appear.
     // 1000ms survives slow debug/CI runners; still NoApp/Closed check below handles overflow.
     if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
+        // Called from Python-entered code, so the GIL is held here — release it
+        // while spinning so other Python threads (e.g. the one finishing setup)
+        // can make progress.
+        std::optional<nb::gil_scoped_release> release;
+        if (Py_IsInitialized()) release.emplace();
         for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -140,6 +145,10 @@ T dispatch_sync_read(std::function<T()> reader) {
     if (prism::app::detail_is_logic_thread) return reader();
     // Startup window: spin briefly like write path before falling back to direct.
     if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
+        // Called from Python-entered code, so the GIL is held here — release it
+        // while spinning (see try_post_via_handle_impl for the same pattern).
+        std::optional<nb::gil_scoped_release> release;
+        if (Py_IsInitialized()) release.emplace();
         for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -508,6 +517,7 @@ struct BoundTree {
         if(!ctrl) return nb::list();
         auto* p = ctrl;
         return dispatch_sync_read<nb::list>([p](){
+            if (!Py_IsInitialized()) return nb::list();
             nb::gil_scoped_acquire g;
             nb::list out;
             for(size_t i=0;i<p->rows.size();++i){
@@ -559,7 +569,7 @@ struct BoundField {
         if (field) field_set_dispatch(field, std::move(v));
     }
     Connection observe(nb::callable cb) {
-        if (!field) return {};
+        if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Field<T>* f = field;
         auto wrapper = [cb, f](const T& val) {
@@ -607,7 +617,7 @@ struct BoundShared {
         if (shared) { shared->set(std::move(v)); ensure_idle_wake(); }
     }
     Connection observe(nb::callable cb) {
-        if (!shared) return {};
+        if (!shared) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Shared<T>* s = shared;
         auto wrapper = [cb, s](const T& val) {
@@ -651,7 +661,7 @@ struct BoundChannel {
         if (channel) { channel->send(std::move(v)); ensure_idle_wake(); }
     }
     Connection observe(nb::callable cb) {
-        if (!channel) return {};
+        if (!channel) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Channel<T>* c = channel;
         auto wrapper = [cb, c](const T& val) {
@@ -707,7 +717,7 @@ struct BoundDerived {
         return p->get();
     }
     Connection observe(nb::callable cb) {
-        if (!derived) return {};
+        if (!derived) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         auto* d = derived;
         auto wrapper = [cb, d](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(nb::python_error&){PyErr_Print();}catch(...){} };
@@ -748,6 +758,7 @@ struct ListHandle {
     nb::list to_list() const {
         const List<T>* p = &list;
         return dispatch_sync_read<nb::list>([p](){
+            if (!Py_IsInitialized()) return nb::list();
             nb::gil_scoped_acquire g;
             nb::list out; for (size_t i=0;i<p->size();++i) out.append((*p)[i]); return out;
         });
@@ -787,18 +798,19 @@ struct BoundList {
         if (!list) return nb::list();
         List<T>* p = list;
         return dispatch_sync_read<nb::list>([p](){
+            if (!Py_IsInitialized()) return nb::list();
             nb::gil_scoped_acquire g;
             nb::list out; for (size_t i=0;i<p->size();++i) out.append((*p)[i]); return out;
         });
     }
     Connection observe_insert(nb::callable cb) {
-        if(!list) return {}; auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_insert(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_remove(nb::callable cb) {
-        if(!list) return {}; auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_remove().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_remove(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_remove().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_update(nb::callable cb) {
-        if(!list) return {}; auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_update().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_update(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(nb::python_error&){PyErr_Print();}catch(...){} }; auto c=p->on_update().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
 };
 

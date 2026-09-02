@@ -5,6 +5,7 @@
 #include <prism/core/field.hpp>
 #include <prism/core/state.hpp>
 #include <string>
+#include <type_traits>
 
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
@@ -12,6 +13,12 @@ namespace prism {
 using namespace core; using namespace render; using namespace input;
 using namespace ui; using namespace app; using namespace plot;
 }
+
+// Derived<T> subscribes with [this] captures — moving it would leave those
+// callbacks pointing at the moved-from object (same hazard as SenderHub, see
+// connection.hpp). Moves must be rejected at compile time.
+static_assert(!std::is_move_constructible_v<prism::core::Derived<int>>);
+static_assert(!std::is_move_assignable_v<prism::core::Derived<int>>);
 
 TEST_CASE("Derived recomputes when source changes") {
     prism::Field<int> a{2};
