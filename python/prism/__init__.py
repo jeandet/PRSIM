@@ -87,6 +87,30 @@ class TreeSource(Protocol):
     def has_children(self, nid: TreeNodeId) -> bool: ...
 
 
+@runtime_checkable
+class TableSource(Protocol):
+    """Pythonic structural type for future ``prism.table_field(source)``.
+
+    Mirrors C++ ``ColumnStorage`` (``include/prism/ui/table.hpp:35``)
+    and ``TableSource`` (``table.hpp:27``). Not yet wired to a Python
+    binding — added now so table adapters can be written against a typed
+    protocol and work unchanged once ``table_field`` lands.
+
+    Only the three methods below are required; ``header`` is optional
+    (C++ falls back to ``\"\"`` / auto-generated headers)::
+
+        class MyTable(TableSource):
+            def column_count(self) -> int: ...
+            def row_count(self) -> int: ...
+            def cell_text(self, row: int, col: int) -> str: ...
+            def header(self, col: int) -> str: ...  # optional
+    """
+
+    def column_count(self) -> int: ...
+    def row_count(self) -> int: ...
+    def cell_text(self, row: int, col: int) -> str: ...
+
+
 __all__ = [
     "Model",
     "field",
@@ -101,6 +125,7 @@ __all__ = [
     "tree_field",
     "TreeSource",
     "TreeNodeId",
+    "TableSource",
     "validator_for",
     "FieldInt",
     "FieldFloat",
