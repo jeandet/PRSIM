@@ -370,7 +370,7 @@ Two more observable types round out the reactive core, both usable outside any w
   ```cpp
   prism::Derived<double> total{[&]{ return price.get() * quantity.get(); }, price, quantity};
   ```
-- **`Shared<T>`** — lock-free cross-thread cell (`get()`/`set()` from any thread); the owning thread calls `drain_notifications()` to fire `on_change()` on its own turn. This is what backs the `Shared<DeviceState>` in the live inspector example above — devices/background workers publish into it from another thread.
+- **`Shared<T>`** — atomic cross-thread cell (readers never block writers; implementation is `std::atomic<std::shared_ptr>`, not guaranteed lock-free) (`get()`/`set()` from any thread); the owning thread calls `drain_notifications()` to fire `on_change()` on its own turn. This is what backs the `Shared<DeviceState>` in the live inspector example above — devices/background workers publish into it from another thread.
 
 Wrap a batch of `field.set()` calls in `prism::transaction([&]{ ... })` to coalesce their notifications into one flush at the end of the block instead of firing per-call (see [Transaction API](docs/superpowers/specs/2026-04-04-transaction-api-design.md)).
 
@@ -526,6 +526,10 @@ sequenceDiagram
 
 Both threads sleep at OS level when idle (futex / SDL event wait). Zero CPU when nothing changes.
 
+### Threading guarantees
+
+One logic thread owns the widget tree and every `Field<T>`; `Field<T>` is not thread-safe. Any thread may call `Shared<T>::set()`, `Channel<T>::send()`, or post a closure; these are safe under arbitrary concurrency. `Shared<T>` publishes only the latest value — intermediate values are dropped by design. `Channel<T>` is lossless and per-producer FIFO. A posted closure wakes an idle logic thread exactly once per burst. Exceptions thrown by posted or observed callbacks are routed to `prism::core::set_unhandled_error_handler` (default: printed to stderr) and never stop the drain. `transaction()` batches and coalesces notifications on the calling thread; it does not roll back on exception.
+
 ## C++ Features
 
 | Feature | Used for | Required |
@@ -583,7 +587,7 @@ graph LR
 
 Detailed design rationale for each subsystem lives in [`doc/design/`](doc/design/):
 
-- [Threading Model](doc/design/threading-model.md) — lock-free snapshot handoff, thread roles, input flow
+- [Threading Model](doc/design/threading-model.md) — atomic snapshot handoff (readers never block writers; implementation is `std::atomic<std::shared_ptr>`, not guaranteed lock-free), thread roles, input flow
 - [Scene Snapshot](doc/design/scene-snapshot.md) — structure, versioning, dirty repaint model
 - [Draw List](doc/design/draw-list.md) — command set, strong coordinate types, local coordinate system, serialisation
 - [Render Backend](doc/design/render-backend.md) — BackendBase vtable, software vs GPU path

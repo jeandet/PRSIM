@@ -56,3 +56,7 @@ PYTHONPATH=build/python python -c "import prism; from python.examples import 01_
 - Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — mirrors `TreeStorage` tier 2 (`ui/tree.hpp:40`). See `07_file_tree.py:DictTreeSource` and `FsTreeSource`.
 - `m.count.value` get/set uses the binding cache + posted queue (`doc/design/python-sdk.md` §2). `Shared`/`Channel` are the cross-thread latest/ordered primitives per `AGENTS.md`.
 - `prism.transaction()` buffers per-Python-thread and flushes as one closure on the logic thread.
+
+## Threading guarantees
+
+One logic thread owns the widget tree and every field; fields are not thread-safe. Any thread may call `prism.shared(...).set()`, `prism.channel(...).send()`, or post a closure; these are safe under arbitrary concurrency. `prism.shared()` publishes only the latest value — intermediate values are dropped by design. `prism.channel()` is lossless and per-producer FIFO. A posted closure wakes an idle logic thread exactly once per burst. Exceptions thrown by posted or observed callbacks are routed to `prism.on_error()` (default: printed to stderr) and never stop the drain. `prism.transaction()` batches and coalesces notifications on the calling thread; it does not roll back on exception.
