@@ -127,7 +127,13 @@ public:
                             }
                         }
                         detail_in_mutation_batch = false;
-                        if (tail && *tail) (*tail)();
+                        if (tail && *tail) {
+                            try {
+                                (*tail)();
+                            } catch (...) {
+                                report_unhandled_error(std::current_exception());
+                            }
+                        }
                         sched_flag->store(false, std::memory_order_release);
                         if (q->empty()) break;
                         bool exp = false;

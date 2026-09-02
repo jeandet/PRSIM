@@ -311,12 +311,123 @@ TEST_CASE("throwing posted closure does not wedge post and is reported once") {
     prism::core::set_unhandled_error_handler(nullptr);
 }
 
-TEST_CASE("set_unhandled_error_handler(nullptr) restores the default handler") {
-    prism::core::set_unhandled_error_handler([](std::exception_ptr) {});
+TEST_CASE("throwing error handler does not crash drain or wedge post") {
+    IdleModel model;
+    std::atomic<size_t> submit_count{0};
+    std::atomic<prism::AppContext*> ctx_ptr{nullptr};
+    std::atomic<int> flag{0};
+
+    prism::core::set_unhandled_error_handler([](std::exception_ptr) {
+        throw std::runtime_error("handler itself throws");
+    });
+
+    struct Backend final : public prism::BackendBase {
+        std::atomic<size_t>& count;
+        std::atomic<prism::AppContext*>& ctx_ref;
+        std::atomic<int>& flag_ref;
+        prism::HeadlessWindow window_{0, {}};
+        Backend(std::atomic<size_t>& c, std::atomic<prism::AppContext*>& p, std::atomic<int>& f)
+            : count(c), ctx_ref(p), flag_ref(f) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            while (!ctx_ref.load(std::memory_order_acquire))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            auto* ctx = ctx_ref.load(std::memory_order_acquire);
+
+            std::thread worker([ctx] { ctx->post([] { throw std::runtime_error("boom"); }); });
+            worker.join();
+
+            // Fresh producer thread, fresh post — proves the throwing handler
+            // did not leave scheduled_ stuck (same wedge as the closure case).
+            std::thread again([ctx, this] {
+                ctx->post([this] { flag_ref.store(1, std::memory_order_release); });
+            });
+            again.join();
+
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (flag_ref.load(std::memory_order_acquire) == 0
+                   && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    auto backend = prism::Backend{std::make_unique<Backend>(submit_count, ctx_ptr, flag)};
+    auto& window = backend.create_window({});
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        ctx_ptr.store(&ctx, std::memory_order_release);
+    });
+
+    CHECK(flag.load() == 1);
+
     prism::core::set_unhandled_error_handler(nullptr);
-    try {
-        throw std::runtime_error("default handler smoke test");
-    } catch (...) {
-        prism::core::report_unhandled_error(std::current_exception());
-    }
+}
+
+TEST_CASE("set_unhandled_error_handler(nullptr) restores the default handler") {
+    IdleModel model;
+    std::atomic<size_t> submit_count{0};
+    std::atomic<prism::AppContext*> ctx_ptr{nullptr};
+    std::atomic<int> counting_handler_calls{0};
+    std::atomic<int> done{0};
+
+    prism::core::set_unhandled_error_handler([&](std::exception_ptr) {
+        counting_handler_calls.fetch_add(1, std::memory_order_relaxed);
+    });
+    prism::core::set_unhandled_error_handler(nullptr);
+
+    struct Backend final : public prism::BackendBase {
+        std::atomic<size_t>& count;
+        std::atomic<prism::AppContext*>& ctx_ref;
+        std::atomic<int>& done_ref;
+        prism::HeadlessWindow window_{0, {}};
+        Backend(std::atomic<size_t>& c, std::atomic<prism::AppContext*>& p, std::atomic<int>& d)
+            : count(c), ctx_ref(p), done_ref(d) {}
+        prism::Window& create_window(prism::WindowConfig cfg) override {
+            window_ = prism::HeadlessWindow{1, cfg};
+            return window_;
+        }
+        void run(std::function<void(const prism::WindowEvent&)> cb) override {
+            while (!ctx_ref.load(std::memory_order_acquire))
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            auto* ctx = ctx_ref.load(std::memory_order_acquire);
+
+            std::thread worker([ctx, this] {
+                ctx->post([] { throw std::runtime_error("boom"); });
+                ctx->post([this] { done_ref.store(1, std::memory_order_release); });
+            });
+            worker.join();
+
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            while (done_ref.load(std::memory_order_acquire) == 0
+                   && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+
+            cb(prism::WindowEvent{window_.id(), prism::WindowClose{}});
+        }
+        void submit(prism::WindowId, std::shared_ptr<const prism::SceneSnapshot>) override {
+            count.fetch_add(1, std::memory_order_release);
+            count.notify_all();
+        }
+        void wake() override {}
+        void quit() override {}
+    };
+
+    auto backend = prism::Backend{std::make_unique<Backend>(submit_count, ctx_ptr, done)};
+    auto& window = backend.create_window({});
+    prism::model_app(backend, window, model, [&](prism::AppContext& ctx) {
+        ctx_ptr.store(&ctx, std::memory_order_release);
+    });
+
+    CHECK(done.load() == 1);
+    CHECK(counting_handler_calls.load() == 0);
 }

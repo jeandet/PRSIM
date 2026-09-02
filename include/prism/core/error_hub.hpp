@@ -36,8 +36,15 @@ inline void report_unhandled_error(std::exception_ptr e) {
         std::lock_guard<std::mutex> lock(detail::error_handler_mutex);
         h = detail::error_handler;
     }
-    if (h) h(e);
-    else detail::default_error_handler(e);
+    if (!h) {
+        detail::default_error_handler(e);
+        return;
+    }
+    try {
+        h(e);
+    } catch (...) {
+        detail::default_error_handler(e);
+    }
 }
 
 } // namespace prism::core

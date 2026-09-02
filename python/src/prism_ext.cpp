@@ -56,7 +56,13 @@ static void drain_queue_loop(const std::shared_ptr<mpsc_queue<std::function<void
             }
         }
         prism::app::detail_in_mutation_batch = false;
-        if (tp && *tp) (*tp)();
+        if (tp && *tp) {
+            try {
+                (*tp)();
+            } catch (...) {
+                prism::core::report_unhandled_error(std::current_exception());
+            }
+        }
         sf->store(false, std::memory_order_release);
         if (q->empty()) break;
         bool exp = false;
