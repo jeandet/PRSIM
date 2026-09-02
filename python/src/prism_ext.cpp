@@ -80,16 +80,15 @@ static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_
     // Startup window: g_run_guard true but g_has_handle not yet set (setup hasn't run).
     // Don't fall back to direct unsync write — spin briefly for handle to appear.
     // 1000ms survives slow debug/CI runners; still NoApp/Closed check below handles overflow.
-    if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
-        // Usually called from Python-entered code with the GIL held — release it
-        // while spinning so other Python threads (e.g. the one finishing setup)
-        // can make progress. But the initial view build (registry.add in
-        // model_app) runs on the calling thread under _run_headless's own
-        // gil_scoped_release, so the GIL may already be released here; check
-        // first, since nb::gil_scoped_release::~gil_scoped_release() calls
-        // PyEval_SaveThread() unconditionally and crashes without a GIL to save.
-        std::optional<nb::gil_scoped_release> release;
-        if (Py_IsInitialized() && PyGILState_Check()) release.emplace();
+    // Only spin when this thread actually holds the GIL: that's the case where another
+    // Python thread is mid-setup and releasing the GIL here lets it finish. The initial
+    // view build (registry.add in model_app) calls this without the GIL (it runs under
+    // _run_headless's own gil_scoped_release) — there setup can never complete regardless
+    // of how long we spin, so skip straight to the direct read/dispatch below instead of
+    // burning the full 1000ms.
+    if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire) &&
+        Py_IsInitialized() && PyGILState_Check()) {
+        nb::gil_scoped_release release;
         for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -151,15 +150,14 @@ static void ensure_idle_wake() {
 template <typename T>
 T dispatch_sync_read(std::function<T()> reader) {
     if (prism::app::detail_is_logic_thread) return reader();
-    // Startup window: spin briefly like write path before falling back to direct.
-    if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
-        // Same startup-window spin as try_post_via_handle_impl, and same GIL
-        // caveat: SlotDerived::get() is also called from the initial widget
-        // tree build (registry.add in model_app), which runs on the calling
-        // thread under _run_headless's own gil_scoped_release — so the GIL
-        // may already be released here. Check before releasing again.
-        std::optional<nb::gil_scoped_release> release;
-        if (Py_IsInitialized() && PyGILState_Check()) release.emplace();
+    // Startup window: spin briefly like the write path, and same GIL-holding
+    // condition — see try_post_via_handle_impl. SlotDerived::get() is called from the
+    // initial widget tree build (registry.add in model_app), which runs on the calling
+    // thread under _run_headless's own gil_scoped_release (no GIL held here); skip the
+    // spin there and fall straight through to the direct read below.
+    if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire) &&
+        Py_IsInitialized() && PyGILState_Check()) {
+        nb::gil_scoped_release release;
         for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -198,9 +196,11 @@ T dispatch_sync_read(std::function<T()> reader) {
         catch (...) { try { prom->set_exception(std::current_exception()); } catch (...) {} }
     }, false);
     if (pr != PostResult::Posted) return reader(); // fallback: NoApp/Closed handled above, but safety
-    // Block caller (off logic thread) until logic thread runs reader — release GIL while waiting
+    // Block caller (off logic thread) until logic thread runs reader — release GIL while
+    // waiting, same guard as the spins above (this thread may not hold the GIL here either).
     {
-        nb::gil_scoped_release rel;
+        std::optional<nb::gil_scoped_release> rel;
+        if (Py_IsInitialized() && PyGILState_Check()) rel.emplace();
         fut.wait();
     }
     return fut.get();
@@ -321,42 +321,48 @@ struct FieldHandle {
 // Standalone Shared<T>/Channel<T> handles (built via nb::init<>, not owned by a PyModel) are not
 // in any PyModel::slots vector, so PyModel::drain() never reaches them. Register their drain
 // functions here so PyModel::drain() can sweep them too — see drain_standalone() below.
+//
+// The registry holds weak_ptrs, not raw pointers: a Python observer callback invoked mid-sweep
+// (GIL held) can drop the last reference to ANOTHER standalone handle, running its destructor
+// and freeing its drain_fn while the snapshot below still references it. lock()ing each weak_ptr
+// takes a shared_ptr copy that keeps the function alive for the duration of that one call, even
+// if the handle dies inside it; an already-expired entry is simply skipped, never dereferenced.
 struct StandaloneDrainers {
     std::mutex m;
-    std::vector<std::function<void()>*> fns;
+    std::vector<std::weak_ptr<std::function<void()>>> fns;
     static StandaloneDrainers& instance() {
         static StandaloneDrainers inst;
         return inst;
     }
 };
 
-static void register_standalone_drainer(std::function<void()>* fn) {
+static void register_standalone_drainer(std::shared_ptr<std::function<void()>> fn) {
     auto& reg = StandaloneDrainers::instance();
     std::lock_guard<std::mutex> lk(reg.m);
-    reg.fns.push_back(fn);
+    reg.fns.push_back(std::move(fn));
 }
 
-static void unregister_standalone_drainer(std::function<void()>* fn) {
+// Called from a handle's destructor after it has reset its own drain_fn shared_ptr (so its
+// entry is now expired); sweeps out every expired entry, not just this one, so the registry
+// doesn't accumulate dead weak_ptrs across many short-lived standalone handles.
+static void prune_expired_standalone_drainers() {
     auto& reg = StandaloneDrainers::instance();
     std::lock_guard<std::mutex> lk(reg.m);
-    auto it = std::find(reg.fns.begin(), reg.fns.end(), fn);
-    if (it != reg.fns.end()) reg.fns.erase(it);
+    reg.fns.erase(std::remove_if(reg.fns.begin(), reg.fns.end(),
+                                  [](const auto& w) { return w.expired(); }),
+                  reg.fns.end());
 }
 
-// Snapshot-then-call is only UAF-safe because a handle's destructor (which unregisters
-// its pointer) can only run under the GIL, and this whole sweep also runs under the one
-// continuously-held GIL of the logic-thread tick (logic_wrapper -> widget_tree.hpp:684 ->
-// model_app.hpp:250) — so no destructor can interleave between the snapshot and the calls.
-// Releasing the GIL mid-sweep, or invoking drain_fn from a thread outside that wrapper,
-// would let a concurrent handle destructor dangle these raw pointers.
 static void drain_standalone() {
-    std::vector<std::function<void()>*> snapshot;
+    std::vector<std::weak_ptr<std::function<void()>>> snapshot;
     {
         auto& reg = StandaloneDrainers::instance();
         std::lock_guard<std::mutex> lk(reg.m);
         snapshot = reg.fns;
     }
-    for (auto* fn : snapshot) (*fn)();
+    for (auto& weak : snapshot) {
+        if (auto fn = weak.lock()) (*fn)();
+    }
 }
 
 // Type-erased slot for PyModel view — defined before Bound* so they can hold shared_ptr to it.
@@ -598,12 +604,15 @@ struct BoundField {
 template <typename T>
 struct SharedHandle {
     Shared<T> shared;
-    std::function<void()> drain_fn;
+    std::shared_ptr<std::function<void()>> drain_fn;
     SharedHandle(T init) : shared(std::move(init)) {
-        drain_fn = [this] { shared.drain_notifications(); };
-        register_standalone_drainer(&drain_fn);
+        drain_fn = std::make_shared<std::function<void()>>([this] { shared.drain_notifications(); });
+        register_standalone_drainer(drain_fn);
     }
-    ~SharedHandle() { unregister_standalone_drainer(&drain_fn); }
+    ~SharedHandle() {
+        drain_fn.reset();
+        prune_expired_standalone_drainers();
+    }
     SharedHandle(const SharedHandle&) = delete;
     SharedHandle& operator=(const SharedHandle&) = delete;
     SharedHandle(SharedHandle&&) = delete;
@@ -644,12 +653,15 @@ struct BoundShared {
 template <typename T>
 struct ChannelHandle {
     Channel<T> channel;
-    std::function<void()> drain_fn;
+    std::shared_ptr<std::function<void()>> drain_fn;
     ChannelHandle() {
-        drain_fn = [this] { channel.drain_notifications(); };
-        register_standalone_drainer(&drain_fn);
+        drain_fn = std::make_shared<std::function<void()>>([this] { channel.drain_notifications(); });
+        register_standalone_drainer(drain_fn);
     }
-    ~ChannelHandle() { unregister_standalone_drainer(&drain_fn); }
+    ~ChannelHandle() {
+        drain_fn.reset();
+        prune_expired_standalone_drainers();
+    }
     ChannelHandle(const ChannelHandle&) = delete;
     ChannelHandle& operator=(const ChannelHandle&) = delete;
     ChannelHandle(ChannelHandle&&) = delete;
@@ -1343,8 +1355,14 @@ static void print_default_error(std::exception_ptr e) {
     try {
         std::rethrow_exception(e);
     } catch (nb::python_error& pe) {
-        pe.restore();
-        PyErr_Print();
+        // restore()/PyErr_Print() need a live interpreter to print into; with none up
+        // (e.g. this is running during/after Py_Finalize) fall back to a plain line.
+        if (Py_IsInitialized()) {
+            pe.restore();
+            PyErr_Print();
+        } else {
+            std::cerr << "[prism] unhandled exception in posted callback: " << pe.what() << '\n';
+        }
     } catch (const std::exception& ex) {
         std::cerr << "[prism] unhandled exception in posted callback: " << ex.what() << '\n';
     } catch (...) {
@@ -1387,7 +1405,17 @@ static void python_error_hub(std::exception_ptr e) {
         return;
     }
     nb::object handler = nb::borrow(nb::handle(handler_raw));
-    handler(exception_to_python(e));
+    try {
+        handler(exception_to_python(e));
+    } catch (nb::python_error& he) {
+        // The handler itself raised — print its exception (not the original) so the
+        // failure is visible, then still report the original via the default path.
+        he.restore();
+        PyErr_Print();
+        print_default_error(e);
+    } catch (...) {
+        print_default_error(e);
+    }
 }
 
 // Every Python callback wrapper below routes a caught exception here instead of printing

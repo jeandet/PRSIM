@@ -218,6 +218,36 @@ def test_on_error_none_restores_default_no_crash():
     m.a.value = 1  # must not raise/crash; falls back to default stderr print
 
 
+def test_on_error_handler_that_raises_is_reported_and_app_keeps_running(capfd):
+    """Task 2 repro: an on_error handler that itself raises must not be
+    silently swallowed — its own exception (not just the original one)
+    must reach stderr, and the app must keep dispatching afterward."""
+
+    class M(Model):
+        a = field(0)
+
+    m = M()
+    try:
+        prism.on_error(lambda exc: 1 / 0)
+
+        def bad_observer(v):
+            raise ValueError("boom")
+
+        m.a.observe(bad_observer)
+        m.a.value = 1  # bad_observer raises -> on_error handler raises too
+
+        # app keeps running: a later observer still fires normally
+        seen = []
+        m.a.observe(lambda v: seen.append(v))
+        m.a.value = 2
+        assert seen == [2]
+    finally:
+        prism.on_error(None)
+
+    captured = capfd.readouterr()
+    assert "ZeroDivisionError" in captured.err
+
+
 def test_shared_basic():
     class M(Model):
         s = shared(10)
@@ -613,6 +643,62 @@ def test_standalone_channel_drained_by_app_tick():
     conn.disconnect()
 
 
+def test_standalone_drain_uaf_survives_handle_dropped_from_sibling_callback():
+    """Task 1 repro: StandaloneDrainers used to hold raw std::function<void()>*.
+    If a Python observer callback fired mid-sweep drops the last reference to
+    ANOTHER standalone handle, that handle's destructor frees its drain
+    function while the sweep's already-taken snapshot still points at it —
+    the next iteration then calls into freed memory. Whether the resulting
+    use-after-free actually crashes depends on what the allocator later
+    does with that memory (CPython's own small-object allocator, not glibc
+    malloc, owns these blocks, so glibc heap-debugging env vars don't help
+    force it either) — not 100% deterministic, hence running it 3x per the
+    fix brief. Registration order matters: `a` (registered first) must be
+    the one whose drain runs first and whose callback drops `b` (registered
+    second), so `b`'s stale entry is the next one the sweep would touch.
+    Runs in a subprocess since a manifested crash would otherwise take down
+    the whole suite."""
+    code = (
+        "import threading, time\n"
+        "import prism\n"
+        "a = prism.SharedInt(0)\n"
+        "b = prism.SharedInt(0)\n"
+        "holder = [b]\n"
+        "del b  # only remaining reference to the SharedInt is holder[0]\n"
+        "holder[0].observe(lambda v: None)  # b was observed too\n"
+        "fired = []\n"
+        "def cb(v):\n"
+        "    fired.append(v)\n"
+        "    if holder:\n"
+        "        del holder[0]  # drops b's last ref -> ~SharedHandle() runs here\n"
+        "a.observe(cb)\n"
+        "class M(prism.Model):\n"
+        "    x = prism.field(0)\n"
+        "m = M()\n"
+        "t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=300))\n"
+        "t.start()\n"
+        "for _ in range(300):\n"
+        "    if prism._is_running():\n"
+        "        break\n"
+        "    time.sleep(0.01)\n"
+        "def setter():\n"
+        "    holder[0].value = 1  # touch b (still alive) before a's write can trigger cb\n"
+        "    a.value = 1  # queues a's drain, which runs cb -> drops holder[0]\n"
+        "th = threading.Thread(target=setter)\n"
+        "th.start()\n"
+        "th.join()\n"
+        "t.join()\n"
+        "assert fired == [1], fired\n"
+    )
+    for _ in range(3):
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=os.environ,
+            timeout=30,
+        )
+        assert result.returncode == 0
+
+
 def test_nested_transaction_abort_outer_preserved():
     class M(Model):
         a = field(0)
@@ -829,6 +915,41 @@ def test_derived_field_survives_run_headless_teardown():
         timeout=30,
     )
     assert result.returncode == 0
+
+
+def test_run_headless_startup_does_not_spin_on_derived_reads():
+    """Task 5 repro: the initial widget-tree build (registry.add, before the
+    logic thread's post-handle exists) reads every placed Derived field's
+    current value. dispatch_sync_read's startup-window spin used to run
+    unconditionally there and always burn its full 1000x1ms budget (no
+    handle can ever appear before setup() runs), adding ~1s per derived
+    field. With 3 derived fields that was >=3s; fixed it must stay well
+    under _run_headless's own delay_ms + a comfortable margin. Runs in a
+    subprocess so the wall-clock measurement isn't skewed by pytest/other
+    tests running concurrently."""
+    code = (
+        "import time\n"
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    a = prism.field(1)\n"
+        "    d1 = prism.derived(lambda self: self.a.value + 1, 'a')\n"
+        "    d2 = prism.derived(lambda self: self.a.value + 2, 'a')\n"
+        "    d3 = prism.derived(lambda self: self.a.value + 3, 'a')\n"
+        "m = M()\n"
+        "t0 = time.monotonic()\n"
+        "prism._run_headless(m, delay_ms=100)\n"
+        "print(time.monotonic() - t0)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=30,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    elapsed = float(result.stdout.strip().splitlines()[-1])
+    assert elapsed < 1.5, f"elapsed={elapsed}s (stderr={result.stderr})"
 
 
 def test_field_unsupported_list_default_raises():

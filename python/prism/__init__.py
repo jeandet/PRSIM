@@ -300,6 +300,9 @@ def _kind_of(value, who="field"):
 class _FieldDescriptor:
     def __init__(self, default, kind=None, meta=None, validator=None):
         self.default = default
+        # simplify: kind/meta are written by slider()/checkbox() but nothing reads
+        # them yet — no widget renderer branches on them. Upgrade path: a real
+        # slider/checkbox Widget<T> that consults these when one is wired up.
         self.kind = kind
         self.meta = meta or {}
         self.validator = validator
@@ -353,7 +356,7 @@ def field(default, validator=None):
 def slider(default, min=0.0, max=1.0, validator=None):
     """Value may be set from any thread (posted to the logic thread).
 
-    Float field descriptor rendered as a slider widget.
+    Float field (slider rendering not wired yet).
     """
     return _FieldDescriptor(
         float(default),
@@ -366,7 +369,7 @@ def slider(default, min=0.0, max=1.0, validator=None):
 def checkbox(default, label=None, validator=None):
     """Value may be set from any thread (posted to the logic thread).
 
-    Bool field descriptor rendered as a checkbox widget.
+    Bool field (checkbox rendering not wired yet).
     """
     return _FieldDescriptor(
         bool(default),
@@ -748,10 +751,9 @@ def tree_field(source: TreeFieldSource = None):  # type: ignore[assignment]
     dict ``{id: {label, children:[...], attrs:{}}}``, a zero-arg callable
     returning either (``lambda: make_source()`` / factory), or ``None``
     (empty tree). The factory form is evaluated lazily at
-    ``_TreeDescriptor._allocate`` (``__init__.py:804-808``). The
-    ``TreeSource`` protocol lives in ``prism.TreeSource`` — inheriting is
-    optional, structural matching is enough, but inheriting gives IDE
-    support.
+    ``_TreeDescriptor._allocate``. The ``TreeSource`` protocol lives in
+    ``prism.TreeSource`` — inheriting is optional, structural matching is
+    enough, but inheriting gives IDE support.
     """
     return _TreeDescriptor(source)  # type: ignore[arg-type]
 
@@ -768,11 +770,10 @@ def validator_for(type_hint):
     """
     try:
         from pydantic import TypeAdapter
-
-        ta = TypeAdapter(type_hint)
-        return ta.validate_python
-    except Exception as e:  # pragma: no cover
+    except ImportError as e:
         raise RuntimeError(f"validator_for requires pydantic: {e}") from e
+    ta = TypeAdapter(type_hint)
+    return ta.validate_python
 
 
 class Model(_ModelBase):
@@ -950,8 +951,10 @@ _error_handler = None
 
 
 def on_error(handler):
-    """Any thread. Called on the logic thread with the exception raised by an
-    observer/derived/worker callback. None restores the default (traceback to stderr).
+    """Any thread. Called on whichever thread raised — the logic thread for
+    observer/derived callbacks, the worker's own thread for prism.worker()
+    exceptions. Handlers must be thread-safe. None restores the default
+    (traceback to stderr).
     """
     global _error_handler
     _error_handler = handler
@@ -986,6 +989,12 @@ def _stop_all_workers():
         workers = list(_live_workers)
     for w in workers:
         w.stop()
+
+
+# Registered after _atexit_clear (line 269) so it runs first at interpreter exit
+# (atexit is LIFO): workers must be stopped before _atexit_clear tears down
+# observer keepalives they may still be calling into.
+_atexit_mod.register(_stop_all_workers)
 
 
 class Worker:
