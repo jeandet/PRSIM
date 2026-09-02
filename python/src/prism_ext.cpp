@@ -14,6 +14,7 @@
 #include <prism/ui/tree.hpp>
 
 #include <prism/app/headless_window.hpp>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -297,6 +298,41 @@ struct FieldHandle {
     }
 };
 
+// Standalone Shared<T>/Channel<T> handles (built via nb::init<>, not owned by a PyModel) are not
+// in any PyModel::slots vector, so PyModel::drain() never reaches them. Register their drain
+// functions here so PyModel::drain() can sweep them too — see drain_standalone() below.
+struct StandaloneDrainers {
+    std::mutex m;
+    std::vector<std::function<void()>*> fns;
+    static StandaloneDrainers& instance() {
+        static StandaloneDrainers inst;
+        return inst;
+    }
+};
+
+static void register_standalone_drainer(std::function<void()>* fn) {
+    auto& reg = StandaloneDrainers::instance();
+    std::lock_guard<std::mutex> lk(reg.m);
+    reg.fns.push_back(fn);
+}
+
+static void unregister_standalone_drainer(std::function<void()>* fn) {
+    auto& reg = StandaloneDrainers::instance();
+    std::lock_guard<std::mutex> lk(reg.m);
+    auto it = std::find(reg.fns.begin(), reg.fns.end(), fn);
+    if (it != reg.fns.end()) reg.fns.erase(it);
+}
+
+static void drain_standalone() {
+    std::vector<std::function<void()>*> snapshot;
+    {
+        auto& reg = StandaloneDrainers::instance();
+        std::lock_guard<std::mutex> lk(reg.m);
+        snapshot = reg.fns;
+    }
+    for (auto* fn : snapshot) (*fn)();
+}
+
 // Type-erased slot for PyModel view — defined before Bound* so they can hold shared_ptr to it.
 struct SlotBase {
     virtual ~SlotBase() = default;
@@ -535,7 +571,16 @@ struct BoundField {
 template <typename T>
 struct SharedHandle {
     Shared<T> shared;
-    SharedHandle(T init) : shared(std::move(init)) {}
+    std::function<void()> drain_fn;
+    SharedHandle(T init) : shared(std::move(init)) {
+        drain_fn = [this] { shared.drain_notifications(); };
+        register_standalone_drainer(&drain_fn);
+    }
+    ~SharedHandle() { unregister_standalone_drainer(&drain_fn); }
+    SharedHandle(const SharedHandle&) = delete;
+    SharedHandle& operator=(const SharedHandle&) = delete;
+    SharedHandle(SharedHandle&&) = delete;
+    SharedHandle& operator=(SharedHandle&&) = delete;
     T get() const { return shared.get(); }
     void set(T v) { shared.set(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
@@ -572,6 +617,16 @@ struct BoundShared {
 template <typename T>
 struct ChannelHandle {
     Channel<T> channel;
+    std::function<void()> drain_fn;
+    ChannelHandle() {
+        drain_fn = [this] { channel.drain_notifications(); };
+        register_standalone_drainer(&drain_fn);
+    }
+    ~ChannelHandle() { unregister_standalone_drainer(&drain_fn); }
+    ChannelHandle(const ChannelHandle&) = delete;
+    ChannelHandle& operator=(const ChannelHandle&) = delete;
+    ChannelHandle(ChannelHandle&&) = delete;
+    ChannelHandle& operator=(ChannelHandle&&) = delete;
     void send(T v) { channel.send(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
         auto wrapper = [cb](const T& val) {
@@ -1077,8 +1132,11 @@ struct PyModel {
     }
 
     void drain() {
-        std::lock_guard<std::mutex> lk(slots_mutex);
-        for (auto& s : slots) s->drain();
+        {
+            std::lock_guard<std::mutex> lk(slots_mutex);
+            for (auto& s : slots) s->drain();
+        }
+        drain_standalone();
     }
 };
 

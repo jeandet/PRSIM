@@ -390,6 +390,66 @@ def test_headless_transaction_in_app():
     conn.disconnect()
 
 
+def test_standalone_shared_drained_by_app_tick():
+    """Standalone SharedInt (not owned by a Model) must still be drained each app tick."""
+    import time
+
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    h = prism.SharedInt(0)
+    seen = []
+    conn = h.observe(lambda v: seen.append(v))
+
+    t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=300))
+    t.start()
+    for _ in range(100):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
+
+    def worker():
+        h.value = 5
+
+    th = threading.Thread(target=worker)
+    th.start()
+    th.join()
+    t.join()
+    assert seen == [5]
+    conn.disconnect()
+
+
+def test_standalone_channel_drained_by_app_tick():
+    """Standalone ChannelInt (not owned by a Model) must still be drained each app tick."""
+    import time
+
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    h = prism.ChannelInt()
+    seen = []
+    conn = h.observe(lambda v: seen.append(v))
+
+    t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=300))
+    t.start()
+    for _ in range(100):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
+
+    def worker():
+        h.send(7)
+
+    th = threading.Thread(target=worker)
+    th.start()
+    th.join()
+    t.join()
+    assert seen == [7]
+    conn.disconnect()
+
+
 def test_nested_transaction_abort_outer_preserved():
     class M(Model):
         a = field(0)

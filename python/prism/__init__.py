@@ -575,10 +575,12 @@ class _ChannelDescriptor:
 
 
 def shared(default, validator=None):
+    """Cross-thread latest-value slot. Standalone handles are drained on every app tick while an app runs."""
     return _SharedDescriptor(default, validator=validator)
 
 
 def channel(type_hint=0):
+    """Cross-thread FIFO event stream. Standalone handles are drained on every app tick while an app runs."""
     return _ChannelDescriptor(type_hint)
 
 
