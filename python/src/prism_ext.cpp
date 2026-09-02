@@ -1444,6 +1444,7 @@ NB_MODULE(_prism_ext, m) {
         }
         g_has_handle.store(false, std::memory_order_release);
         g_run_guard.store(false, std::memory_order_release);
+        g_app_closed.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("delay_ms")=100);
 
     m.def("run", [](PyModel& model, std::string title){
@@ -1476,5 +1477,6 @@ NB_MODULE(_prism_ext, m) {
         }
         g_has_handle.store(false, std::memory_order_release);
         g_run_guard.store(false, std::memory_order_release);
+        g_app_closed.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("title")="PRISM App");
 }
