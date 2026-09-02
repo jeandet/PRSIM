@@ -25,7 +25,11 @@ class LivePlot(prism.Model):
     status = prism.field("Ready")
 
     # derived: samples count
-    title = prism.derived(lambda self: f"freq={self.frequency.value:.1f} amp={self.amplitude.value:.1f}", "frequency", "amplitude")
+    title = prism.derived(
+        lambda self: f"freq={self.frequency.value:.1f} amp={self.amplitude.value:.1f}",
+        "frequency",
+        "amplitude",
+    )
 
     def view(self, vb):
         # canvas first (expands), then controls
@@ -51,30 +55,36 @@ class LivePlot(prism.Model):
         # viewport labels
         self.plot.x_label = "Time (rad)"
         self.plot.y_label = "Amplitude"
-        self.status.value = f"plotted {N} pts f={f:.2f} a={a:.2f} cos={'on' if show_cos else 'off'}"
+        self.status.value = (
+            f"plotted {N} pts f={f:.2f} a={a:.2f} cos={'on' if show_cos else 'off'}"
+        )
 
 
-if __name__ == "__main__":
+def _main():
     m = LivePlot()
     m.rebuild()
 
     # Behavior: recompute on slider/checkbox change (on_change → logic thread)
+    # Observers capture 'm' strongly (Model -> handle -> Connection -> lambda -> Model cycle);
+    # _atexit_clear() in prism/__init__.py breaks this before nanobind's leak check,
+    # and keeping 'm' in function scope (not __main__ globals) avoids a false-positive
+    # "leaked Model" report at shutdown.
     m.frequency.observe(lambda v: m.rebuild())
     m.amplitude.observe(lambda v: m.rebuild())
     m.show_cos.observe(lambda v: m.rebuild())
 
     # background: simulate live sensor jitter via Shared-like periodic update
-    # here we just nudge frequency from another thread to show any-thread posting
     def jitter():
         for i in range(30):
             time.sleep(0.5)
-            # any-thread mutation is posted to logic thread queue
             with prism.transaction():
-                # small auto-sweep
                 m.frequency.value = 2.0 + 0.5 * math.sin(time.time())
-            # rebuild will happen via observer
 
     t = threading.Thread(target=jitter, daemon=True)
     t.start()
 
     prism.run(m, title="Live Plot — Python")
+
+
+if __name__ == "__main__":
+    _main()

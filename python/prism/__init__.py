@@ -96,6 +96,157 @@ __all__ = [
 ]
 
 
+# Fire-and-forget keepalive: Python-side storage replaces nanobind keep_alive<1,0>
+# which created a non-GC immortal cycle (handle<->Connection via two keep_alive records).
+# Bound*/Field* handles are nanobind objects with no __dict__ and no weakref support,
+# so we cannot store on the handle itself. Instead use a global id(handle)->list map
+# that keeps Connection alive as long as the handle (or its Model) is alive;
+# _atexit_clear() disconnects and clears before nanobind's leak check.
+_keepalive_by_handle: dict[int, list] = {}
+
+
+def _patch_bound_observe():
+    # Bound handles (Model-owned) + standalone handles (FieldInt etc.)
+    bound_observe = [
+        (BoundInt, "observe"),
+        (BoundFloat, "observe"),
+        (BoundStr, "observe"),
+        (BoundBool, "observe"),
+        (BoundSharedInt, "observe"),
+        (BoundSharedFloat, "observe"),
+        (BoundSharedStr, "observe"),
+        (BoundSharedBool, "observe"),
+        (BoundChannelInt, "observe"),
+        (BoundChannelFloat, "observe"),
+        (BoundChannelStr, "observe"),
+        (BoundChannelBool, "observe"),
+        (BoundDerivedInt, "observe"),
+        (BoundDerivedFloat, "observe"),
+        (BoundDerivedStr, "observe"),
+        (BoundDerivedBool, "observe"),
+        (BoundListInt, "observe_insert"),
+        (BoundListInt, "observe_remove"),
+        (BoundListInt, "observe_update"),
+        (BoundListFloat, "observe_insert"),
+        (BoundListFloat, "observe_remove"),
+        (BoundListFloat, "observe_update"),
+        (BoundListStr, "observe_insert"),
+        (BoundListStr, "observe_remove"),
+        (BoundListStr, "observe_update"),
+        # standalone fields (not Model-owned) — same fire-and-forget semantics
+        (FieldInt, "observe"),
+        (FieldFloat, "observe"),
+        (FieldStr, "observe"),
+        (FieldBool, "observe"),
+        (SharedInt, "observe"),
+        (SharedFloat, "observe"),
+        (SharedStr, "observe"),
+        (SharedBool, "observe"),
+        (ChannelInt, "observe"),
+        (ChannelFloat, "observe"),
+        (ChannelStr, "observe"),
+        (ChannelBool, "observe"),
+        (ListInt, "observe_insert"),
+        (ListInt, "observe_remove"),
+        (ListInt, "observe_update"),
+        (ListFloat, "observe_insert"),
+        (ListFloat, "observe_remove"),
+        (ListFloat, "observe_update"),
+        (ListStr, "observe_insert"),
+        (ListStr, "observe_remove"),
+        (ListStr, "observe_update"),
+    ]
+    for cls, meth in bound_observe:
+        try:
+            orig = getattr(cls, meth)
+        except AttributeError:
+            continue
+
+        # capture orig in default arg to avoid late-binding
+        def _wrap(self, *args, _orig=orig, **kwargs):  # type: ignore[no-untyped-def]
+            conn = _orig(self, *args, **kwargs)
+            # global id->list keepalive (handles have no __dict__)
+            lst = _keepalive_by_handle.get(id(self))
+            if lst is None:
+                lst = []
+                _keepalive_by_handle[id(self)] = lst
+            lst.append(conn)
+            return conn
+
+        setattr(cls, meth, _wrap)
+
+
+_patch_bound_observe()
+del _patch_bound_observe
+
+# Global weak registry for atexit cleanup of observer cycles that capture Model strongly
+# (e.g. `m.field.observe(lambda v: m.rebuild())` creates Model -> handle -> list -> Connection -> lambda -> Model cycle
+# that is not GC-collectible due to nanobind's non-GC edge. Clearing at exit breaks it before nanobind leak check.)
+import weakref as _wr_mod
+import atexit as _atexit_mod
+
+_all_models: _wr_mod.WeakSet = _wr_mod.WeakSet()
+
+
+def _clear_model_observers(model):
+    # disconnect all Connections kept via _keepalive_by_handle for this model's handles
+    d = getattr(model, "__dict__", {})
+    fields = d.get("_prism_fields", {})
+    for h in list(fields.values()):
+        lst = _keepalive_by_handle.pop(id(h), None)
+        if lst:
+            for conn in list(lst):
+                try:
+                    conn.disconnect()
+                except Exception:
+                    pass
+            lst.clear()
+    # also clear any _prism_keepalive directly on model (future)
+    ml = getattr(model, "_prism_keepalive", None)
+    if ml:
+        for conn in list(ml):
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+        ml.clear()
+    # break Model -> handle cycle so nanobind doesn't report Bound* as leaked
+    # when Model is still in __main__ globals at shutdown (common for examples)
+    try:
+        fields.clear()
+    except Exception:
+        pass
+    try:
+        if "_prism_fields" in d:
+            d.pop("_prism_fields", None)
+    except Exception:
+        pass
+
+
+def _atexit_clear():
+    for m in list(_all_models):
+        try:
+            _clear_model_observers(m)
+        except Exception:
+            pass
+    # disconnect any remaining keepalive entries (standalone fields, leaked handles)
+    for lst in list(_keepalive_by_handle.values()):
+        for conn in list(lst):
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
+        lst.clear()
+    _keepalive_by_handle.clear()
+    try:
+        _all_models.clear()
+    except Exception:
+        pass
+
+
+_atexit_mod.register(_atexit_clear)
+
+
 class _FieldDescriptor:
     def __init__(self, default, kind=None, meta=None, validator=None):
         self.default = default
@@ -157,7 +308,10 @@ def field(default, validator=None):
 
 def slider(default, min=0.0, max=1.0, validator=None):
     return _FieldDescriptor(
-        float(default), kind="slider", meta={"min": float(min), "max": float(max)}, validator=validator
+        float(default),
+        kind="slider",
+        meta={"min": float(min), "max": float(max)},
+        validator=validator,
     )
 
 
@@ -289,6 +443,7 @@ class _DerivedDescriptor:
         sig = inspect.signature(self.fn)
         n_params = len(sig.parameters)
         n_deps = len(dep_handles)
+
         # collect current dep values for probe of (a,b) style
         def _dep_vals():
             vals = []
@@ -320,7 +475,13 @@ class _DerivedDescriptor:
             has_str_names = all(n is not None for n in dep_names)
             if has_str_names:
                 orig2 = self.fn
-                call_fn = lambda _w=wref2, _f=orig2, _ns=dep_names: _f(*[getattr(_w(), n).value for n in _ns]) if _w() is not None else None  # type: ignore[no-untyped-call]
+                call_fn = (
+                    lambda _w=wref2, _f=orig2, _ns=dep_names: _f(
+                        *[getattr(_w(), n).value for n in _ns]
+                    )
+                    if _w() is not None
+                    else None
+                )  # type: ignore[no-untyped-call]
             else:
                 # fallback: captures handles strongly (rare)
                 call_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
@@ -489,7 +650,11 @@ class _TreeDescriptor:
         if self.name in cache:
             return cache[self.name]
         # allow source to be callable returning dict/object, or direct
-        src = self.source() if callable(self.source) and not isinstance(self.source, dict) else self.source
+        src = (
+            self.source()
+            if callable(self.source) and not isinstance(self.source, dict)
+            else self.source
+        )
         if src is None:
             src = {}
         h = instance._add_tree_internal(src)  # type: ignore[attr-defined]
@@ -587,6 +752,11 @@ class Model(_ModelBase):
 
     def __init__(self, **kwargs):
         super().__init__()
+        # register for atexit cleanup before nanobind leak check
+        try:
+            _all_models.add(self)  # type: ignore[name-defined]
+        except Exception:
+            pass
         # Allocate descriptors eagerly so view ordering matches class definition order
         for cls in reversed(type(self).__mro__):
             for name, attr in cls.__dict__.items():
