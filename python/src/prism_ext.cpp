@@ -1072,139 +1072,139 @@ struct PyModel {
 NB_MODULE(_prism_ext, m) {
     m.def("is_logic_thread", [](){ return detail_is_logic_thread; });
 
-    nb::class_<Connection>(m, "Connection")
+    nb::class_<Connection>(m, "Connection", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("disconnect", &Connection::disconnect)
         .def("__enter__", [](Connection& self){ return &self; })
         .def("__exit__", [](Connection& self, nb::object, nb::object, nb::object){ self.disconnect(); return false; });
 
-    nb::class_<FieldHandle<int>>(m, "FieldInt")
+    nb::class_<FieldHandle<int>>(m, "FieldInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<int>(), nb::arg("value") = 0)
         .def_prop_rw("value", &FieldHandle<int>::get, &FieldHandle<int>::set)
         .def("observe", &FieldHandle<int>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"))
         .def("get", &FieldHandle<int>::get)
         .def("set", &FieldHandle<int>::set);
-    nb::class_<FieldHandle<double>>(m, "FieldFloat")
+    nb::class_<FieldHandle<double>>(m, "FieldFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<double>(), nb::arg("value") = 0.0)
         .def_prop_rw("value", &FieldHandle<double>::get, &FieldHandle<double>::set)
         .def("observe", &FieldHandle<double>::observe, nb::keep_alive<0, 1>())
         .def("get", &FieldHandle<double>::get)
         .def("set", &FieldHandle<double>::set);
-    nb::class_<FieldHandle<std::string>>(m, "FieldStr")
+    nb::class_<FieldHandle<std::string>>(m, "FieldStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<std::string>(), nb::arg("value") = "")
         .def_prop_rw("value", &FieldHandle<std::string>::get, &FieldHandle<std::string>::set)
         .def("observe", &FieldHandle<std::string>::observe, nb::keep_alive<0, 1>())
         .def("get", &FieldHandle<std::string>::get)
         .def("set", &FieldHandle<std::string>::set);
-    nb::class_<FieldHandle<bool>>(m, "FieldBool")
+    nb::class_<FieldHandle<bool>>(m, "FieldBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<bool>(), nb::arg("value") = false)
         .def_prop_rw("value", &FieldHandle<bool>::get, &FieldHandle<bool>::set)
         .def("observe", &FieldHandle<bool>::observe, nb::keep_alive<0, 1>())
         .def("get", &FieldHandle<bool>::get)
         .def("set", &FieldHandle<bool>::set);
 
-    nb::class_<BoundField<int>>(m, "BoundInt")
+    nb::class_<BoundField<int>>(m, "BoundInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<int>::get, &BoundField<int>::set)
         .def("observe", &BoundField<int>::observe)
         .def("get", &BoundField<int>::get)
         .def("set", &BoundField<int>::set);
-    nb::class_<BoundField<double>>(m, "BoundFloat")
+    nb::class_<BoundField<double>>(m, "BoundFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<double>::get, &BoundField<double>::set)
         .def("observe", &BoundField<double>::observe)
         .def("get", &BoundField<double>::get)
         .def("set", &BoundField<double>::set);
-    nb::class_<BoundField<std::string>>(m, "BoundStr")
+    nb::class_<BoundField<std::string>>(m, "BoundStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<std::string>::get, &BoundField<std::string>::set)
         .def("observe", &BoundField<std::string>::observe)
         .def("get", &BoundField<std::string>::get)
         .def("set", &BoundField<std::string>::set);
-    nb::class_<BoundField<bool>>(m, "BoundBool")
+    nb::class_<BoundField<bool>>(m, "BoundBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<bool>::get, &BoundField<bool>::set)
         .def("observe", &BoundField<bool>::observe)
         .def("get", &BoundField<bool>::get)
         .def("set", &BoundField<bool>::set);
 
     // Standalone Shared handles
-    nb::class_<SharedHandle<int>>(m, "SharedInt")
+    nb::class_<SharedHandle<int>>(m, "SharedInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<int>(), nb::arg("value") = 0)
         .def_prop_rw("value", &SharedHandle<int>::get, &SharedHandle<int>::set)
         .def("observe", &SharedHandle<int>::observe, nb::keep_alive<0, 1>(), nb::arg("callback"))
         .def("get", &SharedHandle<int>::get).def("set", &SharedHandle<int>::set);
-    nb::class_<SharedHandle<double>>(m, "SharedFloat")
+    nb::class_<SharedHandle<double>>(m, "SharedFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<double>(), nb::arg("value") = 0.0)
         .def_prop_rw("value", &SharedHandle<double>::get, &SharedHandle<double>::set)
         .def("observe", &SharedHandle<double>::observe, nb::keep_alive<0, 1>())
         .def("get", &SharedHandle<double>::get).def("set", &SharedHandle<double>::set);
-    nb::class_<SharedHandle<std::string>>(m, "SharedStr")
+    nb::class_<SharedHandle<std::string>>(m, "SharedStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<std::string>(), nb::arg("value") = "")
         .def_prop_rw("value", &SharedHandle<std::string>::get, &SharedHandle<std::string>::set)
         .def("observe", &SharedHandle<std::string>::observe, nb::keep_alive<0, 1>())
         .def("get", &SharedHandle<std::string>::get).def("set", &SharedHandle<std::string>::set);
-    nb::class_<SharedHandle<bool>>(m, "SharedBool")
+    nb::class_<SharedHandle<bool>>(m, "SharedBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<bool>(), nb::arg("value") = false)
         .def_prop_rw("value", &SharedHandle<bool>::get, &SharedHandle<bool>::set)
         .def("observe", &SharedHandle<bool>::observe, nb::keep_alive<0, 1>())
         .def("get", &SharedHandle<bool>::get).def("set", &SharedHandle<bool>::set);
 
-    nb::class_<BoundShared<int>>(m, "BoundSharedInt")
+    nb::class_<BoundShared<int>>(m, "BoundSharedInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<int>::get, &BoundShared<int>::set)
         .def("observe", &BoundShared<int>::observe)
         .def("get", &BoundShared<int>::get).def("set", &BoundShared<int>::set);
-    nb::class_<BoundShared<double>>(m, "BoundSharedFloat")
+    nb::class_<BoundShared<double>>(m, "BoundSharedFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<double>::get, &BoundShared<double>::set)
         .def("observe", &BoundShared<double>::observe)
         .def("get", &BoundShared<double>::get).def("set", &BoundShared<double>::set);
-    nb::class_<BoundShared<std::string>>(m, "BoundSharedStr")
+    nb::class_<BoundShared<std::string>>(m, "BoundSharedStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<std::string>::get, &BoundShared<std::string>::set)
         .def("observe", &BoundShared<std::string>::observe)
         .def("get", &BoundShared<std::string>::get).def("set", &BoundShared<std::string>::set);
-    nb::class_<BoundShared<bool>>(m, "BoundSharedBool")
+    nb::class_<BoundShared<bool>>(m, "BoundSharedBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<bool>::get, &BoundShared<bool>::set)
         .def("observe", &BoundShared<bool>::observe)
         .def("get", &BoundShared<bool>::get).def("set", &BoundShared<bool>::set);
 
     // Channel handles
-    nb::class_<ChannelHandle<int>>(m, "ChannelInt")
+    nb::class_<ChannelHandle<int>>(m, "ChannelInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("send", &ChannelHandle<int>::send).def("observe", &ChannelHandle<int>::observe, nb::keep_alive<0, 1>());
-    nb::class_<ChannelHandle<double>>(m, "ChannelFloat")
+    nb::class_<ChannelHandle<double>>(m, "ChannelFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("send", &ChannelHandle<double>::send).def("observe", &ChannelHandle<double>::observe, nb::keep_alive<0, 1>());
-    nb::class_<ChannelHandle<std::string>>(m, "ChannelStr")
+    nb::class_<ChannelHandle<std::string>>(m, "ChannelStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("send", &ChannelHandle<std::string>::send).def("observe", &ChannelHandle<std::string>::observe, nb::keep_alive<0, 1>());
-    nb::class_<ChannelHandle<bool>>(m, "ChannelBool")
+    nb::class_<ChannelHandle<bool>>(m, "ChannelBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("send", &ChannelHandle<bool>::send).def("observe", &ChannelHandle<bool>::observe, nb::keep_alive<0, 1>());
 
-    nb::class_<BoundChannel<int>>(m, "BoundChannelInt")
+    nb::class_<BoundChannel<int>>(m, "BoundChannelInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("send", &BoundChannel<int>::send).def("observe", &BoundChannel<int>::observe);
-    nb::class_<BoundChannel<double>>(m, "BoundChannelFloat")
+    nb::class_<BoundChannel<double>>(m, "BoundChannelFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("send", &BoundChannel<double>::send).def("observe", &BoundChannel<double>::observe);
-    nb::class_<BoundChannel<std::string>>(m, "BoundChannelStr")
+    nb::class_<BoundChannel<std::string>>(m, "BoundChannelStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("send", &BoundChannel<std::string>::send).def("observe", &BoundChannel<std::string>::observe);
-    nb::class_<BoundChannel<bool>>(m, "BoundChannelBool")
+    nb::class_<BoundChannel<bool>>(m, "BoundChannelBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("send", &BoundChannel<bool>::send).def("observe", &BoundChannel<bool>::observe);
 
-    nb::class_<BoundDerived<int>>(m, "BoundDerivedInt")
+    nb::class_<BoundDerived<int>>(m, "BoundDerivedInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<int>::get).def("get", &BoundDerived<int>::get)
         .def("observe", &BoundDerived<int>::observe);
-    nb::class_<BoundDerived<double>>(m, "BoundDerivedFloat")
+    nb::class_<BoundDerived<double>>(m, "BoundDerivedFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<double>::get).def("get", &BoundDerived<double>::get)
         .def("observe", &BoundDerived<double>::observe);
-    nb::class_<BoundDerived<std::string>>(m, "BoundDerivedStr")
+    nb::class_<BoundDerived<std::string>>(m, "BoundDerivedStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<std::string>::get).def("get", &BoundDerived<std::string>::get)
         .def("observe", &BoundDerived<std::string>::observe);
-    nb::class_<BoundDerived<bool>>(m, "BoundDerivedBool")
+    nb::class_<BoundDerived<bool>>(m, "BoundDerivedBool", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<bool>::get).def("get", &BoundDerived<bool>::get)
         .def("observe", &BoundDerived<bool>::observe);
 
-    nb::class_<ListHandle<int>>(m, "ListInt")
+    nb::class_<ListHandle<int>>(m, "ListInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("push", &ListHandle<int>::push).def("erase", &ListHandle<int>::erase)
         .def("set", &ListHandle<int>::set).def("replace_all", &ListHandle<int>::replace_all)
         .def("size", &ListHandle<int>::size).def("get", &ListHandle<int>::get).def("to_list", &ListHandle<int>::to_list)
         .def("observe_insert", &ListHandle<int>::observe_insert, nb::keep_alive<0, 1>()).def("observe_remove", &ListHandle<int>::observe_remove, nb::keep_alive<0, 1>()).def("observe_update", &ListHandle<int>::observe_update, nb::keep_alive<0, 1>());
-    nb::class_<ListHandle<double>>(m, "ListFloat")
+    nb::class_<ListHandle<double>>(m, "ListFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("push", &ListHandle<double>::push).def("erase", &ListHandle<double>::erase)
         .def("set", &ListHandle<double>::set).def("replace_all", &ListHandle<double>::replace_all)
         .def("size", &ListHandle<double>::size).def("get", &ListHandle<double>::get).def("to_list", &ListHandle<double>::to_list)
         .def("observe_insert", &ListHandle<double>::observe_insert, nb::keep_alive<0, 1>()).def("observe_remove", &ListHandle<double>::observe_remove, nb::keep_alive<0, 1>()).def("observe_update", &ListHandle<double>::observe_update, nb::keep_alive<0, 1>());
-    nb::class_<ListHandle<std::string>>(m, "ListStr")
+    nb::class_<ListHandle<std::string>>(m, "ListStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("push", &ListHandle<std::string>::push).def("erase", &ListHandle<std::string>::erase)
         .def("set", &ListHandle<std::string>::set).def("replace_all", &ListHandle<std::string>::replace_all)
         .def("size", &ListHandle<std::string>::size).def("get", &ListHandle<std::string>::get).def("to_list", &ListHandle<std::string>::to_list)
@@ -1212,29 +1212,29 @@ NB_MODULE(_prism_ext, m) {
     // List<bool> disabled — vector<bool> proxy incompatible with const T& Signal; use int list for bool data
 
 
-    nb::class_<BoundList<int>>(m, "BoundListInt")
+    nb::class_<BoundList<int>>(m, "BoundListInt", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("push", &BoundList<int>::push).def("erase", &BoundList<int>::erase).def("set", &BoundList<int>::set).def("replace_all", &BoundList<int>::replace_all)
         .def("size", &BoundList<int>::size).def("get", &BoundList<int>::get).def("to_list", &BoundList<int>::to_list)
         .def("observe_insert", &BoundList<int>::observe_insert).def("observe_remove", &BoundList<int>::observe_remove).def("observe_update", &BoundList<int>::observe_update);
-    nb::class_<BoundList<double>>(m, "BoundListFloat")
+    nb::class_<BoundList<double>>(m, "BoundListFloat", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("push", &BoundList<double>::push).def("erase", &BoundList<double>::erase).def("set", &BoundList<double>::set).def("replace_all", &BoundList<double>::replace_all)
         .def("size", &BoundList<double>::size).def("get", &BoundList<double>::get).def("to_list", &BoundList<double>::to_list)
         .def("observe_insert", &BoundList<double>::observe_insert).def("observe_remove", &BoundList<double>::observe_remove).def("observe_update", &BoundList<double>::observe_update);
-    nb::class_<BoundList<std::string>>(m, "BoundListStr")
+    nb::class_<BoundList<std::string>>(m, "BoundListStr", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("push", &BoundList<std::string>::push).def("erase", &BoundList<std::string>::erase).def("set", &BoundList<std::string>::set).def("replace_all", &BoundList<std::string>::replace_all)
         .def("size", &BoundList<std::string>::size).def("get", &BoundList<std::string>::get).def("to_list", &BoundList<std::string>::to_list)
         .def("observe_insert", &BoundList<std::string>::observe_insert).def("observe_remove", &BoundList<std::string>::observe_remove).def("observe_update", &BoundList<std::string>::observe_update);
     // BoundList<bool> disabled — see above
 
 
-    nb::class_<BoundPlot>(m, "BoundPlot")
+    nb::class_<BoundPlot>(m, "BoundPlot", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("add_series", &BoundPlot::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
         .def("clear_series", &BoundPlot::clear_series)
         .def("notify", &BoundPlot::notify)
         .def("reset_view", &BoundPlot::reset_view)
         .def_prop_rw("x_label", &BoundPlot::get_x_label, &BoundPlot::set_x_label)
         .def_prop_rw("y_label", &BoundPlot::get_y_label, &BoundPlot::set_y_label);
-    nb::class_<PlotHandle>(m, "PlotHandle")
+    nb::class_<PlotHandle>(m, "PlotHandle", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>())
         .def("add_series", &PlotHandle::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
         .def("clear_series", &PlotHandle::clear_series)
@@ -1242,10 +1242,10 @@ NB_MODULE(_prism_ext, m) {
         .def("reset_view", &PlotHandle::reset_view)
         .def_prop_rw("x_label", &PlotHandle::get_x_label, &PlotHandle::set_x_label)
         .def_prop_rw("y_label", &PlotHandle::get_y_label, &PlotHandle::set_y_label);
-    nb::class_<BoundTree>(m, "BoundTree")
+    nb::class_<BoundTree>(m, "BoundTree", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("refresh", &BoundTree::refresh)
         .def("rows", &BoundTree::rows);
-    nb::class_<TreeHandle>(m, "TreeHandle")
+    nb::class_<TreeHandle>(m, "TreeHandle", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<nb::object>(), nb::arg("source"))
         .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch([p](){ p->refresh(); }); })
         .def("rows", [](TreeHandle& h){

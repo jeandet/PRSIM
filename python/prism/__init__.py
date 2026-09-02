@@ -96,13 +96,18 @@ __all__ = [
 ]
 
 
+import weakref as _wr_mod
+import atexit as _atexit_mod
+
 # Fire-and-forget keepalive: Python-side storage replaces nanobind keep_alive<1,0>
 # which created a non-GC immortal cycle (handle<->Connection via two keep_alive records).
-# Bound*/Field* handles are nanobind objects with no __dict__ and no weakref support,
-# so we cannot store on the handle itself. Instead use a global id(handle)->list map
-# that keeps Connection alive as long as the handle (or its Model) is alive;
-# _atexit_clear() disconnects and clears before nanobind's leak check.
+# Handles are now nanobind objects with dynamic_attr + weakref (see prism_ext.cpp),
+# so we store keepalive per-handle via __dict__ (_prism_keepalive) — no global id map,
+# no id-reuse bug, and the Model->handle->Connection->cb->Model cycle becomes GC-collectable.
+# Fallback global id map remains for any handle that somehow lacks __dict__ (defensive).
 _keepalive_by_handle: dict[int, list] = {}
+_observed_handles: _wr_mod.WeakSet = _wr_mod.WeakSet()
+_all_models: _wr_mod.WeakSet = _wr_mod.WeakSet()
 
 
 def _patch_bound_observe():
@@ -165,10 +170,19 @@ def _patch_bound_observe():
         # capture orig in default arg to avoid late-binding
         def _wrap(self, *args, _orig=orig, **kwargs):  # type: ignore[no-untyped-def]
             conn = _orig(self, *args, **kwargs)
-            # global id->list keepalive (handles have no __dict__); setdefault is
-            # atomic under the GIL so concurrent first-observe doesn't clobber.
-            lst = _keepalive_by_handle.setdefault(id(self), [])
-            lst.append(conn)
+            # per-handle storage via __dict__ (handles now have dynamic_attr + weakref);
+            # falls back to global id map only if handle lacks __dict__ (defensive).
+            try:
+                d = self.__dict__  # type: ignore[attr-defined]
+                lst = d.setdefault("_prism_keepalive", [])
+                lst.append(conn)
+                try:
+                    _observed_handles.add(self)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+            except (AttributeError, TypeError):
+                lst = _keepalive_by_handle.setdefault(id(self), [])
+                lst.append(conn)
             return conn
 
         setattr(cls, meth, _wrap)
@@ -177,28 +191,45 @@ def _patch_bound_observe():
 _patch_bound_observe()
 del _patch_bound_observe
 
-# Global weak registry for atexit cleanup of observer cycles that capture Model strongly
-# (e.g. `m.field.observe(lambda v: m.rebuild())` creates Model -> handle -> list -> Connection -> lambda -> Model cycle
-# that is not GC-collectible due to nanobind's non-GC edge. Clearing at exit breaks it before nanobind leak check.)
-import weakref as _wr_mod
-import atexit as _atexit_mod
-
-_all_models: _wr_mod.WeakSet = _wr_mod.WeakSet()
+# _all_models / _observed_handles / _keepalive_by_handle already defined at top
+# (kept here for atexit ordering; no re-import needed)
 
 
 def _clear_model_observers(model):
-    # disconnect all Connections kept via _keepalive_by_handle for this model's handles
+    # disconnect all Connections kept per-handle (and legacy global map) for this model's handles
     d = getattr(model, "__dict__", {})
     fields = d.get("_prism_fields", {})
     for h in list(fields.values()):
-        lst = _keepalive_by_handle.pop(id(h), None)
+        # per-handle list
+        lst = None
+        try:
+            lst = h.__dict__.get("_prism_keepalive")  # type: ignore[attr-defined]
+        except (AttributeError, TypeError):
+            lst = None
+        if lst is None:
+            try:
+                lst = getattr(h, "_prism_keepalive", None)
+            except Exception:
+                lst = None
         if lst:
             for conn in list(lst):
                 try:
                     conn.disconnect()
                 except Exception:
                     pass
-            lst.clear()
+            try:
+                lst.clear()
+            except Exception:
+                pass
+        # legacy global fallback
+        lst2 = _keepalive_by_handle.pop(id(h), None)
+        if lst2:
+            for conn in list(lst2):
+                try:
+                    conn.disconnect()
+                except Exception:
+                    pass
+            lst2.clear()
     # also clear any _prism_keepalive directly on model (future)
     ml = getattr(model, "_prism_keepalive", None)
     if ml:
@@ -207,7 +238,10 @@ def _clear_model_observers(model):
                 conn.disconnect()
             except Exception:
                 pass
-        ml.clear()
+        try:
+            ml.clear()
+        except Exception:
+            pass
     # break Model -> handle cycle so nanobind doesn't report Bound* as leaked
     # when Model is still in __main__ globals at shutdown (common for examples)
     try:
@@ -228,6 +262,31 @@ def _atexit_clear():
         except Exception:
             pass
     # disconnect any remaining keepalive entries (standalone fields, leaked handles)
+    # per-handle WeakSet first (covers most cases after dynamic_attr change)
+    for h in list(_observed_handles):  # type: ignore[arg-type]
+        lst = None
+        try:
+            lst = h.__dict__.get("_prism_keepalive")  # type: ignore[attr-defined]
+        except (AttributeError, TypeError):
+            try:
+                lst = getattr(h, "_prism_keepalive", None)
+            except Exception:
+                lst = None
+        if lst:
+            for conn in list(lst):
+                try:
+                    conn.disconnect()
+                except Exception:
+                    pass
+            try:
+                lst.clear()
+            except Exception:
+                pass
+    try:
+        _observed_handles.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
+    # legacy global fallback
     for lst in list(_keepalive_by_handle.values()):
         for conn in list(lst):
             try:
