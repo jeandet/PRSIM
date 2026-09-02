@@ -1238,22 +1238,23 @@ def test_import_has_no_sys_modules_sweep():
 
 
 def test_worker_interval_ticks_and_stop_halts_it():
-    import time
-
     counts = {"n": 0}
+    third_tick = threading.Event()
 
     def tick(stop):
         counts["n"] += 1
+        if counts["n"] == 3:
+            third_tick.set()
 
     w = prism.worker(tick, interval=0.01)
-    time.sleep(0.05)
-    assert counts["n"] > 0
+    assert third_tick.wait(timeout=2.0)
 
     w.stop()
     assert not w.is_alive
 
+    # stop() already joined the thread, so no further tick can have run —
+    # this is a join guarantee, not a race against a sleep.
     n_at_stop = counts["n"]
-    time.sleep(0.05)
     assert counts["n"] == n_at_stop
 
 

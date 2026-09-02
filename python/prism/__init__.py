@@ -967,16 +967,25 @@ def _report_worker_error(exc):
 
 # WeakSet so a Worker the caller never assigns still gets swept here without
 # being kept alive by this set alone; run()/_run_headless() stop every live
-# worker on exit so nothing outlives the app.
+# worker on exit so nothing outlives the app. _live_workers_lock guards both
+# the add() in worker() and the snapshot in _stop_all_workers() — a WeakSet
+# can raise "Set changed size during iteration" when a dead entry's weakref
+# callback fires (on another thread's GC) while list(_live_workers) is
+# iterating it.
+_live_workers_lock = _threading_mod.Lock()
 _live_workers: _wr_mod.WeakSet = _wr_mod.WeakSet()
 
 
+def _register_worker(w):
+    with _live_workers_lock:
+        _live_workers.add(w)
+
+
 def _stop_all_workers():
-    for w in list(_live_workers):
-        try:
-            w.stop()
-        except Exception:
-            pass
+    with _live_workers_lock:
+        workers = list(_live_workers)
+    for w in workers:
+        w.stop()
 
 
 class Worker:
@@ -993,9 +1002,10 @@ class Worker:
             if self._interval is None:
                 self._fn(self._stop)
             else:
-                while not self._stop.is_set():
+                # wait first: first call lands after one interval, and a
+                # stop() during the wait exits immediately without a call.
+                while not self._stop.wait(self._interval):
                     self._fn(self._stop)
-                    self._stop.wait(self._interval)
         except Exception as exc:
             _report_worker_error(exc)
 
@@ -1009,7 +1019,12 @@ class Worker:
 
     def stop(self):
         self._stop.set()
-        self._thread.join(timeout=1.0)
+        # Guards two cases: never started (Thread.join() raises RuntimeError
+        # before start()) and already-finished (join is then a no-op anyway)
+        # — makes stop() safe to call unconditionally, incl. from
+        # _stop_all_workers() racing a worker() call still mid-start.
+        if self._thread.is_alive():
+            self._thread.join(timeout=1.0)
 
     def __enter__(self):
         return self
@@ -1022,12 +1037,14 @@ class Worker:
 def worker(fn, *, interval=None, daemon=True, name=None):
     """Any thread. Runs fn on a background thread; exceptions go to prism.on_error().
 
-    Calls ``fn(stop: threading.Event)`` once if *interval* is None, else
-    repeatedly every *interval* seconds (via ``stop.wait``) until
-    ``.stop()`` sets the event. Starts immediately and returns the
-    :class:`Worker`; still-running workers are stopped when ``run()`` /
-    ``_run_headless()`` return.
+    Calls ``fn(stop: threading.Event)`` once if *interval* is None. With an
+    *interval*, waits *interval* seconds (via ``stop.wait``) before each
+    call — so the first call happens after one interval — and exits
+    immediately once ``.stop()`` sets the event. Starts immediately and
+    returns the :class:`Worker`; still-running workers are stopped when
+    ``run()`` / ``_run_headless()`` return.
     """
     w = Worker(fn, interval=interval, daemon=daemon, name=name)
-    _live_workers.add(w)
-    return w.start()
+    w.start()
+    _register_worker(w)
+    return w
