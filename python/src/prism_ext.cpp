@@ -81,11 +81,15 @@ static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_
     // Don't fall back to direct unsync write — spin briefly for handle to appear.
     // 1000ms survives slow debug/CI runners; still NoApp/Closed check below handles overflow.
     if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
-        // Called from Python-entered code, so the GIL is held here — release it
+        // Usually called from Python-entered code with the GIL held — release it
         // while spinning so other Python threads (e.g. the one finishing setup)
-        // can make progress.
+        // can make progress. But the initial view build (registry.add in
+        // model_app) runs on the calling thread under _run_headless's own
+        // gil_scoped_release, so the GIL may already be released here; check
+        // first, since nb::gil_scoped_release::~gil_scoped_release() calls
+        // PyEval_SaveThread() unconditionally and crashes without a GIL to save.
         std::optional<nb::gil_scoped_release> release;
-        if (Py_IsInitialized()) release.emplace();
+        if (Py_IsInitialized() && PyGILState_Check()) release.emplace();
         for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -149,10 +153,13 @@ T dispatch_sync_read(std::function<T()> reader) {
     if (prism::app::detail_is_logic_thread) return reader();
     // Startup window: spin briefly like write path before falling back to direct.
     if (g_run_guard.load(std::memory_order_acquire) && !g_has_handle.load(std::memory_order_acquire)) {
-        // Called from Python-entered code, so the GIL is held here — release it
-        // while spinning (see try_post_via_handle_impl for the same pattern).
+        // Same startup-window spin as try_post_via_handle_impl, and same GIL
+        // caveat: SlotDerived::get() is also called from the initial widget
+        // tree build (registry.add in model_app), which runs on the calling
+        // thread under _run_headless's own gil_scoped_release — so the GIL
+        // may already be released here. Check before releasing again.
         std::optional<nb::gil_scoped_release> release;
-        if (Py_IsInitialized()) release.emplace();
+        if (Py_IsInitialized() && PyGILState_Check()) release.emplace();
         for (int i = 0; i < 1000 && !g_has_handle.load(std::memory_order_acquire); ++i)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }

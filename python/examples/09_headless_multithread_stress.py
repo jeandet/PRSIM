@@ -12,13 +12,6 @@ Demonstrates:
     the CI ``3.14t`` (free-threaded) lane runs to prove the threading model
     holds with the GIL disabled.
 
-No ``derived`` field here: ``prism.derived(...)`` + ``prism._run_headless()``
-segfaults at teardown even with zero threads involved (confirmed with a
-2-line repro — a pre-existing bug, same family as the "view() + derived"
-headless-teardown race documented in 02_mixer.py/05_lists_and_derived.py,
-just triggered by headless + derived alone). Out of scope to fix here —
-tracked as a known gotcha, not swept under the rug.
-
 ``delay_ms`` is a safety ceiling, not the convergence signal: the headless
 backend sleeps for exactly ``delay_ms`` then fires WindowClose with no final
 drain, and posts made after that close are dropped. There is no exposed
@@ -53,6 +46,7 @@ class StressModel(prism.Model):
     events = prism.channel(0)
     incr = prism.channel(0)
     counter = prism.field(0)
+    doubled_counter = prism.derived(lambda self: self.counter.value * 2, "counter")
 
 
 def stress_worker(model: StressModel, n: int) -> None:
@@ -106,6 +100,7 @@ def main() -> None:
 
     assert event_count[0] == target_events, event_count[0]
     assert m.counter.value == target_counter, m.counter.value
+    assert m.doubled_counter.value == target_counter * 2, m.doubled_counter.value
 
     print(f"channel count = {event_count[0]}, counter = {m.counter.value}")
     if hasattr(sys, "_is_gil_enabled"):

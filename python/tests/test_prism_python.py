@@ -2,6 +2,8 @@
 
 import gc
 import inspect
+import os
+import subprocess
 import sys
 import threading
 import weakref
@@ -807,6 +809,26 @@ def test_derived_type_hint_skips_probing():
 
     m = M()
     assert isinstance(m.ok, prism.BoundDerivedFloat)
+
+
+def test_derived_field_survives_run_headless_teardown():
+    """Task 16 repro: a field with a derived depending on it must not crash
+    when the Model is torn down after _run_headless(). Runs in a subprocess
+    since the bug is a segfault that would otherwise kill the whole suite."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    counter = prism.field(0)\n"
+        "    doubled = prism.derived(lambda self: self.counter.value * 2, 'counter')\n"
+        "m = M()\n"
+        "prism._run_headless(m, delay_ms=200)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=30,
+    )
+    assert result.returncode == 0
 
 
 def test_field_unsupported_list_default_raises():

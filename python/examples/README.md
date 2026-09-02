@@ -64,7 +64,7 @@ PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py --headless
 | `06_live_plot.py` | `plot_field()` + `canvas(plot)`, live `add_series`/`notify`, sliders + thread jitter | `model_plot` / `showcase_plot` (`widgets/plot.hpp:282`) |
 | `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, `TreeStorage` Python object, lazy expansion, detail panel | `model_tree_browser` / `showcase_tree` (`ui/tree.hpp:182`) |
 | `08_dashboard.py` | Plot + Tree + Shared ticker in one `vstack`/`hstack` | `model_dashboard` / `model_system_monitor` |
-| `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`, no display; also the `3.14t` free-threaded CI check | — |
+| `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`/`derived`, no display; also the `3.14t` free-threaded CI check | — |
 | `10_worker_pool_plot.py` | `ThreadPoolExecutor(max_workers=4)` computing a pure-Python (`cmath`) FFT spectrum per window inside a `prism.worker`, results crossing to the plot via a JSON `channel(str)`, windows/sec status, `--headless` mode | — |
 | `11_error_handling.py` | `prism.on_error(handler)`, an observer + a worker that raise, `--headless` mode | — |
 | `12_asyncio_bridge.py` | asyncio event loop inside a `prism.worker`, `asyncio.run_coroutine_threadsafe` from an observer, a coroutine feeding a `channel` back to the logic thread, `--headless` mode | — |
@@ -76,7 +76,6 @@ PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py --headless
 - `m.count.value` get/set uses the binding cache + posted queue (`doc/design/python-sdk.md` §2). `Shared`/`Channel` are the cross-thread latest/ordered primitives per `AGENTS.md`.
 - `prism.transaction()` buffers per-Python-thread and flushes as one closure on the logic thread.
 - `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived` callback or a `prism.worker()` fn — `handler(exc)` receives the original Python exception (or a `RuntimeError` wrapping a non-Python one). Observer/derived exceptions route through the logic thread; a `worker()` exception is instead caught and reported directly on that worker's own background thread (see `11_error_handling.py`) — write handlers that don't assume a single calling thread. `prism.on_error(None)` restores the default, which prints a traceback to stderr; a raising handler itself falls back to that same default. A failing callback never stops the drain — the next event still fires.
-- Known gotcha: `prism.derived(...)` + `prism._run_headless()` segfaults at teardown, even with zero threads involved — same family as the `view()` + `derived` headless race noted in `02_mixer.py`/`05_lists_and_derived.py`. `09_headless_multithread_stress.py` deliberately has no `derived` field for this reason.
 
 ## Threading guarantees
 
