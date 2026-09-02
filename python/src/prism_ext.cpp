@@ -323,6 +323,12 @@ static void unregister_standalone_drainer(std::function<void()>* fn) {
     if (it != reg.fns.end()) reg.fns.erase(it);
 }
 
+// Snapshot-then-call is only UAF-safe because a handle's destructor (which unregisters
+// its pointer) can only run under the GIL, and this whole sweep also runs under the one
+// continuously-held GIL of the logic-thread tick (logic_wrapper -> widget_tree.hpp:684 ->
+// model_app.hpp:250) — so no destructor can interleave between the snapshot and the calls.
+// Releasing the GIL mid-sweep, or invoking drain_fn from a thread outside that wrapper,
+// would let a concurrent handle destructor dangle these raw pointers.
 static void drain_standalone() {
     std::vector<std::function<void()>*> snapshot;
     {
