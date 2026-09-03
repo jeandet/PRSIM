@@ -1448,10 +1448,18 @@ struct PyModel {
     }
 
     void drain() {
+        // Snapshot under the lock, then drain the copy lock-free: s->drain() runs
+        // Python observer callbacks (Shared/Channel), and any allocation inside one
+        // can trigger CPython's automatic GC on this same thread — which re-enters
+        // pymodel_tp_traverse/pymodel_tp_clear, both of which also take
+        // slots_mutex. Holding the lock across drain() would self-deadlock (a
+        // plain std::mutex isn't recursive) the moment that happens.
+        std::vector<std::shared_ptr<SlotBase>> slots_copy;
         {
             std::lock_guard<std::mutex> lk(slots_mutex);
-            for (auto& s : slots) s->drain();
+            slots_copy = slots;
         }
+        for (auto& s : slots_copy) s->drain();
         drain_standalone();
     }
 };

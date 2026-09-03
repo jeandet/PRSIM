@@ -1616,6 +1616,81 @@ def test_gc_collect_reclaims_model_with_self_referencing_observer():
     assert wr() is None, "self-referencing view callback survived gc.collect()"
 
 
+def test_shared_observer_gc_collect_does_not_hang_drain():
+    """2026-09-03 fix round 1, finding 1: PyModel::drain() used to hold
+    slots_mutex (a plain, non-recursive std::mutex) across s->drain(), which
+    runs Python observer callbacks. Any allocation inside such a callback can
+    trigger CPython's automatic cyclic GC on the same thread, which re-enters
+    pymodel_tp_traverse — itself locking the same slots_mutex — a
+    self-deadlock. Fixed by having drain() snapshot `slots` into a local
+    vector under the lock, then draining the copy lock-free (the pattern
+    pymodel_tp_clear already used). This test's observer callback forces a
+    GC pass and allocates a few thousand objects on every notification, from
+    inside a headless app tick, with a hard subprocess timeout: before the
+    fix this hangs forever instead of exiting cleanly."""
+    code = (
+        "import gc, threading, time\n"
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    s = prism.shared(0)\n"
+        "m = M()\n"
+        "def cb(v):\n"
+        "    gc.collect()\n"
+        "    junk = [object() for _ in range(3000)]\n"
+        "    del junk\n"
+        "m.s.observe(cb)\n"
+        "t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=300))\n"
+        "t.start()\n"
+        "for _ in range(300):\n"
+        "    if prism._is_running():\n"
+        "        break\n"
+        "    time.sleep(0.01)\n"
+        "def setter():\n"
+        "    for i in range(20):\n"
+        "        m.s.value = i\n"
+        "th = threading.Thread(target=setter)\n"
+        "th.start()\n"
+        "th.join()\n"
+        "t.join()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=30,
+    )
+    assert result.returncode == 0
+
+
+def test_derived_teardown_survives_200_models_with_observers():
+    """2026-09-03 fix round 1, finding 2: regression test for the task-16
+    SlotDerived member-declaration-order use-after-free (deps_ was destroyed
+    after dep_owners_ had already freed the dependency's Slot, so deps_'s
+    disconnect() ran into freed memory). That bug was flaky (~1-in-8 to
+    1-in-15 runs), so this creates and tears down 200 Models, each with a
+    derived() field depending on two observed fields, via _run_headless — to
+    give a regressed member order a real chance to crash. Runs in a
+    subprocess since the failure mode is a segfault that would otherwise
+    kill the whole suite."""
+    code = (
+        "import prism\n"
+        "for _ in range(200):\n"
+        "    class M(prism.Model):\n"
+        "        a = prism.field(1)\n"
+        "        b = prism.field(2)\n"
+        "        total = prism.derived(lambda self: self.a.value + self.b.value, 'a', 'b')\n"
+        "    m = M()\n"
+        "    m.a.observe(lambda v: None)\n"
+        "    m.b.observe(lambda v: None)\n"
+        "    prism._run_headless(m, delay_ms=5)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=30,
+    )
+    assert result.returncode == 0
+
+
 def test_view_and_derived_together_survive_run_headless_teardown():
     """Task 3 repro: 02_mixer.py and 05_lists_and_derived.py used to carry a
     note that a Model overriding view() while also having a derived field hit
