@@ -291,6 +291,11 @@ TEST_CASE("dirty propagation works for view()-placed widgets") {
 
 // ── Task 11: regression guard ───────────────────────────────────────────────
 
+// A model with no view() relies entirely on WidgetTree's whole-model reflection
+// walk (build_node_tree()'s #if __cpp_impl_reflection branch); per the README,
+// models without view() are only supported when P2996 reflection is available.
+#if __cpp_impl_reflection
+
 struct PlainModel {
     prism::Field<int> a{0};
     prism::Field<std::string> b{"hello"};
@@ -312,6 +317,8 @@ TEST_CASE("model without view() still uses reflection walk") {
         CHECK(r_curr.origin.y.raw() >= r_prev.origin.y.raw() + r_prev.extent.h.raw());
     }
 }
+
+#endif // __cpp_impl_reflection
 
 TEST_CASE("WidgetNode LayoutKind::Canvas exists") {
     prism::WidgetNode node;

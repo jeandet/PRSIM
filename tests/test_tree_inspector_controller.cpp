@@ -102,6 +102,14 @@ TEST_CASE("hovering the main tree updates the debug model's selection on refresh
 // expanded_ set, and the constructor only auto-expands the *root* — so the leaves must be direct
 // children of the model's root wrapper node (not nested inside their own container) to all be
 // visible without any prior expand-click.
+//
+// This test's visibility signal (debug_tree_shows_text, searching for "f19") depends on the
+// debug row being labeled after its field member name -- WidgetTree::field_names_, populated
+// only under #if __cpp_impl_reflection (see build_node_tree()'s view() branch). Without
+// reflection, every row falls back to its layout_kind_name, so "f19" never appears regardless
+// of scroll state; this is a limitation of the test's naming-based proxy signal, not of the
+// auto-scroll feature itself, so the whole scenario is reflection-only for now.
+#if __cpp_impl_reflection
 namespace {
 struct ManyLeavesModel {
     prism::Field<int> f0{0}, f1{0}, f2{0}, f3{0}, f4{0}, f5{0}, f6{0}, f7{0}, f8{0}, f9{0},
@@ -169,6 +177,7 @@ TEST_CASE("hovering an off-screen row in the main tree scrolls the debug tree to
     auto after_snap = debug_tree.build_snapshot(200, 80, 3);
     CHECK(debug_tree_shows_text(*after_snap, "f19"));
 }
+#endif // __cpp_impl_reflection
 
 // Guard-path test — the hovered node's row can legitimately be absent from the current
 // flatten (its ancestor isn't in TreeInspectorController's expanded_ set), and refresh() must

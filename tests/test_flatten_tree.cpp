@@ -38,6 +38,12 @@ TEST_CASE("flatten_tree on an empty-of-children root produces just the root row"
     CHECK(rows[0].depth == 0);
 }
 
+// FlatModel has no view(), so it relies entirely on WidgetTree's whole-model
+// reflection walk (build_node_tree()'s #if __cpp_impl_reflection branch) to get
+// any children at all; per the README, models without view() require P2996
+// reflection.
+#if __cpp_impl_reflection
+
 TEST_CASE("flatten_tree depth-first order matches child order, depth increments per level") {
     FlatModel model;
     prism::WidgetTree tree(model);
@@ -62,6 +68,8 @@ TEST_CASE("flatten_tree skips children of a node not in the expanded set") {
     CHECK(rows_root_expanded.size() >= 3); // root + its direct children now visible
 }
 
+#endif // __cpp_impl_reflection
+
 TEST_CASE("flatten_tree row fields reflect live tree state") {
     FlatModel model;
     prism::WidgetTree tree(model);
@@ -75,6 +83,10 @@ TEST_CASE("flatten_tree row fields reflect live tree state") {
     }
 }
 
+// FlatModel has no view(), so naming its root after the model's own type requires
+// the reflection-only root_debug_name path in build_node_tree(); without reflection
+// the model produces no children at all (see above), so this test is reflection-only too.
+#if __cpp_impl_reflection
 TEST_CASE("flatten_tree names the model root after the model's own type") {
     FlatModel model;
     prism::WidgetTree tree(model);
@@ -85,12 +97,20 @@ TEST_CASE("flatten_tree names the model root after the model's own type") {
     // with the model's own type rather than falling back to "Default".
     CHECK(rows[0].name == "FlatModel");
 }
+#endif // __cpp_impl_reflection
 
 // Regression test: nested component() sub-trees (PRISM's primary composition mechanism —
 // "compose by nesting") each get their own wrapper root Node via build_node_tree(), whose
 // layout_kind defaults to LayoutKind::Default and which historically never received a
 // debug_name — so every component boundary showed up in the inspector as an unlabeled,
 // indistinguishable "Default" row. It must instead be labeled after the component's type.
+//
+// The component-root debug_name capture (build_node_tree()'s root_debug_name) is itself
+// gated behind #if __cpp_impl_reflection -- without reflection every component root falls
+// back to its layout_kind_name ("Default"), same as before this regression was fixed. This
+// naming convenience is reflection-only by design (README: "member name via P2996 reflection
+// provides identity").
+#if __cpp_impl_reflection
 struct NamedSubComponent {
     prism::Field<int> x{0};
     prism::Field<int> y{0};
@@ -119,12 +139,19 @@ TEST_CASE("flatten_tree names a nested component() root after the component's ow
     REQUIRE(it != rows.end());
     CHECK(it->name != "Default");
 }
+#endif // __cpp_impl_reflection
 
 // Regression test: vb.widget(field) (the ordinary view()-driven placement path) only ever
 // named its leaf after the Field's *value type* (e.g. "int") -- since two same-typed fields
 // are then visually indistinguishable, this is exactly as uninformative as "Default" once
 // there's more than one field of the same type on a component. It must be named after the
 // enclosing member instead, same as the whole-model reflection-only path already does.
+//
+// Field-name capture (WidgetTree::field_names_, populated in build_node_tree()'s view()
+// branch) is itself gated behind #if __cpp_impl_reflection -- without reflection a
+// view()-placed leaf falls back to its layout_kind_name, same reflection-only naming
+// convenience as the component-root case above.
+#if __cpp_impl_reflection
 struct NamedFieldsModel {
     prism::Field<int> alpha{0};
     prism::Field<int> beta{0};
@@ -179,3 +206,4 @@ TEST_CASE("flatten_tree names a field placed inside a lazily-materialized tab") 
         [](const prism::debug::NodeRow& r) { return r.name == "gamma"; });
     CHECK(it != rows.end());
 }
+#endif // __cpp_impl_reflection

@@ -11,6 +11,15 @@
 #include <memory>
 #if __cpp_impl_reflection
 #include <meta>
+#else
+// Included here, at file scope, so magic_enum's compile-time
+// __PRETTY_FUNCTION__ parsing sees its own unqualified ::magic_enum::
+// names. Including it from inside namespace prism::ui (as before)
+// nests the library as prism::ui::magic_enum::..., which shifts GCC's
+// __PRETTY_FUNCTION__ output and silently breaks magic_enum's
+// fixed-offset name extraction -- every candidate enum value in the
+// scan range then reads as "valid" with a garbled name.
+#include <magic_enum/magic_enum.hpp>
 #endif
 #include <string>
 #include <type_traits>
@@ -180,8 +189,6 @@ T enum_from_index(size_t index) {
 }
 
 #else
-
-#include <magic_enum/magic_enum.hpp>
 
 template <ScopedEnum T>
 constexpr size_t enum_count() {
