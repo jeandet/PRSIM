@@ -3064,3 +3064,11 @@ def test_asyncio_bridge_example_completes_a_round_trip(monkeypatch):
     monkeypatch.setattr(sys, "argv", [sys.argv[0], "--headless"])
     mod = _load_example("12_asyncio_bridge")
     mod.main()  # asserts round_trips >= 1 internally
+
+
+def test_run_headless_kwarg_rejects_bool():
+    class M(Model):
+        x = field(0)
+
+    with pytest.raises(TypeError, match="headless must be a duration"):
+        prism.run(M(), headless=True)

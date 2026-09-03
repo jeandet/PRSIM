@@ -1080,6 +1080,8 @@ def run(model, title="PRISM App", headless: float | None = None):
     it ends. The common CLI pattern is
     ``prism.run(m, title="...", headless=1.0 if "--headless" in sys.argv else None)``.
     """
+    if isinstance(headless, bool):
+        raise TypeError("run(): headless must be a duration in seconds or None, not a bool")
     if headless is not None:
         with _headless_ctx(model, timeout=headless):
             pass
