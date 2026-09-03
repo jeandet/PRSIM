@@ -41,10 +41,16 @@ test-command = "python {project}/python/tests/wheel_smoke.py"
 manylinux-x86_64-image = "manylinux_2_34"
 manylinux-aarch64-image = "manylinux_2_34"
 # C++26 needs GCC >= 14; SDL3's meson port hard-requires udev/dbus/pipewire/wayland/xkbcommon.
+# libXi: EL9 ships 1.7 whose XInput2.h lacks the XI 2.4 gesture structs that SDL3's X11 driver
+# compiles against once xorgproto reports XI_2_Minor >= 4 — build 1.8 from source (headers only
+# matter; the wheel still links the system libXi.so.6 ABI).
 before-all = """
 dnf install -y gcc-toolset-14 systemd-devel dbus-devel pipewire-devel wayland-devel libxkbcommon-devel \
   mesa-libEGL-devel mesa-libGL-devel libdrm-devel libX11-devel libXext-devel libXrandr-devel libXcursor-devel \
-  libXi-devel libXfixes-devel libXScrnSaver-devel alsa-lib-devel pulseaudio-libs-devel freetype-devel harfbuzz-devel
+  libXi-devel libXfixes-devel libXScrnSaver-devel alsa-lib-devel pulseaudio-libs-devel freetype-devel harfbuzz-devel \
+  xorg-x11-proto-devel xz make
+curl -fsSL https://www.x.org/releases/individual/lib/libXi-1.8.2.tar.xz | tar xJ -C /tmp
+cd /tmp/libXi-1.8.2 && ./configure --prefix=/usr --libdir=/usr/lib64 && make -j"$(nproc)" && make install
 """
 environment = { PATH = "/opt/rh/gcc-toolset-14/root/usr/bin:$PATH", CC = "gcc", CXX = "g++" }
 
