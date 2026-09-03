@@ -2891,17 +2891,16 @@ def test_worker_raising_fn_routes_to_on_error_and_thread_exits():
 
 
 def test_worker_context_manager_starts_and_stops():
-    import time
+    import threading
 
-    counts = {"n": 0}
+    ticked = threading.Event()
 
     def tick(stop):
-        counts["n"] += 1
+        ticked.set()
 
     with prism.worker(tick, interval=0.01) as w:
-        time.sleep(0.03)
+        assert ticked.wait(timeout=5.0), "worker never ticked"  # event, not sleep: CI runners are slow
         assert w.is_alive
-        assert counts["n"] > 0
 
     assert not w.is_alive
 

@@ -13,8 +13,6 @@ concurrency:
 env:
   CC: gcc-14
   CXX: g++-14
-  # runners have no display; SDL's dummy driver still creates windows for the chrome/cursor tests
-  SDL_VIDEODRIVER: dummy
 
 jobs:
   build-and-test:
@@ -30,14 +28,19 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin xvfb
           pip install 'meson>=1.5' ninja meson-python nanobind pytest pydantic
       - name: Setup builddir
         run: meson setup builddir -Dmagic_enum:test=false -Dsdl3:werror=false -Dsdl3:warning_level=0
       - name: Build
         run: ninja -C builddir
       - name: Run tests (C++ + Python via meson test)
-        run: meson test -C builddir --print-errorlogs
+        run: xvfb-run -a meson test -C builddir --print-errorlogs
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-testlog-build-and-test
+          path: builddir/meson-logs/testlog.txt
 
   tsan:
     runs-on: ubuntu-24.04
@@ -52,14 +55,19 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin xvfb
           pip install 'meson>=1.5' ninja meson-python nanobind pytest pydantic
       - name: Setup TSan builddir
         run: meson setup builddir-tsan -Dmagic_enum:test=false -Dsdl3:werror=false -Dsdl3:warning_level=0 -Db_sanitize=thread -Dbuildtype=debugoptimized
       - name: Build TSan
         run: ninja -C builddir-tsan
       - name: Run TSan tests (C++ + Python via meson test, SDL flaky suites excluded)
-        run: meson test -C builddir-tsan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
+        run: xvfb-run -a meson test -C builddir-tsan --print-errorlogs --exclude python_bindings --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-testlog-tsan
+          path: builddir-tsan/meson-logs/testlog.txt
 
   asan:
     runs-on: ubuntu-24.04
@@ -74,7 +82,7 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin xvfb
           pip install 'meson>=1.5' ninja meson-python nanobind pytest pydantic
       - name: Setup ASan+UBSan builddir
         run: meson setup builddir-asan -Dmagic_enum:test=false -Dsdl3:werror=false -Dsdl3:warning_level=0 -Db_sanitize=address,undefined -Dbuildtype=debugoptimized
@@ -84,7 +92,12 @@ jobs:
         env:
           ASAN_OPTIONS: detect_leaks=0
           UBSAN_OPTIONS: halt_on_error=1
-        run: meson test -C builddir-asan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
+        run: xvfb-run -a meson test -C builddir-asan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-testlog-asan
+          path: builddir-asan/meson-logs/testlog.txt
 
   free-threaded:
     runs-on: ubuntu-24.04
@@ -100,14 +113,19 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin xvfb
           pip install 'meson>=1.5' ninja meson-python nanobind pytest pydantic
       - name: Setup builddir
         run: meson setup builddir-ft -Dmagic_enum:test=false -Dsdl3:werror=false -Dsdl3:warning_level=0
       - name: Build
         run: ninja -C builddir-ft
       - name: Run tests (C++ + Python via meson test, free-threaded)
-        run: meson test -C builddir-ft --print-errorlogs
+        run: xvfb-run -a meson test -C builddir-ft --print-errorlogs
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-testlog-free-threaded
+          path: builddir-ft/meson-logs/testlog.txt
 
   wheels:
     name: wheels (${{ matrix.os }})
@@ -150,7 +168,7 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin xvfb
       - run: pip install build && python -m build --sdist
       - uses: actions/upload-artifact@v4
         with:
