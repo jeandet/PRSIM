@@ -308,23 +308,48 @@ void field_set_dispatch(Field<T>* field, T v) {
     }
 }
 
-// Standalone field (owns storage) — for quick tests / non-model usage.
+// Standalone-handle state (Field<T>/List<T> here, Shared<T>/Channel<T> below) is
+// heap-allocated and tracked by a live count, exposed to Python as
+// _standalone_state_alive_count() — a regression probe for the self-owning-hub leak
+// fixed below: state must reach zero once every handle referencing it is gone and
+// disconnected, not just have its Python wrapper object collected.
+static std::atomic<int64_t> g_standalone_state_alive{0};
+
+template <typename U, typename... Args>
+std::shared_ptr<U> make_tracked_state(Args&&... args) {
+    g_standalone_state_alive.fetch_add(1, std::memory_order_relaxed);
+    return std::shared_ptr<U>(new U(std::forward<Args>(args)...), [](U* p) {
+        delete p;
+        g_standalone_state_alive.fetch_sub(1, std::memory_order_relaxed);
+    });
+}
+
+// Standalone field (owns storage) — for quick tests / non-model usage. State lives behind
+// a shared_ptr (like SharedHandle/ChannelHandle below) so observe()'s Connection can
+// keep_alive(field) instead of relying on nanobind's nb::keep_alive<0,1> on the handle
+// itself — see the SharedHandle rationale comment below for why that matters.
 template <typename T>
 struct FieldHandle {
-    Field<T> field;
-    FieldHandle(T init) : field(std::move(init)) {}
+    std::shared_ptr<Field<T>> field;
+    FieldHandle(T init) : field(make_tracked_state<Field<T>>(std::move(init))) {}
+    FieldHandle(const FieldHandle&) = delete;
+    FieldHandle& operator=(const FieldHandle&) = delete;
+    FieldHandle(FieldHandle&&) = delete;
+    FieldHandle& operator=(FieldHandle&&) = delete;
     T get() const {
-        const Field<T>* p = &field;
+        Field<T>* p = field.get();
         return dispatch_sync_read<T>([p](){ return p->get(); });
     }
-    void set(T v) { field_set_dispatch(&field, std::move(v)); }
+    void set(T v) { field_set_dispatch(field.get(), std::move(v)); }
     Connection observe(nb::callable cb) {
         auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
         };
-        return field.on_change().connect(std::move(wrapper));
+        auto conn = field->on_change().connect(std::move(wrapper));
+        conn.keep_alive(field);
+        return conn;
     }
 };
 
@@ -708,22 +733,6 @@ struct BoundField {
     }
 };
 
-// Standalone-handle state ("Shared<T>"/"Channel<T>") is heap-allocated and tracked by
-// a live count, exposed to Python as _standalone_state_alive_count() — a regression
-// probe for the self-owning-hub leak fixed below: state must reach zero once every
-// handle referencing it is gone and disconnected, not just have its Python wrapper
-// object collected.
-static std::atomic<int64_t> g_standalone_state_alive{0};
-
-template <typename U, typename... Args>
-std::shared_ptr<U> make_tracked_state(Args&&... args) {
-    g_standalone_state_alive.fetch_add(1, std::memory_order_relaxed);
-    return std::shared_ptr<U>(new U(std::forward<Args>(args)...), [](U* p) {
-        delete p;
-        g_standalone_state_alive.fetch_sub(1, std::memory_order_relaxed);
-    });
-}
-
 // Standalone / bound handles for Shared<T> and Channel<T>
 //
 // The Shared<T> itself lives behind a shared_ptr ("state"), not by value in the
@@ -910,37 +919,45 @@ struct BoundDerived {
         return conn;
     }
 };
+// Standalone list — same shared_ptr-owned-state shape as FieldHandle above (see the
+// SharedHandle rationale comment below): observe*()'s Connection keep_alive(list)
+// keeps the hub alive, not the Python wrapper.
 template <typename T>
 struct ListHandle {
-    List<T> list;
+    std::shared_ptr<List<T>> list;
+    ListHandle() : list(make_tracked_state<List<T>>()) {}
+    ListHandle(const ListHandle&) = delete;
+    ListHandle& operator=(const ListHandle&) = delete;
+    ListHandle(ListHandle&&) = delete;
+    ListHandle& operator=(ListHandle&&) = delete;
     void push(T v) {
-        List<T>* p = &list;
+        List<T>* p = list.get();
         list_op_dispatch([p, v = std::move(v)]() mutable { p->push_back(std::move(v)); });
     }
     void erase(size_t i) {
-        List<T>* p = &list;
+        List<T>* p = list.get();
         list_op_dispatch([p, i](){ if (i < p->size()) p->erase(i); });
     }
     void set(size_t i, T v) {
-        List<T>* p = &list;
+        List<T>* p = list.get();
         list_op_dispatch([p, i, v = std::move(v)]() mutable { if (i < p->size()) p->set(i, std::move(v)); });
     }
     void replace_all(nb::list py) {
         std::vector<T> vec; vec.reserve(nb::len(py));
         for (auto h : py) vec.push_back(nb::cast<T>(h));
-        List<T>* p = &list;
+        List<T>* p = list.get();
         list_op_dispatch([p, vec = std::move(vec)]() mutable { p->replace_all(vec); });
     }
     size_t size() const {
-        const List<T>* p = &list;
+        List<T>* p = list.get();
         return dispatch_sync_read<size_t>([p](){ return p->size(); });
     }
     T get(size_t i) const {
-        const List<T>* p = &list;
+        List<T>* p = list.get();
         return dispatch_sync_read<T>([p,i](){ return i < p->size() ? (*p)[i] : T{}; });
     }
     nb::list to_list() const {
-        const List<T>* p = &list;
+        List<T>* p = list.get();
         // Reader may run on the logic thread post-finalization; build a plain
         // std::vector<T> there (no nb:: construction) and convert to nb::list
         // back on this (GIL-holding) calling thread.
@@ -953,15 +970,21 @@ struct ListHandle {
     }
     Connection observe_insert(nb::callable cb) {
         auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
-        return list.on_insert().connect(std::move(w));
+        auto conn = list->on_insert().connect(std::move(w));
+        conn.keep_alive(list);
+        return conn;
     }
     Connection observe_remove(nb::callable cb) {
         auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(...){report_python_callback_error();} };
-        return list.on_remove().connect(std::move(w));
+        auto conn = list->on_remove().connect(std::move(w));
+        conn.keep_alive(list);
+        return conn;
     }
     Connection observe_update(nb::callable cb) {
         auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
-        return list.on_update().connect(std::move(w));
+        auto conn = list->on_update().connect(std::move(w));
+        conn.keep_alive(list);
+        return conn;
     }
 };
 template <typename T>
@@ -1067,13 +1090,16 @@ struct BoundPlot {
 };
 
 // helper to attach a single dep to a derived slot
-template <typename FH>
-auto* field_ptr_of(FH& h) {
-    if constexpr (std::is_pointer_v<decltype(h.field)>) return h.field;
-    else return &h.field;
-}
 template <typename U> struct is_std_shared_ptr : std::false_type {};
 template <typename U> struct is_std_shared_ptr<std::shared_ptr<U>> : std::true_type {};
+
+template <typename FH>
+auto* field_ptr_of(FH& h) {
+    using M = std::decay_t<decltype(h.field)>;
+    if constexpr (std::is_pointer_v<M>) return h.field;
+    else if constexpr (is_std_shared_ptr<M>::value) return h.field.get();
+    else return &h.field;
+}
 
 template <typename SH>
 auto* shared_ptr_of(SH& h) {
@@ -1406,10 +1432,13 @@ static nb::handle observed_handles() {
 // (creating the list on first use) so a fire-and-forget `handle.observe(cb)` keeps firing —
 // nothing else holds a reference to the Connection once the caller drops it. Also registers
 // self in the module-level _observed_handles WeakSet so python/prism/__init__.py's atexit
-// cleanup can find and disconnect standalone (non-Model) handles that would otherwise leak:
-// handle -> keepalive list -> Connection -> (nanobind keep_alive<0,1>, invisible to the
-// cyclic GC) -> handle is a real reference cycle Python's GC can never break on its own.
-// Wraps the Connection into a Python object exactly once and returns that same object.
+// cleanup can find and disconnect any handle still referenced (e.g. a long-lived module
+// global) before interpreter shutdown. Standalone observe*() no longer takes
+// nb::keep_alive<0,1> on `self` (Task 14 fix — see FieldHandle/SharedHandle above): the
+// Connection's keep_alive(state) keeps the hub alive instead, so handle -> keepalive
+// list -> Connection is a plain acyclic chain that dies with `self`, not a GC-invisible
+// self-cycle. Wraps the Connection into a Python object exactly once and returns that
+// same object.
 static nb::object keep_connection(nb::object self, Connection conn) {
     nb::object result = nb::cast(std::move(conn));
     nb::dict d = self.attr("__dict__");
@@ -1467,7 +1496,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def("set", &validated_set<FieldHandle<T>, T>);
     field_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb));
-    }, nb::keep_alive<0, 1>(), nb::arg("callback"));
+    }, nb::arg("callback"));
 
     std::string bound_field_name = std::string("Bound") + suffix;
     nb::class_<BoundField<T>>(m, bound_field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
@@ -1485,7 +1514,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def("get", &SharedHandle<T>::get).def("set", &validated_set<SharedHandle<T>, T>);
     shared_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<SharedHandle<T>&>(self).observe(cb));
-    }, nb::keep_alive<0, 1>(), nb::arg("callback"));
+    }, nb::arg("callback"));
 
     std::string bound_shared_name = std::string("BoundShared") + suffix;
     nb::class_<BoundShared<T>>(m, bound_shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
@@ -1500,7 +1529,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def(nb::init<>()).def("send", &ChannelHandle<T>::send)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ChannelHandle<T>&>(self).observe(cb));
-        }, nb::keep_alive<0, 1>(), nb::arg("callback"));
+        }, nb::arg("callback"));
 
     std::string bound_channel_name = std::string("BoundChannel") + suffix;
     nb::class_<BoundChannel<T>>(m, bound_channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
@@ -1528,13 +1557,13 @@ void bind_list(nb::module_& m, const char* suffix) {
         .def("size", &ListHandle<T>::size).def("get", &ListHandle<T>::get).def("to_list", &ListHandle<T>::to_list)
         .def("observe_insert", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_insert(cb));
-        }, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        }, nb::arg("callback"))
         .def("observe_remove", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_remove(cb));
-        }, nb::keep_alive<0, 1>(), nb::arg("callback"))
+        }, nb::arg("callback"))
         .def("observe_update", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_update(cb));
-        }, nb::keep_alive<0, 1>(), nb::arg("callback"));
+        }, nb::arg("callback"));
 
     std::string bound_list_name = std::string("BoundList") + suffix;
     nb::class_<BoundList<T>>(m, bound_list_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())

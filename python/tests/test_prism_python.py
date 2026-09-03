@@ -119,10 +119,13 @@ def test_observe_callback_keyword_shared_and_channel():
 
 
 def test_observed_handles_tracks_standalone_handle_for_atexit():
-    """Standalone handles form a real reference cycle (handle -> keepalive list ->
-    Connection -> nanobind keep_alive<0,1>, invisible to the cyclic GC -> handle) that
-    Python's own GC can never collect. _observed_handles is how atexit finds and breaks
-    it before interpreter shutdown, instead of leaking forever.
+    """Since Task 14, an observed standalone handle is a plain acyclic chain (handle ->
+    keepalive list -> Connection -> keep_alive(state), the *hub*, not `self`) and is
+    collectable by ordinary refcounting the moment nothing else references it. This test
+    is about a different, still-real case: a handle that stays referenced for the whole
+    process (e.g. a module global) never hits refcount 0 on its own, so its Connection
+    would otherwise keep observing forever. _observed_handles is how atexit finds such a
+    still-alive handle and disconnects it before interpreter shutdown.
     """
     from prism._prism_ext import FieldInt as RawFieldInt
 
@@ -137,6 +140,46 @@ def test_observed_handles_tracks_standalone_handle_for_atexit():
     h.value = 2
     assert fired == []
     assert h not in prism._prism_ext._observed_handles
+
+
+def _assert_observed_handle_collectable(handle, register_observer):
+    """Task 14 repro: an observe()d standalone handle used to be immortal — nb::keep_alive<0,1>
+    on the returned Connection plus the handle's own __dict__["_prism_keepalive"] list formed
+    a reference cycle invisible to the cyclic GC (nanobind's keep_alive is a C++-side table,
+    not a Python object graph edge the GC can walk). Since the Connection now keeps the hub
+    *state* alive via keep_alive(state) instead of keep_alive<0,1> on `self`, the handle is a
+    plain acyclic chain again and dies with a normal `del` once nothing else references it —
+    gc.collect() here only mops up whatever GC generation the interpreter already promoted it
+    to, it is not what breaks the cycle (there is no cycle to break)."""
+    register_observer(handle)
+    w = weakref.ref(handle)
+    del handle
+    gc.collect()
+    assert w() is None
+
+
+def test_observed_field_handle_is_gc_collectable():
+    _assert_observed_handle_collectable(
+        prism.FieldInt(0), lambda h: h.observe(lambda v: None)
+    )
+
+
+def test_observed_shared_handle_is_gc_collectable():
+    _assert_observed_handle_collectable(
+        prism.SharedInt(0), lambda h: h.observe(lambda v: None)
+    )
+
+
+def test_observed_channel_handle_is_gc_collectable():
+    _assert_observed_handle_collectable(
+        prism.ChannelInt(), lambda h: h.observe(lambda v: None)
+    )
+
+
+def test_observed_list_handle_is_gc_collectable():
+    _assert_observed_handle_collectable(
+        prism.ListInt(), lambda h: h.observe_insert(lambda idx, v: None)
+    )
 
 
 def test_observed_handles_model_owned_handle_still_works():
@@ -680,6 +723,14 @@ def test_standalone_drain_uaf_survives_handle_dropped_from_sibling_callback():
     fix brief. Registration order matters: `a` (registered first) must be
     the one whose drain runs first and whose callback drops `b` (registered
     second), so `b`'s stale entry is the next one the sweep would touch.
+
+    Task 6 found this test vacuous: it used to also call `.observe()` on `b`
+    itself, which — pre-Task-14, when `observe()` still took nb::keep_alive<0,1>
+    on `self` — made `b` immortal via a GC-invisible cycle, so `del holder[0]`
+    below never actually freed anything and the "use-after-free" never had
+    memory to be use-after. `b` doesn't need its own observer for this repro —
+    its drain_fn is registered in StandaloneDrainers at construction regardless
+    — so that call is simply gone now; `del holder[0]` is a real free again.
     Runs in a subprocess since a manifested crash would otherwise take down
     the whole suite."""
     code = (
@@ -689,7 +740,6 @@ def test_standalone_drain_uaf_survives_handle_dropped_from_sibling_callback():
         "b = prism.SharedInt(0)\n"
         "holder = [b]\n"
         "del b  # only remaining reference to the SharedInt is holder[0]\n"
-        "holder[0].observe(lambda v: None)  # b was observed too\n"
         "fired = []\n"
         "def cb(v):\n"
         "    fired.append(v)\n"
@@ -739,8 +789,18 @@ def test_standalone_handle_self_drop_during_own_drain_survives():
     runs pre-fix), so the callback also churns a few hundred small
     allocations after dropping the handle to encourage reuse of the freed
     block, keeping the test meaningful without relying on a crash that may
-    not manifest. Runs in a subprocess since a manifested crash would
-    otherwise take down the whole suite."""
+    not manifest.
+
+    Task 6 found this test was ALSO vacuous, for an unrelated reason: pre-Task-14,
+    `holder[0].observe(cb)` (the one observer this repro needs) made `holder[0]`
+    immortal via the same nb::keep_alive<0,1> self-cycle Task 14 removed, so
+    `holder.clear()` below never actually dropped the last reference either — the
+    Task 1 fix above was correct but this test never got to exercise it. No code
+    change was needed here to fix that (unlike the sibling-callback test above,
+    this repro's one `.observe()` call is the one it needs, not an extra one to
+    drop): removing nb::keep_alive<0,1> from observe() in Task 14 is what makes
+    `holder.clear()` a real free again. Runs in a subprocess since a manifested
+    crash would otherwise take down the whole suite."""
     code = (
         "import threading, time\n"
         "import prism\n"
@@ -805,26 +865,24 @@ def test_standalone_observer_wrapper_does_not_hold_its_own_hub():
     assert _standalone_shared_use_count(s) == baseline
 
 
-def test_standalone_state_alive_count_returns_to_baseline_after_atexit_clear():
+def test_standalone_state_alive_count_returns_to_baseline_after_del():
     """Task 1 fix round 1, full-lifecycle companion to the use_count test above:
-    `_standalone_state_alive_count()` (also new) counts how many Shared<T>/Channel<T>
-    state objects are currently heap-allocated across ALL standalone handles. Proves
-    the fix doesn't leave the state permanently unreachable once its handle is
-    genuinely torn down.
+    `_standalone_state_alive_count()` counts how many Field<T>/Shared<T>/Channel<T>/List<T>
+    state objects are currently heap-allocated across ALL standalone handles. Proves the
+    fix doesn't leave the state permanently unreachable once its handle is genuinely torn
+    down.
 
-    Deliberately NOT `del s; gc.collect()` alone — a standalone handle's Python
-    wrapper and its own Connection form a real reference cycle by design
-    (`nb::keep_alive<0, 1>` on `observe()`, invisible to the cyclic GC — see
-    `_observed_handles`' docstring in prism/__init__.py), so the wrapper is never
-    collected by `del` + `gc.collect()` regardless of this fix; only an explicit
-    `disconnect()` (here via `_atexit_clear()`, same as real interpreter shutdown)
-    breaks it. Verified empirically: `del s; gc.collect()` alone leaves the count
-    unchanged both before and after this fix.
+    Pre-Task-14 this needed `prism._atexit_clear()` to reach 0: `nb::keep_alive<0, 1>` on
+    `observe()` made the handle -> keepalive list -> Connection chain a cycle back to the
+    handle itself, invisible to the cyclic GC, so `del s; gc.collect()` alone left the
+    handle (and its state) alive. Task 14 removed that keep_alive — the Connection now
+    keeps the *state* alive via keep_alive(state), not `self` — so the chain is acyclic
+    and plain `del` + `gc.collect()` is enough; `_atexit_clear()` is no longer needed here.
 
-    Runs in a subprocess for a deterministic baseline — in-process, other tests in
-    the same pytest session may leave their own standalone handles pinned alive by
-    that same cycle until the real interpreter-exit `_atexit_clear()`, so a shared
-    baseline captured mid-suite is not stable.
+    Runs in a subprocess for a deterministic baseline — in-process, other tests in the
+    same pytest session may hold their own standalone handles' Connections alive (e.g. via
+    a local `conn` variable never disconnected) until the real interpreter-exit
+    `_atexit_clear()`, so a shared baseline captured mid-suite is not stable.
     """
     code = (
         "import gc\n"
@@ -836,9 +894,6 @@ def test_standalone_state_alive_count_returns_to_baseline_after_atexit_clear():
         "s.observe(lambda v: None)\n"
         "assert _standalone_state_alive_count() == 1\n"
         "del s\n"
-        "gc.collect()\n"
-        "assert _standalone_state_alive_count() == 1  # cycle not yet broken\n"
-        "prism._atexit_clear()\n"
         "gc.collect()\n"
         "assert _standalone_state_alive_count() == 0\n"
     )
