@@ -31,6 +31,47 @@ class WidgetTree;
 using namespace prism::core;
 using namespace prism::ui;
 
+namespace view_builder_detail {
+
+// Shared by list(), tree() and table(List<T>&): adapt a List<T>'s three signals
+// into the Node's vlist_on_* connector slots (identical shape at every call site).
+template <typename T>
+void wire_list_signals(Node& container, List<T>& items) {
+    container.vlist_on_insert = [&items](size_t, std::function<void()> cb) -> Connection {
+        return items.on_insert().connect(
+            [cb = std::move(cb)](size_t, const auto&) { cb(); });
+    };
+    container.vlist_on_remove = [&items](size_t, std::function<void()> cb) -> Connection {
+        return items.on_remove().connect(
+            [cb = std::move(cb)](size_t) { cb(); });
+    };
+    container.vlist_on_update = [&items](size_t, std::function<void()> cb) -> Connection {
+        return items.on_update().connect(
+            [cb = std::move(cb)](size_t, const auto&) { cb(); });
+    };
+}
+
+inline void unbind_vlist_row(WidgetNode& wn) {
+    wn.connections.clear();
+    wn.draws.clear();
+    wn.overlay_draws.clear();
+    wn.edit_state.reset();
+    wn.wire = nullptr;
+    wn.record = nullptr;
+    wn.dirty = false;
+}
+
+// Adapts an observable's on_change(SenderHub) into the Node's connector shape,
+// used by both the on_change slot and depends_on dependency entries.
+template <typename Observable>
+auto adapt_on_change(Observable& obs) {
+    return [&obs](std::function<void()> cb) -> Connection {
+        return obs.on_change().connect([cb = std::move(cb)](const auto&) { cb(); });
+    };
+}
+
+} // namespace view_builder_detail
+
 class ViewBuilder {
     WidgetTree& tree_;
     Node& target_;
@@ -67,12 +108,7 @@ public:
         Self& depends_on(Observable& obs) {
             if constexpr (is_field_v<Observable>)
                 placed_ref.insert(&obs);
-            node_ref.dependencies.push_back(
-                [&obs](std::function<void()> cb) -> Connection {
-                    return obs.on_change().connect(
-                        [cb = std::move(cb)](const auto&) { cb(); });
-                }
-            );
+            node_ref.dependencies.push_back(view_builder_detail::adapt_on_change(obs));
             return static_cast<Self&>(*this);
         }
 
@@ -283,10 +319,7 @@ public:
             ss.event_policy = field.get().event_policy;
             ss.offset_y = field.get().scroll_y;
         };
-        scroll_node.on_change = [&field](std::function<void()> cb) -> Connection {
-            return field.on_change().connect(
-                [cb = std::move(cb)](const ScrollArea&) { cb(); });
-        };
+        scroll_node.on_change = view_builder_detail::adapt_on_change(field);
     }
 
     template <typename T>
@@ -346,28 +379,8 @@ public:
             };
         };
 
-        container.vlist_unbind_row = [](WidgetNode& wn) {
-            wn.connections.clear();
-            wn.draws.clear();
-            wn.overlay_draws.clear();
-            wn.edit_state.reset();
-            wn.wire = nullptr;
-            wn.record = nullptr;
-            wn.dirty = false;
-        };
-
-        container.vlist_on_insert = [&items](size_t, std::function<void()> cb) -> Connection {
-            return items.on_insert().connect(
-                [cb = std::move(cb)](size_t, const auto&) { cb(); });
-        };
-        container.vlist_on_remove = [&items](size_t, std::function<void()> cb) -> Connection {
-            return items.on_remove().connect(
-                [cb = std::move(cb)](size_t) { cb(); });
-        };
-        container.vlist_on_update = [&items](size_t, std::function<void()> cb) -> Connection {
-            return items.on_update().connect(
-                [cb = std::move(cb)](size_t, const auto&) { cb(); });
-        };
+        container.vlist_unbind_row = &view_builder_detail::unbind_vlist_row;
+        view_builder_detail::wire_list_signals(container, items);
 
         current_parent().children.push_back(std::move(container));
     }
@@ -420,25 +433,8 @@ public:
                 };
             };
 
-            container.vlist_unbind_row = [](WidgetNode& wn) {
-                wn.connections.clear();
-                wn.draws.clear();
-                wn.overlay_draws.clear();
-                wn.edit_state.reset();
-                wn.wire = nullptr;
-                wn.record = nullptr;
-                wn.dirty = false;
-            };
-
-            container.vlist_on_insert = [&ctrl](size_t, std::function<void()> cb) -> Connection {
-                return ctrl.rows.on_insert().connect([cb = std::move(cb)](size_t, const auto&) { cb(); });
-            };
-            container.vlist_on_remove = [&ctrl](size_t, std::function<void()> cb) -> Connection {
-                return ctrl.rows.on_remove().connect([cb = std::move(cb)](size_t) { cb(); });
-            };
-            container.vlist_on_update = [&ctrl](size_t, std::function<void()> cb) -> Connection {
-                return ctrl.rows.on_update().connect([cb = std::move(cb)](size_t, const auto&) { cb(); });
-            };
+            container.vlist_unbind_row = &view_builder_detail::unbind_vlist_row;
+            view_builder_detail::wire_list_signals(container, ctrl.rows);
 
             current_parent().children.push_back(std::move(container));
             handle();
@@ -476,18 +472,7 @@ public:
         state->column_count = state->source.column_count();
         container.table_state = state;
 
-        container.vlist_on_insert = [&list](size_t, std::function<void()> cb) -> Connection {
-            return list.on_insert().connect(
-                [cb = std::move(cb)](size_t, const auto&) { cb(); });
-        };
-        container.vlist_on_remove = [&list](size_t, std::function<void()> cb) -> Connection {
-            return list.on_remove().connect(
-                [cb = std::move(cb)](size_t) { cb(); });
-        };
-        container.vlist_on_update = [&list](size_t, std::function<void()> cb) -> Connection {
-            return list.on_update().connect(
-                [cb = std::move(cb)](size_t, const auto&) { cb(); });
-        };
+        view_builder_detail::wire_list_signals(container, list);
 
         current_parent().children.push_back(std::move(container));
         return TableBuilder{current_parent().children.back(), placed_};
@@ -622,10 +607,7 @@ public:
                 );
             };
         };
-        bar.on_change = [&field](std::function<void()> cb) -> Connection {
-            return field.on_change().connect(
-                [cb = std::move(cb)](const TabBar<S>&) { cb(); });
-        };
+        bar.on_change = view_builder_detail::adapt_on_change(field);
         tabs_node.children.push_back(std::move(bar));
 
         // Content container
