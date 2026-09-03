@@ -600,21 +600,44 @@ struct BoundField {
     }
 };
 
+// Standalone-handle state ("Shared<T>"/"Channel<T>") is heap-allocated and tracked by
+// a live count, exposed to Python as _standalone_state_alive_count() — a regression
+// probe for the self-owning-hub leak fixed below: state must reach zero once every
+// handle referencing it is gone and disconnected, not just have its Python wrapper
+// object collected.
+static std::atomic<int64_t> g_standalone_state_alive{0};
+
+template <typename U, typename... Args>
+std::shared_ptr<U> make_tracked_state(Args&&... args) {
+    g_standalone_state_alive.fetch_add(1, std::memory_order_relaxed);
+    return std::shared_ptr<U>(new U(std::forward<Args>(args)...), [](U* p) {
+        delete p;
+        g_standalone_state_alive.fetch_sub(1, std::memory_order_relaxed);
+    });
+}
+
 // Standalone / bound handles for Shared<T> and Channel<T>
 //
 // The Shared<T> itself lives behind a shared_ptr ("state"), not by value in the
-// handle. drain_fn and every observer wrapper capture that shared_ptr (never
-// `this`/a raw pointer into the handle), so if a Python callback running inside
-// this handle's own drain_notifications() drops the handle's last Python
-// reference, the state a still-running call is reading/writing outlives that
-// call — only the (now pointless) handle wrapper goes away. keep_alive(state)
-// on the returned Connection means the state also outlives the handle whenever
-// something else (e.g. a Connection stored elsewhere) still needs it.
+// handle. drain_fn captures that shared_ptr (never `this`/a raw pointer into the
+// handle), so if a Python callback running inside this handle's own
+// drain_notifications() drops the handle's last Python reference, the state that
+// still-running call is reading/writing outlives the call — only the (now
+// pointless) handle wrapper goes away. keep_alive(state) on the returned
+// Connection means the state also outlives the handle whenever something else
+// (e.g. a Connection stored elsewhere) still needs it.
+//
+// observe()'s wrapper must NOT also capture `state`: the wrapper is stored inside
+// state->on_change()'s receivers_, a member of *state itself, so a `state` capture
+// there is a strong reference from the hub back to its own owning object — the hub
+// leaks forever (only disconnect() removing the receiver breaks it) for no safety
+// benefit, since drain_fn already keeps state alive across the whole drain call,
+// callbacks included.
 template <typename T>
 struct SharedHandle {
     std::shared_ptr<Shared<T>> shared;
     std::shared_ptr<std::function<void()>> drain_fn;
-    SharedHandle(T init) : shared(std::make_shared<Shared<T>>(std::move(init))) {
+    SharedHandle(T init) : shared(make_tracked_state<Shared<T>>(std::move(init))) {
         auto state = shared;
         drain_fn = std::make_shared<std::function<void()>>([state] { state->drain_notifications(); });
         register_standalone_drainer(drain_fn);
@@ -630,14 +653,13 @@ struct SharedHandle {
     T get() const { return shared->get(); }
     void set(T v) { shared->set(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
-        auto state = shared;
-        auto wrapper = [cb, state](const T& val) {
+        auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
         };
-        auto conn = state->on_change().connect(std::move(wrapper));
-        conn.keep_alive(state);
+        auto conn = shared->on_change().connect(std::move(wrapper));
+        conn.keep_alive(shared);
         return conn;
     }
 };
@@ -663,12 +685,13 @@ struct BoundShared {
         return conn;
     }
 };
-// State ownership rationale mirrors SharedHandle above.
+// State ownership rationale (including why observe()'s wrapper captures only `cb`,
+// never `state`) mirrors SharedHandle above.
 template <typename T>
 struct ChannelHandle {
     std::shared_ptr<Channel<T>> channel;
     std::shared_ptr<std::function<void()>> drain_fn;
-    ChannelHandle() : channel(std::make_shared<Channel<T>>()) {
+    ChannelHandle() : channel(make_tracked_state<Channel<T>>()) {
         auto state = channel;
         drain_fn = std::make_shared<std::function<void()>>([state] { state->drain_notifications(); });
         register_standalone_drainer(drain_fn);
@@ -683,14 +706,13 @@ struct ChannelHandle {
     ChannelHandle& operator=(ChannelHandle&&) = delete;
     void send(T v) { channel->send(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
-        auto state = channel;
-        auto wrapper = [cb, state](const T& val) {
+        auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
         };
-        auto conn = state->on_receive().connect(std::move(wrapper));
-        conn.keep_alive(state);
+        auto conn = channel->on_receive().connect(std::move(wrapper));
+        conn.keep_alive(channel);
         return conn;
     }
 };
@@ -1448,6 +1470,26 @@ static void report_python_callback_error() {
     prism::core::report_unhandled_error(std::current_exception());
 }
 
+// Test-only debug hook: how many strong references does a standalone handle's
+// Shared<T>/Channel<T> state have right now? Exposed as
+// _standalone_shared_use_count() so a test can directly prove observe() no longer
+// leaves the hub holding a reference to itself (a use_count that grows by one per
+// observe() call, never reclaimed short of disconnect(), would be that leak) —
+// more precise than watching the alive/dead count, which a full disconnect()
+// cleans up either way and so can't distinguish the redundant reference from a
+// correctly-single-owned one.
+static int64_t standalone_state_use_count(nb::object h) {
+    if (nb::isinstance<SharedHandle<int>>(h)) return nb::cast<SharedHandle<int>&>(h).shared.use_count();
+    if (nb::isinstance<SharedHandle<double>>(h)) return nb::cast<SharedHandle<double>&>(h).shared.use_count();
+    if (nb::isinstance<SharedHandle<std::string>>(h)) return nb::cast<SharedHandle<std::string>&>(h).shared.use_count();
+    if (nb::isinstance<SharedHandle<bool>>(h)) return nb::cast<SharedHandle<bool>&>(h).shared.use_count();
+    if (nb::isinstance<ChannelHandle<int>>(h)) return nb::cast<ChannelHandle<int>&>(h).channel.use_count();
+    if (nb::isinstance<ChannelHandle<double>>(h)) return nb::cast<ChannelHandle<double>&>(h).channel.use_count();
+    if (nb::isinstance<ChannelHandle<std::string>>(h)) return nb::cast<ChannelHandle<std::string>&>(h).channel.use_count();
+    if (nb::isinstance<ChannelHandle<bool>>(h)) return nb::cast<ChannelHandle<bool>&>(h).channel.use_count();
+    throw std::runtime_error("_standalone_shared_use_count: unsupported handle type");
+}
+
 NB_MODULE(_prism_ext, m) {
     prism::core::set_unhandled_error_handler(python_error_hub);
     m.def("_set_error_handler", [](nb::object handler) {
@@ -1466,6 +1508,8 @@ NB_MODULE(_prism_ext, m) {
     }, nb::arg("handler").none());
     m.def("is_logic_thread", [](){ return detail_is_logic_thread; });
     m.attr("_observed_handles") = observed_handles();
+    m.def("_standalone_state_alive_count", [](){ return g_standalone_state_alive.load(std::memory_order_relaxed); });
+    m.def("_standalone_shared_use_count", &standalone_state_use_count, nb::arg("handle"));
 
     nb::class_<Connection>(m, "Connection", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("disconnect", &Connection::disconnect)

@@ -754,6 +754,78 @@ def test_standalone_handle_self_drop_during_own_drain_survives():
         assert result.returncode == 0
 
 
+def test_standalone_observer_wrapper_does_not_hold_its_own_hub():
+    """Task 1 fix round 1: SharedHandle<T>/ChannelHandle<T>::observe()'s callback
+    wrapper used to capture `state` (the shared_ptr<Shared<T>>/shared_ptr<Channel<T>>
+    holding the hub) in addition to `cb`. That wrapper is itself stored inside
+    `state->on_change()`'s receivers_ — a member of *state — so capturing `state`
+    there made the hub hold a strong reference to itself: a real leak while
+    connected, and dead weight even once disconnected, since drain_fn already keeps
+    `state` alive across the whole drain call (callbacks included), which is the
+    only thing the capture could have been protecting.
+
+    `_standalone_shared_use_count()` (a debug hook, C++-only, added for this test)
+    reads the state's shared_ptr::use_count() directly, which distinguishes the bug
+    immediately: pre-fix, use_count grew by one per `observe()` call and only ever
+    came back down via that connection's own disconnect(); post-fix it does not
+    grow at all, since only drain_fn and the returned Connection's keep_alive(state)
+    hold `state` now — never the wrapper sitting inside it.
+    """
+    from prism._prism_ext import _standalone_shared_use_count
+
+    s = prism.SharedInt(0)
+    baseline = _standalone_shared_use_count(s)
+    conn = s.observe(lambda v: None)
+    assert _standalone_shared_use_count(s) == baseline + 1
+    conn.disconnect()
+    assert _standalone_shared_use_count(s) == baseline
+
+
+def test_standalone_state_alive_count_returns_to_baseline_after_atexit_clear():
+    """Task 1 fix round 1, full-lifecycle companion to the use_count test above:
+    `_standalone_state_alive_count()` (also new) counts how many Shared<T>/Channel<T>
+    state objects are currently heap-allocated across ALL standalone handles. Proves
+    the fix doesn't leave the state permanently unreachable once its handle is
+    genuinely torn down.
+
+    Deliberately NOT `del s; gc.collect()` alone — a standalone handle's Python
+    wrapper and its own Connection form a real reference cycle by design
+    (`nb::keep_alive<0, 1>` on `observe()`, invisible to the cyclic GC — see
+    `_observed_handles`' docstring in prism/__init__.py), so the wrapper is never
+    collected by `del` + `gc.collect()` regardless of this fix; only an explicit
+    `disconnect()` (here via `_atexit_clear()`, same as real interpreter shutdown)
+    breaks it. Verified empirically: `del s; gc.collect()` alone leaves the count
+    unchanged both before and after this fix.
+
+    Runs in a subprocess for a deterministic baseline — in-process, other tests in
+    the same pytest session may leave their own standalone handles pinned alive by
+    that same cycle until the real interpreter-exit `_atexit_clear()`, so a shared
+    baseline captured mid-suite is not stable.
+    """
+    code = (
+        "import gc\n"
+        "import prism\n"
+        "from prism._prism_ext import _standalone_state_alive_count\n"
+        "before = _standalone_state_alive_count()\n"
+        "assert before == 0, before\n"
+        "s = prism.SharedInt(0)\n"
+        "s.observe(lambda v: None)\n"
+        "assert _standalone_state_alive_count() == 1\n"
+        "del s\n"
+        "gc.collect()\n"
+        "assert _standalone_state_alive_count() == 1  # cycle not yet broken\n"
+        "prism._atexit_clear()\n"
+        "gc.collect()\n"
+        "assert _standalone_state_alive_count() == 0\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=30,
+    )
+    assert result.returncode == 0
+
+
 def test_nested_transaction_abort_outer_preserved():
     class M(Model):
         a = field(0)
