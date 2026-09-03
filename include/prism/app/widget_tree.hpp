@@ -80,7 +80,7 @@ public:
             if (it != index_.end()) {
                 auto sv = get_scroll_view(*it->second);
                 if (sv) {
-                    DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+                    DY max_off = max_scroll(sv->content_h, sv->viewport_h);
                     DY new_off{std::clamp(sv->offset.raw() + delta.raw(), 0.f, max_off.raw())};
 
                     if (std::abs(new_off.raw() - sv->offset.raw()) < 0.001f) {
@@ -108,7 +108,7 @@ public:
         if (it == index_.end()) return;
         auto sv = get_scroll_view(*it->second);
         if (!sv) return;
-        DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+        DY max_off = max_scroll(sv->content_h, sv->viewport_h);
         sv->offset = DY{std::clamp(offset.raw(), 0.f, max_off.raw())};
         sv->show_ticks = 30;
         set_dirty(id);
@@ -121,15 +121,10 @@ public:
         if (!sv) return;
 
         DY row_top{static_cast<float>(row_index) * row_h.raw()};
-        DY row_bottom = row_top + DY{row_h.raw()};
-        DY vp_top = sv->offset;
-        DY vp_bottom = vp_top + DY{sv->viewport_h.raw()};
-        DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
-
-        if (row_bottom > vp_bottom)
-            scroll_to(container_id, DY{std::clamp(row_bottom.raw() - sv->viewport_h.raw(), 0.f, max_off.raw())});
-        else if (row_top < vp_top)
-            scroll_to(container_id, DY{std::clamp(row_top.raw(), 0.f, max_off.raw())});
+        DY max_off = max_scroll(sv->content_h, sv->viewport_h);
+        DY new_offset = reveal_row_offset(row_top, row_h, sv->offset, sv->viewport_h, max_off);
+        if (new_offset.raw() != sv->offset.raw())
+            scroll_to(container_id, new_offset);
     }
 
     [[nodiscard]] std::vector<WidgetId> leaf_ids() const {
@@ -143,26 +138,25 @@ public:
             it->second->on_input.emit(ev);
     }
 
-    void update_hover(std::optional<WidgetId> id) {
-        WidgetId new_id = id.value_or(0);
-        if (new_id == hovered_id_) return;
-        if (auto it = index_.find(hovered_id_); it != index_.end()) {
-            it->second->visual_state.hovered = false;
-            it->second->dirty = true;
-        }
-        hovered_id_ = new_id;
-        if (hovered_id_ == 0) return; // 0 means "no widget under cursor"
-        if (auto it = index_.find(hovered_id_); it != index_.end()) {
-            it->second->visual_state.hovered = true;
+    // id == 0 ("no widget") is a no-op, letting callers skip their own zero checks.
+    void flip_visual_flag(WidgetId id, bool WidgetVisualState::* flag, bool value) {
+        if (id == 0) return;
+        if (auto it = index_.find(id); it != index_.end()) {
+            it->second->visual_state.*flag = value;
             it->second->dirty = true;
         }
     }
 
+    void update_hover(std::optional<WidgetId> id) {
+        WidgetId new_id = id.value_or(0);
+        if (new_id == hovered_id_) return;
+        flip_visual_flag(hovered_id_, &WidgetVisualState::hovered, false);
+        hovered_id_ = new_id;
+        flip_visual_flag(hovered_id_, &WidgetVisualState::hovered, true);
+    }
+
     void set_pressed(WidgetId id, bool pressed) {
-        if (auto it = index_.find(id); it != index_.end()) {
-            it->second->visual_state.pressed = pressed;
-            it->second->dirty = true;
-        }
+        flip_visual_flag(id, &WidgetVisualState::pressed, pressed);
         captured_id_ = pressed ? id : 0;
     }
 
@@ -213,11 +207,11 @@ public:
         auto& d = scrollbar_drag_;
         Height track_range = d.viewport_h - d.thumb_h;
         if (track_range.raw() <= 0) return;
-        DY max_scroll{d.content_h.raw() - d.viewport_h.raw()};
+        DY max_off = max_scroll(d.content_h, d.viewport_h);
         DY dy_pixels = mouse_y - d.anchor_y;
         float new_offset = std::clamp(
-            d.anchor_offset.raw() + dy_pixels.raw() * max_scroll.raw() / track_range.raw(),
-            0.f, max_scroll.raw());
+            d.anchor_offset.raw() + dy_pixels.raw() * max_off.raw() / track_range.raw(),
+            0.f, max_off.raw());
         scroll_to(d.scroll_id, DY{new_offset});
     }
 
@@ -295,23 +289,13 @@ public:
     void set_focused(WidgetId id) {
         if (id == focused_id_) return;
         if (std::find(focus_order_.begin(), focus_order_.end(), id) == focus_order_.end()) return;
-        if (auto it = index_.find(focused_id_); it != index_.end()) {
-            it->second->visual_state.focused = false;
-            it->second->dirty = true;
-        }
+        flip_visual_flag(focused_id_, &WidgetVisualState::focused, false);
         focused_id_ = id;
-        if (auto it = index_.find(focused_id_); it != index_.end()) {
-            it->second->visual_state.focused = true;
-            it->second->dirty = true;
-        }
+        flip_visual_flag(focused_id_, &WidgetVisualState::focused, true);
     }
 
     void clear_focus() {
-        if (focused_id_ == 0) return;
-        if (auto it = index_.find(focused_id_); it != index_.end()) {
-            it->second->visual_state.focused = false;
-            it->second->dirty = true;
-        }
+        flip_visual_flag(focused_id_, &WidgetVisualState::focused, false);
         focused_id_ = 0;
     }
 
@@ -520,51 +504,44 @@ private:
         return wn;
     }
 
+    void connect_on_change_dirty(Node& node, WidgetNode& wn) {
+        auto id = wn.id;
+        if (node.on_change) {
+            wn.connections.push_back(
+                node.on_change([this, id]() { set_dirty(id); })
+            );
+        }
+    }
+
+    void connect_deps_dirty(Node& node, WidgetNode& wn) {
+        auto id = wn.id;
+        for (auto& dep : node.dependencies) {
+            wn.connections.push_back(
+                dep([this, id]() { set_dirty(id); })
+            );
+        }
+    }
+
     void connect_dirty(Node& node, WidgetNode& wn) {
         if (node.is_leaf) {
-            auto id = wn.id;
-            if (node.on_change) {
-                wn.connections.push_back(
-                    node.on_change([this, id]() { set_dirty(id); })
-                );
-            }
-            for (auto& dep : node.dependencies) {
-                wn.connections.push_back(
-                    dep([this, id]() { set_dirty(id); })
-                );
-            }
+            connect_on_change_dirty(node, wn);
+            connect_deps_dirty(node, wn);
         } else {
             // Scroll containers with Field<ScrollArea> have their own on_change
-            if (node.on_change) {
-                auto id = wn.id;
-                wn.connections.push_back(
-                    node.on_change([this, id]() { set_dirty(id); })
-                );
-            }
+            connect_on_change_dirty(node, wn);
 
             // Table: connect List<T> signals (RowStorage) and depends_on (ColumnStorage)
             if (node.layout_kind == LayoutKind::Table) {
                 auto id = wn.id;
-                if (node.vlist_on_insert) {
-                    wn.connections.push_back(
-                        node.vlist_on_insert(0, [this, id]() { set_dirty(id); })
-                    );
+                for (auto sig : {&Node::vlist_on_insert, &Node::vlist_on_remove,
+                                 &Node::vlist_on_update}) {
+                    if (node.*sig) {
+                        wn.connections.push_back(
+                            (node.*sig)(0, [this, id]() { set_dirty(id); })
+                        );
+                    }
                 }
-                if (node.vlist_on_remove) {
-                    wn.connections.push_back(
-                        node.vlist_on_remove(0, [this, id]() { set_dirty(id); })
-                    );
-                }
-                if (node.vlist_on_update) {
-                    wn.connections.push_back(
-                        node.vlist_on_update(0, [this, id]() { set_dirty(id); })
-                    );
-                }
-                for (auto& dep : node.dependencies) {
-                    wn.connections.push_back(
-                        dep([this, id]() { set_dirty(id); })
-                    );
-                }
+                connect_deps_dirty(node, wn);
                 return;
             }
 
@@ -817,7 +794,7 @@ private:
         auto it = index_.find(layout_node.id);
         if (it != index_.end()) {
             if (auto sv = get_scroll_view(*it->second)) {
-                DY max_off{std::max(0.f, sv->content_h.raw() - sv->viewport_h.raw())};
+                DY max_off = max_scroll(sv->content_h, sv->viewport_h);
                 sv->offset = DY{std::clamp(sv->offset.raw(), 0.f, max_off.raw())};
                 layout_node.scroll_offset = sv->offset;
                 if (sv->show_ticks > 0) sv->show_ticks--;
@@ -903,10 +880,14 @@ private:
             update_canvas_bounds(child, viewport_h);
     }
 
+    void unindex_node(WidgetId id) {
+        index_.erase(id);
+        parent_map_.erase(id);
+        std::erase(focus_order_, id);
+    }
+
     void unindex_subtree(WidgetNode& node) {
-        index_.erase(node.id);
-        parent_map_.erase(node.id);
-        std::erase(focus_order_, node.id);
+        unindex_node(node.id);
         node.connections.clear();
         for (auto& c : node.children)
             unindex_subtree(c);
@@ -970,9 +951,7 @@ private:
 
         // Unbind all current children -> pool
         for (auto it = node.children.rbegin(); it != node.children.rend(); ++it) {
-            index_.erase(it->id);
-            parent_map_.erase(it->id);
-            std::erase(focus_order_, it->id);
+            unindex_node(it->id);
             if (vls->unbind_row) vls->unbind_row(*it);
             vls->pool.push_back(std::move(*it));
         }
@@ -1023,9 +1002,7 @@ private:
             ts->viewport_h, ts->overscan);
 
         for (auto it = node.children.rbegin(); it != node.children.rend(); ++it) {
-            index_.erase(it->id);
-            parent_map_.erase(it->id);
-            std::erase(focus_order_, it->id);
+            unindex_node(it->id);
             ts->pool.push_back(std::move(*it));
         }
         node.children.clear();
@@ -1166,14 +1143,8 @@ private:
                     // Scroll selected row into view
                     if (auto sel = t.selected_row.get(); sel.has_value()) {
                         DY row_top{static_cast<float>(sel.value()) * t.row_height.raw()};
-                        DY row_bottom = row_top + DY{t.row_height.raw()};
-                        DY vp_top = t.scroll_y;
-                        DY vp_bottom = vp_top + DY{t.viewport_h.raw()};
-                        DY max_scroll = table_max_scroll();
-                        if (row_bottom > vp_bottom)
-                            t.scroll_y = DY{std::clamp(row_bottom.raw() - t.viewport_h.raw(), 0.f, max_scroll.raw())};
-                        else if (row_top < vp_top)
-                            t.scroll_y = DY{std::clamp(row_top.raw(), 0.f, max_scroll.raw())};
+                        t.scroll_y = reveal_row_offset(row_top, t.row_height, t.scroll_y,
+                                                       t.viewport_h, table_max_scroll());
                     }
                 }
             })

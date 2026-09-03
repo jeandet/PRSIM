@@ -20,6 +20,23 @@ inline std::size_t count_leaves(const WidgetNode& node) {
     return n;
 }
 
+inline DY max_scroll(Height content_h, Height viewport_h) {
+    return DY{std::max(0.f, content_h.raw() - viewport_h.raw())};
+}
+
+// Offset that brings [row_top, row_top + row_h) fully into the viewport: down just
+// enough when the row spills past the bottom, up to its top when it sits above.
+// Returns `offset` unchanged when the row is already fully visible.
+inline DY reveal_row_offset(DY row_top, Height row_h, DY offset, Height viewport_h, DY max_off) {
+    DY row_bottom = row_top + DY{row_h.raw()};
+    DY vp_bottom = offset + DY{viewport_h.raw()};
+    if (row_bottom > vp_bottom)
+        return DY{std::clamp(row_bottom.raw() - viewport_h.raw(), 0.f, max_off.raw())};
+    if (row_top < offset)
+        return DY{std::clamp(row_top.raw(), 0.f, max_off.raw())};
+    return offset;
+}
+
 inline bool check_dirty(const WidgetNode& node) {
     if (node.dirty) return true;
     for (auto& c : node.children)
