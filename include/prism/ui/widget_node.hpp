@@ -46,6 +46,15 @@ struct WidgetNode {
         return *p;
     }
 
+    // Read-only counterpart of get_or_create: the stored state if present,
+    // a shared default-constructed one otherwise.
+    template <typename S>
+    const S& peek() const {
+        static const S default_state;
+        auto* p = std::any_cast<S>(&edit_state);
+        return p ? *p : default_state;
+    }
+
     DrawList draws;
     DrawList overlay_draws;
     std::vector<WidgetNode> children;

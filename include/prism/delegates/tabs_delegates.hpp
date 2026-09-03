@@ -9,16 +9,6 @@ namespace prism::ui {
 
 namespace tabs_detail {
 
-inline const TabBarEditState& get_tabs_state(const WidgetNode& node) {
-    static const TabBarEditState default_state;
-    auto* p = std::any_cast<TabBarEditState>(&node.edit_state);
-    return p ? *p : default_state;
-}
-
-inline TabBarEditState& ensure_tabs_state(WidgetNode& node) {
-    return node.get_or_create<TabBarEditState>();
-}
-
 constexpr Height tab_h{32.f};
 constexpr Width tab_padding{16.f};
 constexpr float tab_font_size = 14.f;
@@ -28,7 +18,7 @@ constexpr Width tab_char_width{8.f};
 inline void tabs_record(DrawList& dl, WidgetNode& node,
                         size_t selected, const std::vector<std::string>& names) {
     auto& vs = node_vs(node);
-    auto& es = ensure_tabs_state(node);
+    auto& es = node.get_or_create<TabBarEditState>();
     auto& t = *node.theme;
 
     Width total_w{0};
@@ -63,14 +53,13 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
     }
 
     if (vs.focused)
-        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, total_w - Width{2.f}, tab_h - Height{2.f}),
-                        t.focus_ring, 2.0f);
+        delegate_detail::draw_focus_ring(dl, total_w, tab_h, t);
 }
 
 inline bool tabs_handle_input(const InputEvent& ev, WidgetNode& node,
                               size_t selected, size_t count,
                               std::function<void(size_t)> select) {
-    auto& es = ensure_tabs_state(node);
+    auto& es = node.get_or_create<TabBarEditState>();
 
     if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
         X mx = mb->position.x;

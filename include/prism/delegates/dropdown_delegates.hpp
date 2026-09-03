@@ -14,16 +14,6 @@ struct DropdownLabelResolver {
     size_t count;
 };
 
-inline const DropdownEditState& get_dropdown_state(const WidgetNode& node) {
-    static const DropdownEditState default_state;
-    auto* p = std::any_cast<DropdownEditState>(&node.edit_state);
-    return p ? *p : default_state;
-}
-
-inline DropdownEditState& ensure_dropdown_state(WidgetNode& node) {
-    return node.get_or_create<DropdownEditState>();
-}
-
 constexpr Height dd_widget_h{30.f};
 constexpr Width dd_padding{8.f}; // used only as a horizontal inset below
 constexpr float dd_font_size = 14.f;
@@ -33,7 +23,7 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
                             const std::string& current_label,
                             const DropdownLabelResolver& resolver) {
     auto& vs = node_vs(node);
-    auto& es = ensure_dropdown_state(node);
+    auto& es = node.get_or_create<DropdownEditState>();
     Width w = delegate_detail::widget_w(node);
 
     auto& t = *node.theme;
@@ -47,8 +37,7 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
     dl.text("\xe2\x96\xbe", delegate_detail::make_point(X{w.raw() - 20.f}, Y{7}), dd_font_size, t.text_muted);
 
     if (vs.focused)
-        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, dd_widget_h - Height{2.f}),
-                        t.focus_ring, 2.0f);
+        delegate_detail::draw_focus_ring(dl, w, dd_widget_h, t);
 
     node.overlay_draws.clear();
     if (es.open) {
@@ -88,7 +77,7 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
 inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
                                   size_t current_index, size_t count,
                                   std::function<void(size_t)> select) {
-    auto& es = ensure_dropdown_state(node);
+    auto& es = node.get_or_create<DropdownEditState>();
     bool changed = false;
 
     if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {

@@ -287,6 +287,30 @@ inline Height widget_h(const WidgetNode& node) {
     auto sz = node_allocated(node);
     return sz.h.raw() > 0 ? sz.h : default_widget_h;
 }
+
+// Shared surface/hover background fill used by the box-style delegates.
+inline void fill_widget_bg(DrawList& dl, const WidgetNode& node, Height h) {
+    auto& vs = node_vs(node);
+    auto& t = node_theme(node);
+    auto bg = vs.hovered ? t.surface_hover : t.surface;
+    dl.filled_rect(make_rect(X{0}, Y{0}, widget_w(node), h), bg);
+}
+
+// Inset inside the widget's own box on purpose: Leaf measurement sizes widgets from
+// draws.bounding_box(), so a ring painted outside the box feeds back into layout and
+// grows the widget on every publish (see commit 9d0e78c).
+inline void draw_focus_ring(DrawList& dl, Width w, Height h, const Theme& t) {
+    dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, h - Height{2.f}), t.focus_ring, 2.0f);
+}
+
+// The framework's activation gesture: mouse press, or space/enter.
+inline bool is_activation_event(const InputEvent& ev) {
+    if (auto* mb = std::get_if<MouseButton>(&ev))
+        return mb->pressed;
+    if (auto* kp = std::get_if<KeyPress>(&ev))
+        return (kp->key == keys::space || kp->key == keys::enter);
+    return false;
+}
 } // namespace delegate_detail
 
 // Primary template: default widget for any Field<T>.
@@ -296,11 +320,7 @@ struct Widget {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
-        auto& vs = node_vs(node);
-        auto& t = node_theme(node);
-        Width w = delegate_detail::widget_w(node);
-        auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), bg);
+        delegate_detail::fill_widget_bg(dl, node, delegate_detail::widget_h(node));
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -320,11 +340,8 @@ struct Widget<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
-        auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = delegate_detail::widget_w(node);
-        auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), bg);
+        delegate_detail::fill_widget_bg(dl, node, delegate_detail::widget_h(node));
         dl.text(std::to_string(field.get()),
                 delegate_detail::make_point(X{4}, Y{4}), 14, t.text);
     }
@@ -338,11 +355,8 @@ struct Widget<T> {
     static constexpr FocusPolicy focus_policy = FocusPolicy::none;
 
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
-        auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = delegate_detail::widget_w(node);
-        auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), bg);
+        delegate_detail::fill_widget_bg(dl, node, delegate_detail::widget_h(node));
         dl.text(std::string(field.get().data(), field.get().size()),
                 delegate_detail::make_point(X{4}, Y{4}), 14, t.text);
     }
@@ -391,10 +405,8 @@ struct Widget<Checkbox> {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
         auto& cb = field.get();
-        Width w = delegate_detail::widget_w(node);
 
-        auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
+        delegate_detail::fill_widget_bg(dl, node, widget_h);
 
         Y box_y{(widget_h.raw() - box_size.raw()) / 2.f};
         draw_check_box(dl, X{8}, box_y, cb.checked, vs, t);
@@ -403,18 +415,11 @@ struct Widget<Checkbox> {
             dl.text(cb.label, delegate_detail::make_point(X{32}, Y{7}), 14, t.text);
 
         if (vs.focused)
-            dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
-                            t.focus_ring, 2.0f);
+            delegate_detail::draw_focus_ring(dl, delegate_detail::widget_w(node), widget_h, t);
     }
 
     static void handle_input(Field<Checkbox>& field, const InputEvent& ev, WidgetNode&) {
-        bool activate = false;
-        if (auto* mb = std::get_if<MouseButton>(&ev))
-            activate = mb->pressed;
-        else if (auto* kp = std::get_if<KeyPress>(&ev))
-            activate = (kp->key == keys::space || kp->key == keys::enter);
-
-        if (activate) {
+        if (delegate_detail::is_activation_event(ev)) {
             auto cb = field.get();
             cb.checked = !cb.checked;
             field.set(cb);
@@ -432,26 +437,19 @@ struct Widget<bool> {
         auto& t = node_theme(node);
         constexpr Height widget_h{30.f};
         constexpr Height box_size{16.f};
-        Width w = delegate_detail::widget_w(node);
 
-        auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
+        delegate_detail::fill_widget_bg(dl, node, widget_h);
 
         Y box_y{(widget_h.raw() - box_size.raw()) / 2.f};
         draw_check_box(dl, X{8}, box_y, field.get(), vs, t);
 
         if (vs.focused)
-            dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
-                            t.focus_ring, 2.0f);
+            delegate_detail::draw_focus_ring(dl, delegate_detail::widget_w(node), widget_h, t);
     }
 
     static void handle_input(Field<bool>& field, const InputEvent& ev, WidgetNode&) {
-        if (auto* mb = std::get_if<MouseButton>(&ev); mb && mb->pressed) {
+        if (delegate_detail::is_activation_event(ev))
             field.set(!field.get());
-        } else if (auto* kp = std::get_if<KeyPress>(&ev);
-                   kp && (kp->key == keys::space || kp->key == keys::enter)) {
-            field.set(!field.get());
-        }
     }
 };
 
@@ -522,16 +520,14 @@ struct Widget<Slider<T, O>> {
             Y thumb_y{(1.f - r) * (tl - thumb_len)};
             dl.filled_rect(delegate_detail::make_rect(X{0}, thumb_y, Width{widget_extent}, Height{thumb_len}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, Width{widget_extent - 2}, Height{tl - 2}),
-                                t.focus_ring, 2.0f);
+                delegate_detail::draw_focus_ring(dl, Width{widget_extent}, Height{tl}, t);
         } else {
             Y track_y{(widget_extent - track_thick) / 2.f};
             dl.filled_rect(delegate_detail::make_rect(X{0}, track_y, Width{tl}, Height{track_thick}), track_bg);
             X thumb_x{r * (tl - thumb_len)};
             dl.filled_rect(delegate_detail::make_rect(thumb_x, Y{0}, Width{thumb_len}, Height{widget_extent}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, Width{tl - 2}, Height{widget_extent - 2}),
-                                t.focus_ring, 2.0f);
+                delegate_detail::draw_focus_ring(dl, Width{tl}, Height{widget_extent}, t);
         }
     }
 
@@ -582,17 +578,11 @@ struct Widget<Button> {
         dl.rect_outline(delegate_detail::make_rect(X{0}, Y{0}, w, Height{32}), t.primary_outline, 1.0f);
         dl.text(field.get().text, delegate_detail::make_point(X{8}, Y{7}), 14, t.text_on_primary);
         if (vs.focused)
-            dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, Height{30}), t.focus_ring, 2.0f);
+            delegate_detail::draw_focus_ring(dl, w, Height{32}, t);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {
-        bool activate = false;
-        if (auto* mb = std::get_if<MouseButton>(&ev))
-            activate = mb->pressed;
-        else if (auto* kp = std::get_if<KeyPress>(&ev))
-            activate = (kp->key == keys::space || kp->key == keys::enter);
-
-        if (activate) {
+        if (delegate_detail::is_activation_event(ev)) {
             auto btn = field.get();
             btn.click_count++;
             field.set(btn);

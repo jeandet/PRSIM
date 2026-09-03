@@ -12,16 +12,6 @@ namespace prism::ui {
 
 namespace text_detail {
 
-inline const TextEditState& get_text_edit_state(const WidgetNode& node) {
-    static const TextEditState default_state;
-    auto* p = std::any_cast<TextEditState>(&node.edit_state);
-    return p ? *p : default_state;
-}
-
-inline TextEditState& ensure_text_edit_state(WidgetNode& node) {
-    return node.get_or_create<TextEditState>();
-}
-
 inline std::string mask_string(size_t len) {
     std::string result;
     result.reserve(len * 3);
@@ -43,7 +33,7 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
                        DisplayFn display_fn) {
     auto& vs = node_vs(node);
     auto& sf = field.get();
-    auto& es = get_text_edit_state(node);
+    const auto& es = node.peek<TextEditState>();
     Width cw = char_width(tf_font_size);
     Width w = delegate_detail::widget_w(node);
 
@@ -54,8 +44,7 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, tf_widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, tf_widget_h - Height{2.f}),
-                        t.focus_ring, 2.0f);
+        delegate_detail::draw_focus_ring(dl, w, tf_widget_h, t);
 
     Width text_area_w = w - tf_padding_x * 2.f;
     dl.clip_push(delegate_detail::make_point(X{tf_padding_x.raw()}, Y{0}), Size{text_area_w, tf_widget_h});
@@ -82,7 +71,7 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
 
 template <typename Sentinel>
 void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, WidgetNode& node) {
-    auto& es = ensure_text_edit_state(node);
+    auto& es = node.get_or_create<TextEditState>();
     auto sf = field.get();
     auto len = sf.value.size();
 
@@ -208,16 +197,6 @@ inline size_t line_col_to_cursor(size_t line, size_t col, std::span<const LineSp
     return lines[line].start + clamped_col;
 }
 
-inline const TextAreaEditState& get_text_area_edit_state(const WidgetNode& node) {
-    static const TextAreaEditState default_state;
-    auto* p = std::any_cast<TextAreaEditState>(&node.edit_state);
-    return p ? *p : default_state;
-}
-
-inline TextAreaEditState& ensure_text_area_edit_state(WidgetNode& node) {
-    return node.get_or_create<TextAreaEditState>();
-}
-
 // ta_padding is used in both a horizontal and vertical role below — split
 // rather than force one tag, same reasoning as tf_padding_x/y above.
 constexpr Width ta_padding_x{4.f};
@@ -230,7 +209,7 @@ template <typename Sentinel>
 void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNode& node) {
     auto& vs = node_vs(node);
     auto& sf = field.get();
-    auto& es = get_text_area_edit_state(node);
+    const auto& es = node.peek<TextAreaEditState>();
     Width cw = char_width(ta_font_size);
     Width w = delegate_detail::widget_w(node);
     Width text_area_w = w - ta_padding_x * 2.f;
@@ -244,8 +223,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
-                        t.focus_ring, 2.0f);
+        delegate_detail::draw_focus_ring(dl, w, widget_h, t);
 
     dl.clip_push(delegate_detail::make_point(X{ta_padding_x.raw()}, Y{ta_padding_y.raw()}), Size{text_area_w, text_area_h});
 
@@ -278,7 +256,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
 
 template <typename Sentinel>
 void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, WidgetNode& node) {
-    auto& es = ensure_text_area_edit_state(node);
+    auto& es = node.get_or_create<TextAreaEditState>();
     auto sf = field.get();
     auto len = sf.value.size();
     es.cursor = std::min(es.cursor, len);
@@ -388,12 +366,12 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
 
 template <StringLike T>
 const TextEditState& Widget<TextField<T>>::get_edit_state(const WidgetNode& node) {
-    return text_detail::get_text_edit_state(node);
+    return node.peek<TextEditState>();
 }
 
 template <StringLike T>
 TextEditState& Widget<TextField<T>>::ensure_edit_state(WidgetNode& node) {
-    return text_detail::ensure_text_edit_state(node);
+    return node.get_or_create<TextEditState>();
 }
 
 template <StringLike T>
@@ -414,12 +392,12 @@ void Widget<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputE
 
 template <StringLike T>
 const TextEditState& Widget<Password<T>>::get_edit_state(const WidgetNode& node) {
-    return text_detail::get_text_edit_state(node);
+    return node.peek<TextEditState>();
 }
 
 template <StringLike T>
 TextEditState& Widget<Password<T>>::ensure_edit_state(WidgetNode& node) {
-    return text_detail::ensure_text_edit_state(node);
+    return node.get_or_create<TextEditState>();
 }
 
 template <StringLike T>
@@ -440,12 +418,12 @@ void Widget<Password<T>>::handle_input(Field<Password<T>>& field, const InputEve
 
 template <StringLike T>
 const TextAreaEditState& Widget<TextArea<T>>::get_edit_state(const WidgetNode& node) {
-    return text_detail::get_text_area_edit_state(node);
+    return node.peek<TextAreaEditState>();
 }
 
 template <StringLike T>
 TextAreaEditState& Widget<TextArea<T>>::ensure_edit_state(WidgetNode& node) {
-    return text_detail::ensure_text_area_edit_state(node);
+    return node.get_or_create<TextAreaEditState>();
 }
 
 template <StringLike T>
