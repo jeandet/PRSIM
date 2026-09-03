@@ -75,3 +75,16 @@ PYTHONPATH=builddir/python python3 python/examples/12_asyncio_bridge.py --headle
 ## Threading guarantees
 
 One logic thread owns the widget tree and every field. Any thread may read or write a field handle — writes are posted to the logic thread, reads are dispatched to it and block. Never read-modify-write (`f.value += 1`) off the logic thread; use the atomic `field.add(n)`, or send through a `channel` and increment in its observer (see `09_headless_multithread_stress.py`). Any thread may call `shared().value = x`, `channel().send(x)`, or `field.add(n)`; these are safe under arbitrary concurrency. `shared()` publishes only the latest value — intermediate values are dropped by design. `channel()` is lossless and per-producer FIFO. `plot.replace_series()`/`set_labels()` are each a single dispatched post (clear+add+notify), so concurrent callers never see a torn plot. `prism.headless()` runs an app with no display and returns an `App` handle whose `wait_until()` is the convergence signal for tests/CI. A posted closure wakes an idle logic thread exactly once per burst. Exceptions thrown by posted or observed callbacks are routed to `prism.on_error()` (default: printed to stderr) and never stop the drain. `prism.transaction()` batches and coalesces notifications on the calling thread; it does not roll back on exception.
+
+`prism.worker(fn)` runs `fn` on its own thread; writes made inside `fn` are *not* batched by default — each is its own posted closure. Wrap related writes in `with prism.transaction():` inside `fn` to send them as one:
+
+```python
+def fn(stop):
+    with prism.transaction():
+        m.x.value = 1
+        m.y.value = 2
+```
+
+`list_field()`'s `push`/`erase`/`set`/`replace_all` are each one posted, atomic operation on the logic thread — there's no read-modify-write hazard the way there is for a plain field, so there's no `add()`-style analogue for lists. `size()`/`to_list()` are dispatched reads, same as `field.value`.
+
+`handle.observe(cb)` (and `observe_insert`/`observe_remove`/`observe_update` on lists) is owned by the handle it's called on: the subscription lives exactly as long as that handle — or its owning `Model` — is reachable. Keep a reference to the handle (or hold the `Model`) to keep the observer firing; letting both go silently ends it. `conn = s.observe(cb); del s` leaves `conn` alive but inert — the callback was already released with `s`. Call `conn.disconnect()` to end a subscription early, on purpose.

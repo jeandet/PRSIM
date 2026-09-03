@@ -452,7 +452,11 @@ std::shared_ptr<U> make_tracked_state(Args&&... args) {
 // no-ops — same observable behavior as an already-disconnected observer. Falls back to
 // holding `cb` directly (old behavior) for the rare callable that can't be
 // weak-referenced (some C-implemented callables) — such an observer keeps working, just
-// without this fix's GC-visibility for that one case.
+// without this fix's GC-visibility for that one case. On CPython 3.15 this fallback is
+// never actually exercised: builtins, bound methods and partials are all weak-referenceable
+// there, so nb::weakref(cb) always succeeds — the strong_ path exists for whatever
+// C-implemented callable a future/other interpreter build declines to weak-reference; this
+// is version-dependent, not a guarantee.
 class WeakCallback {
 public:
     explicit WeakCallback(nb::callable cb) {
@@ -476,6 +480,13 @@ private:
     std::optional<nb::weakref> weak_;
     nb::callable strong_;
 };
+
+// Shared one-sentence docstring for every observe*() .def below (see keep_connection()'s
+// rationale comment further down for the full ownership story).
+static constexpr const char* kObserveDoc =
+    "Any thread. The subscription lives as long as this handle (or its Model) does -- "
+    "keep a reference to the handle to keep the observer firing; disconnect() on the "
+    "returned Connection ends it early.";
 
 // Standalone field (owns storage) — for quick tests / non-model usage. State lives behind
 // a shared_ptr (like SharedHandle/ChannelHandle below) so observe()'s Connection can
@@ -1943,7 +1954,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def("set", &validated_set<FieldHandle<T>, T>);
     field_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb), cb);
-    }, nb::arg("callback"));
+    }, nb::arg("callback"), kObserveDoc);
     if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) {
         field_cls.def("add", [](nb::object self, T n) {
             auto& h = nb::cast<FieldHandle<T>&>(self);
@@ -1956,7 +1967,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def_prop_rw("value", &BoundField<T>::get, &validated_set<BoundField<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundField<T>&>(self).observe(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("get", &BoundField<T>::get)
         .def("set", &validated_set<BoundField<T>, T>);
     if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) {
@@ -1973,14 +1984,14 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def("get", &SharedHandle<T>::get).def("set", &validated_set<SharedHandle<T>, T>);
     shared_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<SharedHandle<T>&>(self).observe(cb), cb);
-    }, nb::arg("callback"));
+    }, nb::arg("callback"), kObserveDoc);
 
     std::string bound_shared_name = std::string("BoundShared") + suffix;
     nb::class_<BoundShared<T>>(m, bound_shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<T>::get, &validated_set<BoundShared<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundShared<T>&>(self).observe(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("get", &BoundShared<T>::get).def("set", &validated_set<BoundShared<T>, T>);
 
     std::string channel_name = std::string("Channel") + suffix;
@@ -1988,21 +1999,21 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def(nb::init<>()).def("send", &ChannelHandle<T>::send)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ChannelHandle<T>&>(self).observe(cb), cb);
-        }, nb::arg("callback"));
+        }, nb::arg("callback"), kObserveDoc);
 
     std::string bound_channel_name = std::string("BoundChannel") + suffix;
     nb::class_<BoundChannel<T>>(m, bound_channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("send", &BoundChannel<T>::send)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundChannel<T>&>(self).observe(cb), cb);
-        }, nb::arg("callback"));
+        }, nb::arg("callback"), kObserveDoc);
 
     std::string bound_derived_name = std::string("BoundDerived") + suffix;
     nb::class_<BoundDerived<T>>(m, bound_derived_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<T>::get).def("get", &BoundDerived<T>::get)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundDerived<T>&>(self).observe(cb), cb);
-        }, nb::arg("callback"));
+        }, nb::arg("callback"), kObserveDoc);
 }
 
 // List<bool>/BoundList<bool> are deliberately never instantiated — vector<bool> proxy is
@@ -2016,13 +2027,13 @@ void bind_list(nb::module_& m, const char* suffix) {
         .def("size", &ListHandle<T>::size).def("get", &ListHandle<T>::get).def("to_list", &ListHandle<T>::to_list)
         .def("observe_insert", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_insert(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("observe_remove", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_remove(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("observe_update", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_update(cb), cb);
-        }, nb::arg("callback"));
+        }, nb::arg("callback"), kObserveDoc);
 
     std::string bound_list_name = std::string("BoundList") + suffix;
     nb::class_<BoundList<T>>(m, bound_list_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
@@ -2030,13 +2041,13 @@ void bind_list(nb::module_& m, const char* suffix) {
         .def("size", &BoundList<T>::size).def("get", &BoundList<T>::get).def("to_list", &BoundList<T>::to_list)
         .def("observe_insert", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_insert(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("observe_remove", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_remove(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("observe_update", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_update(cb), cb);
-        }, nb::arg("callback"));
+        }, nb::arg("callback"), kObserveDoc);
 }
 
 // Module-wide Python error hub backing prism.on_error(). Mirrors g_observed_handles above:
@@ -2242,7 +2253,7 @@ NB_MODULE(_prism_ext, m) {
         .def_prop_ro("range", &BoundSliderValue::range)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("get", &BoundSliderValue::get)
         .def("set", &validated_set<BoundSliderValue, double>)
         .def("set_range", &BoundSliderValue::set_range, nb::arg("min"), nb::arg("max"));
@@ -2251,7 +2262,7 @@ NB_MODULE(_prism_ext, m) {
         .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundCheckboxValue&>(self).observe(cb), cb);
-        }, nb::arg("callback"))
+        }, nb::arg("callback"), kObserveDoc)
         .def("get", &BoundCheckboxValue::get)
         .def("set", &validated_set<BoundCheckboxValue, bool>);
 

@@ -776,7 +776,14 @@ class _ListDescriptor:
 
 
 def list_field(default=None):
-    """Mutations may be called from any thread (dispatched to the logic thread)."""
+    """Mutations may be called from any thread (dispatched to the logic thread).
+
+    Each of ``push``/``erase``/``set``/``replace_all`` is one posted, atomic
+    operation on the logic thread — there is no read-modify-write hazard
+    the way there is for a plain field, so no ``add()`` analogue is needed.
+    ``size()``/``to_list()`` are dispatched reads: they block the calling
+    thread until the logic thread answers.
+    """
     return _ListDescriptor(default)
 
 
@@ -1430,6 +1437,15 @@ def worker(fn, *, interval=None, repeat=None, daemon=True, name=None):
     combined with *interval* it stops at whichever comes first. Starts
     immediately and returns the :class:`Worker`; still-running workers are
     stopped when ``run()`` / ``_run_headless()`` return.
+
+    Writes made inside *fn* are not batched — a burst of field writes posts
+    one closure per write. Wrap related writes in ``with prism.transaction():``
+    inside *fn* to coalesce them into a single notification::
+
+        def fn(stop):
+            with prism.transaction():
+                m.x.value = 1
+                m.y.value = 2
     """
     w = Worker(fn, interval=interval, repeat=repeat, daemon=daemon, name=name)
     w.start()
