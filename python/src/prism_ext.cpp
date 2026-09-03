@@ -431,12 +431,19 @@ inline std::vector<ReplaceSeriesSpec> parse_replace_series_args(nb::object xs_or
     };
     std::vector<ReplaceSeriesSpec> specs;
     if (ys.is_none()) {
+        constexpr const char* shape_error = "replace_series(): each series must be (xs, ys) or (xs, ys, color)";
         for (auto item : nb::cast<nb::list>(xs_or_series)) {
-            nb::tuple t = nb::cast<nb::tuple>(item);
+            // nb::cast<nb::tuple> silently converts any sequence (incl. a bare list) via
+            // PySequence_Tuple — check the real type first so a bare list/short tuple is
+            // rejected here, not read out of bounds by tuple::operator[] below.
+            if (!nb::isinstance<nb::tuple>(item)) throw nb::type_error(shape_error);
+            nb::tuple t = nb::borrow<nb::tuple>(item);
+            size_t n = nb::len(t);
+            if (n != 2 && n != 3) throw nb::type_error(shape_error);
             ReplaceSeriesSpec spec;
             spec.vx = to_doubles(t[0]);
             spec.vy = to_doubles(t[1]);
-            if (nb::len(t) > 2 && !t[2].is_none()) spec.color_str = nb::cast<std::string>(t[2]);
+            if (n > 2 && !t[2].is_none()) spec.color_str = nb::cast<std::string>(t[2]);
             specs.push_back(std::move(spec));
         }
     } else {
@@ -447,6 +454,13 @@ inline std::vector<ReplaceSeriesSpec> parse_replace_series_args(nb::object xs_or
         specs.push_back(std::move(spec));
     }
     return specs;
+}
+
+// List form (ys omitted) carries color per-series in each tuple — a top-level color/fill
+// would silently do nothing, so reject it instead of accepting it as a no-op.
+inline void reject_stray_kwargs_in_list_form(const nb::object& ys, const nb::object& color, bool fill) {
+    if (ys.is_none() && (!color.is_none() || fill))
+        throw nb::type_error("replace_series(): color/fill are not valid with the list form — set color per series in the (xs, ys, color) tuple");
 }
 
 inline void replace_series_dispatch(prism::plot::PlotModel* p, std::vector<ReplaceSeriesSpec> specs, float thickness, bool fill) {
@@ -506,6 +520,7 @@ struct PlotHandle {
     // Single-post clear+add(+add...)+notify — see parse_replace_series_args for the two call forms.
     void replace_series(nb::object xs_or_series, nb::object ys = nb::none(), nb::object color = nb::none(),
                          float thickness = 2.f, bool fill = false) {
+        reject_stray_kwargs_in_list_form(ys, color, fill);
         replace_series_dispatch(&plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
     }
     void set_labels(nb::object x = nb::none(), nb::object y = nb::none()) {
@@ -1028,6 +1043,7 @@ struct BoundPlot {
     void replace_series(nb::object xs_or_series, nb::object ys = nb::none(), nb::object color = nb::none(),
                          float thickness = 2.f, bool fill = false) {
         if (!plot) return;
+        reject_stray_kwargs_in_list_form(ys, color, fill);
         replace_series_dispatch(plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
     }
     void set_labels(nb::object x = nb::none(), nb::object y = nb::none()) {

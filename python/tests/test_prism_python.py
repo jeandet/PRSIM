@@ -1032,6 +1032,31 @@ def test_replace_series_list_form_posts_n_series_atomically():
     assert bp.series_len(0) == 1
 
 
+def test_replace_series_list_form_rejects_malformed_entries():
+    """Each list-form entry must be a 2- or 3-tuple (xs, ys[, color]) — reject anything
+    else with a TypeError instead of reading past a short tuple (review Critical)."""
+
+    class PlotModel(Model):
+        pass
+
+    pm = PlotModel()
+    bp = pm._add_plot_internal()
+    xs, ys = [0.0, 1.0], [1.0, 2.0]
+
+    match = r"replace_series\(\): each series must be \(xs, ys\) or \(xs, ys, color\)"
+    with pytest.raises(TypeError, match=match):
+        bp.replace_series([(xs,)])
+    with pytest.raises(TypeError, match=match):
+        bp.replace_series([()])
+    with pytest.raises(TypeError, match=match):
+        bp.replace_series([xs])  # bare list, not a tuple
+
+    # Valid: (xs, ys) with no color still works.
+    bp.replace_series([(xs, ys)])
+    assert bp.series_count() == 1
+    assert bp.series_len(0) == 2
+
+
 def test_set_labels_visible_via_label_properties():
     """set_labels() is a single-post convenience over the x_label/y_label properties."""
 
