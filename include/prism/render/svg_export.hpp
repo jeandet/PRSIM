@@ -8,7 +8,7 @@
 #include <string>
 
 namespace prism::render {
-namespace detail {
+namespace svg_detail {
 
 inline std::string fmt_float(float v) {
     char buf[64];
@@ -157,16 +157,16 @@ struct SvgEmitter {
     }
 };
 
-} // namespace detail
+} // namespace svg_detail
 
 inline std::string to_svg(const DrawList& dl) {
     auto bb = dl.bounding_box();
-    detail::SvgEmitter e;
+    svg_detail::SvgEmitter e;
     e.out << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\""
-          << detail::fmt_float(bb.origin.x.raw()) << " "
-          << detail::fmt_float(bb.origin.y.raw()) << " "
-          << detail::fmt_float(bb.extent.w.raw()) << " "
-          << detail::fmt_float(bb.extent.h.raw()) << "\">\n";
+          << svg_detail::fmt_float(bb.origin.x.raw()) << " "
+          << svg_detail::fmt_float(bb.origin.y.raw()) << " "
+          << svg_detail::fmt_float(bb.extent.w.raw()) << " "
+          << svg_detail::fmt_float(bb.extent.h.raw()) << "\">\n";
     e.emit_commands(dl);
     e.out << "</svg>\n";
     return e.out.str();
@@ -193,12 +193,12 @@ inline std::string to_svg(const SceneSnapshot& snap) {
 
     if (min_x > max_x) { min_x = min_y = 0; max_x = max_y = 0; }
 
-    detail::SvgEmitter e;
+    svg_detail::SvgEmitter e;
     e.out << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\""
-          << detail::fmt_float(min_x) << " "
-          << detail::fmt_float(min_y) << " "
-          << detail::fmt_float(max_x - min_x) << " "
-          << detail::fmt_float(max_y - min_y) << "\">\n";
+          << svg_detail::fmt_float(min_x) << " "
+          << svg_detail::fmt_float(min_y) << " "
+          << svg_detail::fmt_float(max_x - min_x) << " "
+          << svg_detail::fmt_float(max_y - min_y) << "\">\n";
 
     for (uint32_t idx : snap.z_order)
         e.emit_commands(*snap.draw_lists[idx]);
@@ -214,14 +214,14 @@ inline std::string to_svg(const SceneSnapshot& snap) {
 // a background rect so the SVG matches the actual window appearance.
 inline std::string to_svg(const SceneSnapshot& snap, float width, float height,
                           Color bg = Color::rgba(30, 30, 30)) {
-    detail::SvgEmitter e;
+    svg_detail::SvgEmitter e;
     e.out << "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 "
-          << detail::fmt_float(width) << " "
-          << detail::fmt_float(height) << "\">\n";
+          << svg_detail::fmt_float(width) << " "
+          << svg_detail::fmt_float(height) << "\">\n";
 
-    e.out << "<rect width=\"" << detail::fmt_float(width)
-          << "\" height=\"" << detail::fmt_float(height)
-          << "\" fill=\"" << detail::fmt_color(bg) << "\"/>\n";
+    e.out << "<rect width=\"" << svg_detail::fmt_float(width)
+          << "\" height=\"" << svg_detail::fmt_float(height)
+          << "\" fill=\"" << svg_detail::fmt_color(bg) << "\"/>\n";
 
     for (uint32_t idx : snap.z_order)
         e.emit_commands(*snap.draw_lists[idx]);

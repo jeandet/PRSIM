@@ -62,7 +62,7 @@ concept RowStorage = requires {
 
 #if __cpp_impl_reflection
 
-namespace detail {
+namespace table_detail {
 template <typename T>
 std::string field_to_string(const Field<T>& f) {
     if constexpr (std::is_same_v<T, std::string>)
@@ -84,14 +84,14 @@ consteval bool has_any_field_member() {
     }
     return found;
 }
-} // namespace detail
+} // namespace table_detail
 
 template <RowStorage L>
 TableSource wrap_row_storage(L& list) {
     using Row = typename std::remove_cvref_t<L>::value_type;
     static constexpr auto members = std::define_static_array(
         std::meta::nonstatic_data_members_of(^^Row, std::meta::access_context::unchecked()));
-    static constexpr bool any_field_member = detail::has_any_field_member<Row>();
+    static constexpr bool any_field_member = table_detail::has_any_field_member<Row>();
 
     // Build header names at static-init time
     static const auto headers = [] {
@@ -126,7 +126,7 @@ TableSource wrap_row_storage(L& list) {
                 if constexpr (any_field_member) {
                     if constexpr (is_field_v<M>) {
                         if (idx == col)
-                            result = detail::field_to_string(member);
+                            result = table_detail::field_to_string(member);
                         ++idx;
                     }
                 } else if constexpr (!has_annotation<m, decltype(skip)>() && LeafType<M>) {
@@ -143,7 +143,7 @@ TableSource wrap_row_storage(L& list) {
     };
 }
 
-namespace detail {
+namespace table_detail {
 template <typename T>
 struct IsLeafVector : std::false_type {};
 template <typename X>
@@ -166,10 +166,10 @@ consteval bool has_any_soa_column() {
         return found;
     }
 }
-} // namespace detail
+} // namespace table_detail
 
 template <typename T>
-inline constexpr bool is_soa_struct_v = detail::has_any_soa_column<std::remove_cvref_t<T>>();
+inline constexpr bool is_soa_struct_v = table_detail::has_any_soa_column<std::remove_cvref_t<T>>();
 
 // Order matters: !is_list_v<T> must be checked (and short-circuit) before
 // is_soa_struct_v<T>, or a List<T> would have its private items_ member
@@ -192,7 +192,7 @@ TableSource wrap_soa_columns(T& data) {
         std::vector<std::string> h;
         template for (constexpr auto m : members) {
             using M = std::remove_cvref_t<typename[:std::meta::type_of(m):]>;
-            if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
+            if constexpr (!has_annotation<m, decltype(skip)>() && table_detail::IsLeafVector<M>::value) {
                 constexpr auto override_label = extract_string_annotation<m, label_t>();
                 if constexpr (!override_label.empty())
                     h.emplace_back(override_label);
@@ -211,7 +211,7 @@ TableSource wrap_soa_columns(T& data) {
             template for (constexpr auto m : members) {
                 auto& member = data.[:m:];
                 using M = std::remove_cvref_t<decltype(member)>;
-                if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
+                if constexpr (!has_annotation<m, decltype(skip)>() && table_detail::IsLeafVector<M>::value) {
                     if (!found) { n = member.size(); found = true; }
                     else assert(member.size() == n && "SOA columns must all be the same size");
                 }
@@ -224,7 +224,7 @@ TableSource wrap_soa_columns(T& data) {
             template for (constexpr auto m : members) {
                 auto& member = data.[:m:];
                 using M = std::remove_cvref_t<decltype(member)>;
-                if constexpr (!has_annotation<m, decltype(skip)>() && detail::IsLeafVector<M>::value) {
+                if constexpr (!has_annotation<m, decltype(skip)>() && table_detail::IsLeafVector<M>::value) {
                     if (idx == col)
                         result = format_leaf_value(member[row]);
                     ++idx;

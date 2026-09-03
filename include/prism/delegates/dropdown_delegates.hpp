@@ -7,7 +7,7 @@
 
 namespace prism::ui {
 
-namespace detail {
+namespace dropdown_detail {
 
 struct DropdownLabelResolver {
     std::function<std::string(size_t)> label_at;
@@ -34,20 +34,20 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
                             const DropdownLabelResolver& resolver) {
     auto& vs = node_vs(node);
     auto& es = ensure_dropdown_state(node);
-    Width w = detail::widget_w(node);
+    Width w = delegate_detail::widget_w(node);
 
     auto& t = *node.theme;
     auto bg = es.open    ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(X{0}, Y{0}, w, dd_widget_h), bg);
+    dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, dd_widget_h), bg);
 
-    dl.text(current_label, make_point(X{dd_padding.raw()}, Y{7}), dd_font_size, t.text);
+    dl.text(current_label, delegate_detail::make_point(X{dd_padding.raw()}, Y{7}), dd_font_size, t.text);
 
-    dl.text("\xe2\x96\xbe", make_point(X{w.raw() - 20.f}, Y{7}), dd_font_size, t.text_muted);
+    dl.text("\xe2\x96\xbe", delegate_detail::make_point(X{w.raw() - 20.f}, Y{7}), dd_font_size, t.text_muted);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, dd_widget_h - Height{2.f}),
+        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, dd_widget_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 
     node.overlay_draws.clear();
@@ -61,27 +61,27 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
             popup_y = Y{-popup_h.raw()};
 
         node.overlay_draws.filled_rect(
-            make_rect(X{0}, popup_y, w, popup_h),
+            delegate_detail::make_rect(X{0}, popup_y, w, popup_h),
             t.popup_bg);
         node.overlay_draws.rect_outline(
-            make_rect(X{0}, popup_y, w, popup_h),
+            delegate_detail::make_rect(X{0}, popup_y, w, popup_h),
             t.popup_border, 1.0f);
 
         for (size_t i = 0; i < resolver.count; ++i) {
             Y y{popup_y.raw() + static_cast<float>(i) * dd_option_h.raw()};
             if (i == es.highlighted) {
                 node.overlay_draws.filled_rect(
-                    make_rect(X{0}, y, w, dd_option_h),
+                    delegate_detail::make_rect(X{0}, y, w, dd_option_h),
                     t.popup_highlight);
             }
             node.overlay_draws.text(
                 resolver.label_at(i),
-                make_point(X{dd_padding.raw()}, y + DY{6.f}), dd_font_size,
+                delegate_detail::make_point(X{dd_padding.raw()}, y + DY{6.f}), dd_font_size,
                 i == es.highlighted ? t.text_on_primary
                                     : t.text);
         }
 
-        es.popup_rect = make_rect(X{0}, popup_y, w, popup_h);
+        es.popup_rect = delegate_detail::make_rect(X{0}, popup_y, w, popup_h);
     }
 }
 
@@ -96,7 +96,7 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
             Y popup_y = es.popup_rect.origin.y;
             DY rel_y = mb->position.y - popup_y;
             if (rel_y.raw() >= 0 && rel_y.raw() < static_cast<float>(count) * dd_option_h.raw()
-                && mb->position.x.raw() >= 0 && mb->position.x.raw() < detail::widget_w(node).raw()) {
+                && mb->position.x.raw() >= 0 && mb->position.x.raw() < delegate_detail::widget_w(node).raw()) {
                 size_t idx = static_cast<size_t>(rel_y.raw() / dd_option_h.raw());
                 select(idx);
                 changed = true;
@@ -108,7 +108,7 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
             es.highlighted = current_index;
             Height popup_h{static_cast<float>(count) * dd_option_h.raw()};
             // Default: open below; record() may flip upward
-            es.popup_rect = make_rect(X{0}, Y{dd_widget_h.raw()}, detail::widget_w(node), popup_h);
+            es.popup_rect = delegate_detail::make_rect(X{0}, Y{dd_widget_h.raw()}, delegate_detail::widget_w(node), popup_h);
             node.dirty = true;
         }
     } else if (auto* kp = std::get_if<KeyPress>(&ev)) {
@@ -147,7 +147,7 @@ inline bool dropdown_handle_input(const InputEvent& ev, WidgetNode& node,
     return changed;
 }
 
-} // namespace detail
+} // namespace dropdown_detail
 
 // --- Widget<ScopedEnum T> method bodies ---
 
@@ -156,11 +156,11 @@ template <ScopedEnum T>
 void Widget<T>::record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
     size_t idx = enum_index(field.get());
     std::string label = enum_label<T>(idx);
-    detail::DropdownLabelResolver resolver{
+    dropdown_detail::DropdownLabelResolver resolver{
         .label_at = [](size_t i) { return enum_label<T>(i); },
         .count = enum_count<T>()
     };
-    detail::dropdown_record(dl, node, label, resolver);
+    dropdown_detail::dropdown_record(dl, node, label, resolver);
 }
 
 template <ScopedEnum T>
@@ -168,7 +168,7 @@ template <ScopedEnum T>
 void Widget<T>::handle_input(Field<T>& field, const InputEvent& ev, WidgetNode& node) {
     size_t current = enum_index(field.get());
     constexpr size_t count = enum_count<T>();
-    detail::dropdown_handle_input(ev, node, current, count,
+    dropdown_detail::dropdown_handle_input(ev, node, current, count,
         [&](size_t idx) { field.set(enum_from_index<T>(idx)); });
 }
 
@@ -181,13 +181,13 @@ void Widget<Dropdown<T>>::record(DrawList& dl, const Field<Dropdown<T>>& field,
     size_t idx = enum_index(dd.value);
     bool has_custom = !dd.labels.empty();
     std::string label = has_custom ? dd.labels[idx] : enum_label<T>(idx);
-    detail::DropdownLabelResolver resolver{
+    dropdown_detail::DropdownLabelResolver resolver{
         .label_at = [&dd, has_custom](size_t i) -> std::string {
             return has_custom ? dd.labels[i] : enum_label<T>(i);
         },
         .count = enum_count<T>()
     };
-    detail::dropdown_record(dl, node, label, resolver);
+    dropdown_detail::dropdown_record(dl, node, label, resolver);
 }
 
 template <ScopedEnum T>
@@ -196,7 +196,7 @@ void Widget<Dropdown<T>>::handle_input(Field<Dropdown<T>>& field, const InputEve
     auto dd = field.get();
     size_t current = enum_index(dd.value);
     constexpr size_t count = enum_count<T>();
-    detail::dropdown_handle_input(ev, node, current, count,
+    dropdown_detail::dropdown_handle_input(ev, node, current, count,
         [&](size_t idx) {
             dd.value = enum_from_index<T>(idx);
             field.set(dd);

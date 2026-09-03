@@ -31,8 +31,8 @@ struct Widget<CountingValue> {
 
     static void record(DrawList& dl, const Field<CountingValue>& field, WidgetNode& node) {
         if (int* n = field.get().record_calls) ++*n;
-        auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), Color::rgba(0, 0, 0));
+        auto w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), Color::rgba(0, 0, 0));
     }
 
     static void handle_input(Field<CountingValue>&, const InputEvent&, WidgetNode&) {}

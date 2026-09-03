@@ -333,7 +333,7 @@ struct TwoPaneColumnModel {
 
 TEST_CASE("Dragging a handle in a vstack resizes panes along the Y axis") {
     // Window height is an exact fit for the two panes' *actual* default height
-    // (30px each, from detail::default_widget_h) plus one handle (6px) = 66 --
+    // (30px each, from delegate_detail::default_widget_h) plus one handle (6px) = 66 --
     // mirroring the same "exact fit avoids a spurious Task 6 rescale" precedent
     // documented on ThreePaneModel's test above, just along the Y axis instead
     // of X. A naive copy of the X-axis tests' "406" (sized for the 200px-wide

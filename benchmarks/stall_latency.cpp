@@ -80,10 +80,10 @@ struct Widget<StallTrigger> {
         g_record_calls.fetch_add(1, std::memory_order_relaxed);
         if (int ms = g_stall_ms.load(std::memory_order_relaxed); ms > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, widget_h), Color::rgba(40, 40, 40));
+        auto w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), Color::rgba(40, 40, 40));
         dl.text("tick " + std::to_string(field.get().tick),
-                 detail::make_point(X{4.f}, Y{4.f}), 14, Color::rgba(230, 230, 230));
+                 delegate_detail::make_point(X{4.f}, Y{4.f}), 14, Color::rgba(230, 230, 230));
     }
 
     static void handle_input(Field<StallTrigger>& field, const InputEvent& ev, WidgetNode&) {
@@ -99,8 +99,8 @@ struct Widget<StaticSibling> {
 
     static void record(DrawList& dl, const Field<StaticSibling>&, WidgetNode& node) {
         g_static_record_calls.fetch_add(1, std::memory_order_relaxed);
-        auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, widget_h), Color::rgba(20, 20, 20));
+        auto w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), Color::rgba(20, 20, 20));
     }
     static void handle_input(Field<StaticSibling>&, const InputEvent&, WidgetNode&) {}
 };

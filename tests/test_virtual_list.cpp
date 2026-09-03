@@ -352,9 +352,9 @@ template <> struct Widget<ClickRow> {
     static void record(DrawList& dl, const Field<ClickRow>&, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::default_widget_h), bg);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::default_widget_h), bg);
     }
 
     static void handle_input(Field<ClickRow>&, const InputEvent&, WidgetNode&) {}

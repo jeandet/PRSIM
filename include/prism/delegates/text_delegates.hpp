@@ -10,7 +10,7 @@
 
 namespace prism::ui {
 
-namespace detail {
+namespace text_detail {
 
 inline const TextEditState& get_text_edit_state(const WidgetNode& node) {
     static const TextEditState default_state;
@@ -45,34 +45,34 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     auto& sf = field.get();
     auto& es = get_text_edit_state(node);
     Width cw = char_width(tf_font_size);
-    Width w = detail::widget_w(node);
+    Width w = delegate_detail::widget_w(node);
 
     auto& t = *node.theme;
     auto bg = vs.focused ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(X{0}, Y{0}, w, tf_widget_h), bg);
+    dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, tf_widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, tf_widget_h - Height{2.f}),
+        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, tf_widget_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 
     Width text_area_w = w - tf_padding_x * 2.f;
-    dl.clip_push(make_point(X{tf_padding_x.raw()}, Y{0}), Size{text_area_w, tf_widget_h});
+    dl.clip_push(delegate_detail::make_point(X{tf_padding_x.raw()}, Y{0}), Size{text_area_w, tf_widget_h});
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, make_point(X{0}, Y{tf_padding_y.raw() + 2.f}), tf_font_size,
+        dl.text(sf.placeholder, delegate_detail::make_point(X{0}, Y{tf_padding_y.raw() + 2.f}), tf_font_size,
                 t.text_placeholder);
     } else {
         X text_x{-es.scroll_offset.raw()};
         std::string display_text = display_fn(std::string(sf.value.data(), sf.value.size()));
-        dl.text(display_text, make_point(text_x, Y{tf_padding_y.raw() + 2.f}), tf_font_size,
+        dl.text(display_text, delegate_detail::make_point(text_x, Y{tf_padding_y.raw() + 2.f}), tf_font_size,
                 t.text);
     }
 
     if (vs.focused) {
         X cursor_x{static_cast<float>(es.cursor) * cw.raw() - es.scroll_offset.raw()};
-        dl.filled_rect(make_rect(cursor_x, Y{tf_padding_y.raw()}, tf_cursor_w,
+        dl.filled_rect(delegate_detail::make_rect(cursor_x, Y{tf_padding_y.raw()}, tf_cursor_w,
                                  tf_widget_h - tf_padding_y * 2.f),
                        t.cursor);
     }
@@ -136,7 +136,7 @@ void text_field_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widge
     }
 
     Width cw = char_width(tf_font_size);
-    Width w = detail::widget_w(node);
+    Width w = delegate_detail::widget_w(node);
     Width text_area_w = w - tf_padding_x * 2.f;
     Width cursor_px{static_cast<float>(es.cursor) * cw.raw()};
     if (cursor_px.raw() - es.scroll_offset.raw() > text_area_w.raw())
@@ -232,7 +232,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     auto& sf = field.get();
     auto& es = get_text_area_edit_state(node);
     Width cw = char_width(ta_font_size);
-    Width w = detail::widget_w(node);
+    Width w = delegate_detail::widget_w(node);
     Width text_area_w = w - ta_padding_x * 2.f;
     Height text_area_h{static_cast<float>(sf.rows) * ta_line_height.raw()};
     Height widget_h = ta_padding_y * 2.f + text_area_h;
@@ -241,19 +241,19 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     auto bg = vs.focused ? t.surface_active
             : vs.hovered ? t.surface_hover
             : t.surface;
-    dl.filled_rect(make_rect(X{0}, Y{0}, w, widget_h), bg);
+    dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
+        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 
-    dl.clip_push(make_point(X{ta_padding_x.raw()}, Y{ta_padding_y.raw()}), Size{text_area_w, text_area_h});
+    dl.clip_push(delegate_detail::make_point(X{ta_padding_x.raw()}, Y{ta_padding_y.raw()}), Size{text_area_w, text_area_h});
 
     auto wrapped = wrap_lines(std::string_view(sf.value.data(), sf.value.size()),
                               text_area_w, cw);
 
     if (sf.value.empty() && !vs.focused) {
-        dl.text(sf.placeholder, make_point(X{0}, Y{2}), ta_font_size, t.text_placeholder);
+        dl.text(sf.placeholder, delegate_detail::make_point(X{0}, Y{2}), ta_font_size, t.text_placeholder);
     } else {
         for (size_t i = 0; i < wrapped.size(); ++i) {
             Y y{static_cast<float>(i) * ta_line_height.raw() - es.scroll_y.raw()};
@@ -261,7 +261,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
             if (y.raw() > text_area_h.raw()) break;
             if (wrapped[i].length > 0) {
                 std::string line_text(sf.value.data() + wrapped[i].start, wrapped[i].length);
-                dl.text(line_text, make_point(X{0}, y + DY{2.f}), ta_font_size, t.text);
+                dl.text(line_text, delegate_detail::make_point(X{0}, y + DY{2.f}), ta_font_size, t.text);
             }
         }
     }
@@ -270,7 +270,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
         auto [line, col] = cursor_to_line_col(es.cursor, wrapped);
         X cx{static_cast<float>(col) * cw.raw()};
         Y cy{static_cast<float>(line) * ta_line_height.raw() - es.scroll_y.raw()};
-        dl.filled_rect(make_rect(cx, cy, ta_cursor_w, ta_line_height), t.cursor);
+        dl.filled_rect(delegate_detail::make_rect(cx, cy, ta_cursor_w, ta_line_height), t.cursor);
     }
 
     dl.clip_pop();
@@ -283,7 +283,7 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
     auto len = sf.value.size();
     es.cursor = std::min(es.cursor, len);
     Width cw = char_width(ta_font_size);
-    Width w = detail::widget_w(node);
+    Width w = delegate_detail::widget_w(node);
     Width text_area_w = w - ta_padding_x * 2.f;
     Height text_area_h{static_cast<float>(sf.rows) * ta_line_height.raw()};
 
@@ -382,83 +382,83 @@ void text_area_handle_input(Field<Sentinel>& field, const InputEvent& ev, Widget
         es.scroll_y = DY{cursor_y.raw()};
 }
 
-} // namespace detail
+} // namespace text_detail
 
 // --- Widget<TextField<T>> method bodies ---
 
 template <StringLike T>
 const TextEditState& Widget<TextField<T>>::get_edit_state(const WidgetNode& node) {
-    return detail::get_text_edit_state(node);
+    return text_detail::get_text_edit_state(node);
 }
 
 template <StringLike T>
 TextEditState& Widget<TextField<T>>::ensure_edit_state(WidgetNode& node) {
-    return detail::ensure_text_edit_state(node);
+    return text_detail::ensure_text_edit_state(node);
 }
 
 template <StringLike T>
 void Widget<TextField<T>>::record(DrawList& dl, const Field<TextField<T>>& field,
                                     WidgetNode& node) {
     node.visual_state.cursor = CursorShape::Text;
-    detail::text_field_record(dl, field, node,
+    text_detail::text_field_record(dl, field, node,
         [](const std::string& v) { return v; });
 }
 
 template <StringLike T>
 void Widget<TextField<T>>::handle_input(Field<TextField<T>>& field, const InputEvent& ev,
                                           WidgetNode& node) {
-    detail::text_field_handle_input(field, ev, node);
+    text_detail::text_field_handle_input(field, ev, node);
 }
 
 // --- Widget<Password<T>> method bodies ---
 
 template <StringLike T>
 const TextEditState& Widget<Password<T>>::get_edit_state(const WidgetNode& node) {
-    return detail::get_text_edit_state(node);
+    return text_detail::get_text_edit_state(node);
 }
 
 template <StringLike T>
 TextEditState& Widget<Password<T>>::ensure_edit_state(WidgetNode& node) {
-    return detail::ensure_text_edit_state(node);
+    return text_detail::ensure_text_edit_state(node);
 }
 
 template <StringLike T>
 void Widget<Password<T>>::record(DrawList& dl, const Field<Password<T>>& field,
                                     WidgetNode& node) {
     node.visual_state.cursor = CursorShape::Text;
-    detail::text_field_record(dl, field, node,
-        [](const std::string& v) { return detail::mask_string(v.size()); });
+    text_detail::text_field_record(dl, field, node,
+        [](const std::string& v) { return text_detail::mask_string(v.size()); });
 }
 
 template <StringLike T>
 void Widget<Password<T>>::handle_input(Field<Password<T>>& field, const InputEvent& ev,
                                           WidgetNode& node) {
-    detail::text_field_handle_input(field, ev, node);
+    text_detail::text_field_handle_input(field, ev, node);
 }
 
 // --- Widget<TextArea<T>> method bodies ---
 
 template <StringLike T>
 const TextAreaEditState& Widget<TextArea<T>>::get_edit_state(const WidgetNode& node) {
-    return detail::get_text_area_edit_state(node);
+    return text_detail::get_text_area_edit_state(node);
 }
 
 template <StringLike T>
 TextAreaEditState& Widget<TextArea<T>>::ensure_edit_state(WidgetNode& node) {
-    return detail::ensure_text_area_edit_state(node);
+    return text_detail::ensure_text_area_edit_state(node);
 }
 
 template <StringLike T>
 void Widget<TextArea<T>>::record(DrawList& dl, const Field<TextArea<T>>& field,
                                    WidgetNode& node) {
     node.visual_state.cursor = CursorShape::Text;
-    detail::text_area_record(dl, field, node);
+    text_detail::text_area_record(dl, field, node);
 }
 
 template <StringLike T>
 void Widget<TextArea<T>>::handle_input(Field<TextArea<T>>& field, const InputEvent& ev,
                                          WidgetNode& node) {
-    detail::text_area_handle_input(field, ev, node);
+    text_detail::text_area_handle_input(field, ev, node);
 }
 
 } // namespace prism::ui

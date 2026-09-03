@@ -95,14 +95,14 @@ struct Widget<TreeRow> {
         auto& t = node_theme(node);
         bool highlight = vs.hovered || row.selected;
         auto bg = highlight ? t.surface_hover : t.surface;
-        auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, row_h), bg);
+        auto w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, row_h), bg);
 
         DX indent{static_cast<float>(row.depth) * 16.f};
         std::string marker = row.has_children ? (row.expanded ? "v " : "> ") : "  ";
         std::string icon_part = row.icon ? (*row.icon + " ") : std::string{};
         dl.text(marker + icon_part + row.label,
-                 detail::make_point(X{8.f} + indent, Y{4.f}), 13, t.text);
+                 delegate_detail::make_point(X{8.f} + indent, Y{4.f}), 13, t.text);
     }
 
     // Selection/expand-toggle/keyboard nav are handled centrally by TreeController via the
@@ -124,21 +124,21 @@ struct Widget<std::optional<TreeDetail>> {
 
     static void record(DrawList& dl, const Field<std::optional<TreeDetail>>& field, WidgetNode& node) {
         auto& t = node_theme(node);
-        auto w = detail::widget_w(node);
+        auto w = delegate_detail::widget_w(node);
         auto allocated_h = node_allocated(node).h;
         auto h = allocated_h.raw() > 0.f ? allocated_h : panel_h;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, h), t.surface);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, h), t.surface);
 
         auto& value = field.get();
         if (!value) {
-            dl.text("No selection", detail::make_point(X{8.f}, Y{8.f}), 13, t.text);
+            dl.text("No selection", delegate_detail::make_point(X{8.f}, Y{8.f}), 13, t.text);
             return;
         }
         Y y{8.f};
-        dl.text(value->label, detail::make_point(X{8.f}, y), 13, t.text);
+        dl.text(value->label, delegate_detail::make_point(X{8.f}, y), 13, t.text);
         y = y + DY{18.f};
         for (auto& [k, v] : value->attributes) {
-            dl.text(k + ": " + v, detail::make_point(X{8.f}, y), 13, t.text);
+            dl.text(k + ": " + v, delegate_detail::make_point(X{8.f}, y), 13, t.text);
             y = y + DY{18.f};
         }
     }

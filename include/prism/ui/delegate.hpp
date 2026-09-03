@@ -266,16 +266,16 @@ const WidgetVisualState& node_vs(const WidgetNode& n);
 Size node_allocated(const WidgetNode& n);
 const Theme& node_theme(const WidgetNode& n);
 
-namespace detail {
+namespace delegate_detail {
 inline Rect make_rect(X x, Y y, Width w, Height h) {
     return {Point{x, y}, Size{w, h}};
 }
 inline Point make_point(X x, Y y) {
     return {x, y};
 }
-} // namespace detail
+} // namespace delegate_detail
 
-namespace detail {
+namespace delegate_detail {
 inline constexpr Height default_widget_h{30.f};
 inline constexpr Width default_widget_w{200.f};
 
@@ -287,7 +287,7 @@ inline Height widget_h(const WidgetNode& node) {
     auto sz = node_allocated(node);
     return sz.h.raw() > 0 ? sz.h : default_widget_h;
 }
-} // namespace detail
+} // namespace delegate_detail
 
 // Primary template: default widget for any Field<T>.
 // Renders a filled rect, ignores input.
@@ -298,9 +298,9 @@ struct Widget {
     static void record(DrawList& dl, const Field<T>&, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), bg);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), bg);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -322,11 +322,11 @@ struct Widget<T> {
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), bg);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), bg);
         dl.text(std::to_string(field.get()),
-                detail::make_point(X{4}, Y{4}), 14, t.text);
+                delegate_detail::make_point(X{4}, Y{4}), 14, t.text);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -340,11 +340,11 @@ struct Widget<T> {
     static void record(DrawList& dl, const Field<T>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, detail::widget_h(node)), bg);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, delegate_detail::widget_h(node)), bg);
         dl.text(std::string(field.get().data(), field.get().size()),
-                detail::make_point(X{4}, Y{4}), 14, t.text);
+                delegate_detail::make_point(X{4}, Y{4}), 14, t.text);
     }
 
     static void handle_input(Field<T>&, const InputEvent&, WidgetNode&) {}
@@ -368,15 +368,15 @@ inline void draw_check_box(DrawList& dl, X x, Y y, bool checked,
         auto fill = vs.pressed  ? t.accent_active
                   : vs.hovered  ? t.accent_hover
                   :               t.accent;
-        dl.filled_rect(detail::make_rect(x, y, box_w, box_h), fill);
-        dl.text("\xe2\x9c\x93", detail::make_point(x + DX{2.f}, y + DY{1.f}), 13, t.text_on_primary);
+        dl.filled_rect(delegate_detail::make_rect(x, y, box_w, box_h), fill);
+        dl.text("\xe2\x9c\x93", delegate_detail::make_point(x + DX{2.f}, y + DY{1.f}), 13, t.text_on_primary);
     } else {
         auto fill = vs.pressed  ? t.surface_active
                   : vs.hovered  ? t.surface_hover
                   :               t.surface;
-        dl.filled_rect(detail::make_rect(x, y, box_w, box_h), fill);
+        dl.filled_rect(delegate_detail::make_rect(x, y, box_w, box_h), fill);
     }
-    dl.rect_outline(detail::make_rect(x, y, box_w, box_h),
+    dl.rect_outline(delegate_detail::make_rect(x, y, box_w, box_h),
                     vs.hovered ? t.border_hover : t.border,
                     border);
 }
@@ -391,19 +391,19 @@ struct Widget<Checkbox> {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
         auto& cb = field.get();
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
 
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
 
         Y box_y{(widget_h.raw() - box_size.raw()) / 2.f};
         draw_check_box(dl, X{8}, box_y, cb.checked, vs, t);
 
         if (!cb.label.empty())
-            dl.text(cb.label, detail::make_point(X{32}, Y{7}), 14, t.text);
+            dl.text(cb.label, delegate_detail::make_point(X{32}, Y{7}), 14, t.text);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
+            dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
                             t.focus_ring, 2.0f);
     }
 
@@ -432,16 +432,16 @@ struct Widget<bool> {
         auto& t = node_theme(node);
         constexpr Height widget_h{30.f};
         constexpr Height box_size{16.f};
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
 
         auto bg = vs.hovered ? t.surface_hover : t.surface;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, widget_h), bg);
 
         Y box_y{(widget_h.raw() - box_size.raw()) / 2.f};
         draw_check_box(dl, X{8}, box_y, field.get(), vs, t);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
+            dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
                             t.focus_ring, 2.0f);
     }
 
@@ -461,10 +461,10 @@ struct Widget<Label<T>> {
 
     static void record(DrawList& dl, const Field<Label<T>>& field, WidgetNode& node) {
         auto& t = node_theme(node);
-        Width w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, Height{24}), t.surface);
+        Width w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, Height{24}), t.surface);
         dl.text(std::string(field.get().value.data(), field.get().value.size()),
-                detail::make_point(X{4}, Y{4}), 14, t.text_muted);
+                delegate_detail::make_point(X{4}, Y{4}), 14, t.text_muted);
     }
 
     static void handle_input(Field<Label<T>>&, const InputEvent&, WidgetNode&) {}
@@ -518,19 +518,19 @@ struct Widget<Slider<T, O>> {
 
         if constexpr (vertical) {
             X track_x{(widget_extent - track_thick) / 2.f};
-            dl.filled_rect(detail::make_rect(track_x, Y{0}, Width{track_thick}, Height{tl}), track_bg);
+            dl.filled_rect(delegate_detail::make_rect(track_x, Y{0}, Width{track_thick}, Height{tl}), track_bg);
             Y thumb_y{(1.f - r) * (tl - thumb_len)};
-            dl.filled_rect(detail::make_rect(X{0}, thumb_y, Width{widget_extent}, Height{thumb_len}), thumb_color);
+            dl.filled_rect(delegate_detail::make_rect(X{0}, thumb_y, Width{widget_extent}, Height{thumb_len}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(X{1}, Y{1}, Width{widget_extent - 2}, Height{tl - 2}),
+                dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, Width{widget_extent - 2}, Height{tl - 2}),
                                 t.focus_ring, 2.0f);
         } else {
             Y track_y{(widget_extent - track_thick) / 2.f};
-            dl.filled_rect(detail::make_rect(X{0}, track_y, Width{tl}, Height{track_thick}), track_bg);
+            dl.filled_rect(delegate_detail::make_rect(X{0}, track_y, Width{tl}, Height{track_thick}), track_bg);
             X thumb_x{r * (tl - thumb_len)};
-            dl.filled_rect(detail::make_rect(thumb_x, Y{0}, Width{thumb_len}, Height{widget_extent}), thumb_color);
+            dl.filled_rect(delegate_detail::make_rect(thumb_x, Y{0}, Width{thumb_len}, Height{widget_extent}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(X{1}, Y{1}, Width{tl - 2}, Height{widget_extent - 2}),
+                dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, Width{tl - 2}, Height{widget_extent - 2}),
                                 t.focus_ring, 2.0f);
         }
     }
@@ -574,15 +574,15 @@ struct Widget<Button> {
     static void record(DrawList& dl, const Field<Button>& field, WidgetNode& node) {
         auto& vs = node_vs(node);
         auto& t = node_theme(node);
-        Width w = detail::widget_w(node);
+        Width w = delegate_detail::widget_w(node);
         Color bg = vs.pressed ? t.primary_active
                  : vs.hovered ? t.primary_hover
                  : t.primary;
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, Height{32}), bg);
-        dl.rect_outline(detail::make_rect(X{0}, Y{0}, w, Height{32}), t.primary_outline, 1.0f);
-        dl.text(field.get().text, detail::make_point(X{8}, Y{7}), 14, t.text_on_primary);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, Height{32}), bg);
+        dl.rect_outline(delegate_detail::make_rect(X{0}, Y{0}, w, Height{32}), t.primary_outline, 1.0f);
+        dl.text(field.get().text, delegate_detail::make_point(X{8}, Y{7}), 14, t.text_on_primary);
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(X{1}, Y{1}, w - Width{2.f}, Height{30}), t.focus_ring, 2.0f);
+            dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, w - Width{2.f}, Height{30}), t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {

@@ -49,7 +49,7 @@ inline std::string_view layout_kind_name(LayoutKind k) {
     return "?";
 }
 
-namespace detail {
+namespace inspector_detail {
 
 inline void flatten_node(const WidgetNode& node, int depth, WidgetId hovered_id,
                          const std::set<WidgetId>& expanded, std::vector<NodeRow>& out) {
@@ -77,11 +77,11 @@ inline void flatten_node(const WidgetNode& node, int depth, WidgetId hovered_id,
     }
 }
 
-} // namespace detail
+} // namespace inspector_detail
 
 inline std::vector<NodeRow> flatten_tree(const WidgetTree& tree, const std::set<WidgetId>& expanded) {
     std::vector<NodeRow> rows;
-    detail::flatten_node(tree.root(), 0, tree.hovered_id(), expanded, rows);
+    inspector_detail::flatten_node(tree.root(), 0, tree.hovered_id(), expanded, rows);
     return rows;
 }
 
@@ -107,12 +107,12 @@ struct Widget<prism::debug::NodeRow> {
         // *main* window (see flatten_node) — the "main -> debug" highlight direction.
         bool highlight = vs.hovered || row.hovered;
         auto bg = highlight ? t.surface_hover : t.surface;
-        auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, row_h), bg);
+        auto w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, row_h), bg);
 
         DX indent{static_cast<float>(row.depth) * 16.f};
         std::string label = (row.has_children ? (row.expanded ? "v " : "> ") : "  ") + row.name;
-        dl.text(label, detail::make_point(X{8.f} + indent, Y{4.f}), 13,
+        dl.text(label, delegate_detail::make_point(X{8.f} + indent, Y{4.f}), 13,
                 row.dirty ? t.accent : t.text);
     }
 
@@ -133,19 +133,19 @@ struct Widget<std::optional<prism::debug::NodeRow>> {
     static void record(DrawList& dl, const Field<std::optional<prism::debug::NodeRow>>& field,
                         WidgetNode& node) {
         auto& t = node_theme(node);
-        auto w = detail::widget_w(node);
-        dl.filled_rect(detail::make_rect(X{0}, Y{0}, w, panel_h), t.surface);
+        auto w = delegate_detail::widget_w(node);
+        dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, w, panel_h), t.surface);
 
         auto& value = field.get();
         if (!value) {
-            dl.text("No selection", detail::make_point(X{8.f}, Y{8.f}), 13, t.text);
+            dl.text("No selection", delegate_detail::make_point(X{8.f}, Y{8.f}), 13, t.text);
             return;
         }
 
         auto& row = *value;
         Y y{8.f};
         auto line = [&](const std::string& text) {
-            dl.text(text, detail::make_point(X{8.f}, y), 13, t.text);
+            dl.text(text, delegate_detail::make_point(X{8.f}, y), 13, t.text);
             y = y + DY{18.f};
         };
         line("name: " + row.name);

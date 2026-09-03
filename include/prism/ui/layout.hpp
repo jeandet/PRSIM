@@ -42,7 +42,7 @@ struct SizeHint {
     ExpandAxis expand_axis = ExpandAxis::None;
 };
 
-namespace detail {
+namespace layout_detail {
     inline const Theme layout_default_theme = default_theme();
 }
 
@@ -62,10 +62,10 @@ struct LayoutNode {
     size_t table_column_count = 0;
     Height table_header_h{0};
     std::vector<float> split_sizes;  // main-axis size per pane; meaningful only for Kind::Row/Column when split mode is engaged
-    const Theme* theme = &detail::layout_default_theme;
+    const Theme* theme = &layout_detail::layout_default_theme;
     std::optional<float> canvas_min_width;   // only meaningful for Kind::Canvas
     std::optional<float> canvas_min_height;  // only meaningful for Kind::Canvas
-    // Set by prism::app::widget_detail::build_layout() for Leaf/Canvas/Handle nodes -- lets
+    // Set by prism::app::widget_layout_detail::build_layout() for Leaf/Canvas/Handle nodes -- lets
     // layout_flatten() read/update that widget's snapshot-assembly cache directly,
     // without threading a WidgetId->WidgetNode* lookup through this free function.
     WidgetNode* widget = nullptr;
@@ -73,7 +73,7 @@ struct LayoutNode {
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
 
-namespace detail {
+namespace layout_detail {
 
 inline void measure_linear(LayoutNode& node, LayoutAxis own_axis, LayoutAxis parent_axis) {
     float sum = 0, max_cross = 0;
@@ -115,7 +115,7 @@ inline void measure_scrollable(LayoutNode& node) {
     node.hint.cross = max_cross;
 }
 
-} // namespace detail
+} // namespace layout_detail
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
     switch (node.kind) {
@@ -150,21 +150,21 @@ inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis) {
         node.hint = {.preferred = splitter::thickness_px, .expand = false};
         return;
     case LayoutNode::Kind::Row:
-        detail::measure_linear(node, LayoutAxis::Horizontal, parent_axis);
+        layout_detail::measure_linear(node, LayoutAxis::Horizontal, parent_axis);
         return;
     case LayoutNode::Kind::Column:
-        detail::measure_linear(node, LayoutAxis::Vertical, parent_axis);
+        layout_detail::measure_linear(node, LayoutAxis::Vertical, parent_axis);
         return;
     case LayoutNode::Kind::Scroll:
     case LayoutNode::Kind::VirtualList:
     case LayoutNode::Kind::Table:
-        detail::measure_scrollable(node);
+        layout_detail::measure_scrollable(node);
         return;
     case LayoutNode::Kind::Tabs: {
         if (node.children.size() >= 1)
             layout_measure(node.children[0], LayoutAxis::Horizontal);
         if (node.children.size() >= 2)
-            detail::measure_linear(node.children[1], LayoutAxis::Vertical, parent_axis);
+            layout_detail::measure_linear(node.children[1], LayoutAxis::Vertical, parent_axis);
         node.hint.expand = true;
         node.hint.preferred = 0;
         return;
@@ -273,7 +273,7 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
     }
 }
 
-namespace detail {
+namespace layout_detail {
 
 inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
     for (auto& cmd : dl.commands) {
@@ -308,7 +308,7 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
         offset_subtree_y(child, dy);
 }
 
-} // namespace detail
+} // namespace layout_detail
 
 // `clipped_by_ancestor`: true when some ancestor (Scroll/VirtualList/Table) already wraps
 // this node in a ClipPush/ClipPop pair. Leaf/Canvas DrawLists are only cached and shared
@@ -376,9 +376,9 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         DY scroll_dy = node.scroll_offset;
         DY neg_scroll{-scroll_dy.raw()};
         for (auto& child : node.children) {
-            detail::offset_subtree_y(child, neg_scroll);
+            layout_detail::offset_subtree_y(child, neg_scroll);
             layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
-            detail::offset_subtree_y(child, DY{scroll_dy.raw()});
+            layout_detail::offset_subtree_y(child, DY{scroll_dy.raw()});
         }
 
         DrawList body_clip_pop;
@@ -428,10 +428,10 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
             if (child_bottom <= vp_top || child_top >= vp_bottom)
                 continue;
 
-            detail::offset_subtree_y(child, neg_scroll);
+            layout_detail::offset_subtree_y(child, neg_scroll);
             layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
             DY restore{scroll_dy.raw()};
-            detail::offset_subtree_y(child, restore);
+            layout_detail::offset_subtree_y(child, restore);
         }
 
         // ClipPop
@@ -487,7 +487,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         } else {
             DX dx{node.allocated.origin.x.raw()};
             DY dy{node.allocated.origin.y.raw()};
-            detail::translate_draw_list(node.draws, dx, dy);
+            layout_detail::translate_draw_list(node.draws, dx, dy);
             // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
             hit_rect = (node.kind == LayoutNode::Kind::Canvas)
                 ? node.allocated : node.draws.bounding_box();
@@ -516,7 +516,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
     if (!node.overlay_draws.empty()) {
         DX dx{node.allocated.origin.x.raw()};
         DY dy{node.allocated.origin.y.raw()};
-        detail::translate_draw_list(node.overlay_draws, dx, dy);
+        layout_detail::translate_draw_list(node.overlay_draws, dx, dy);
         snap.overlay_geometry.push_back({node.id, node.overlay_draws.bounding_box()});
         for (auto& cmd : node.overlay_draws.commands)
             snap.overlay.commands.push_back(std::move(cmd));

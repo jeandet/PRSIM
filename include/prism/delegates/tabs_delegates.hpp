@@ -7,7 +7,7 @@
 
 namespace prism::ui {
 
-namespace detail {
+namespace tabs_detail {
 
 inline const TabBarEditState& get_tabs_state(const WidgetNode& node) {
     static const TabBarEditState default_state;
@@ -35,7 +35,7 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
     for (auto& name : names)
         total_w += tab_padding * 2.f + tab_char_width * static_cast<float>(name.size());
 
-    dl.filled_rect(make_rect(X{0}, Y{0}, total_w, tab_h), t.tab_bar_bg);
+    dl.filled_rect(delegate_detail::make_rect(X{0}, Y{0}, total_w, tab_h), t.tab_bar_bg);
 
     es.header_x_ranges.clear();
     es.header_x_ranges.reserve(names.size());
@@ -50,20 +50,20 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
         auto bg = is_selected ? t.tab_active_bg
                 : is_hovered  ? t.surface_hover
                 :               t.tab_bar_bg;
-        dl.filled_rect(make_rect(x, Y{0}, w, tab_h), bg);
+        dl.filled_rect(delegate_detail::make_rect(x, Y{0}, w, tab_h), bg);
 
         auto text_color = is_selected ? t.tab_text_active
                                       : t.tab_text;
-        dl.text(names[i], make_point(x + DX{tab_padding.raw()}, Y{8}), tab_font_size, text_color);
+        dl.text(names[i], delegate_detail::make_point(x + DX{tab_padding.raw()}, Y{8}), tab_font_size, text_color);
 
         if (is_selected)
-            dl.filled_rect(make_rect(x, Y{(tab_h - tab_accent_h).raw()}, w, tab_accent_h),
+            dl.filled_rect(delegate_detail::make_rect(x, Y{(tab_h - tab_accent_h).raw()}, w, tab_accent_h),
                            t.tab_accent);
         x += DX{w.raw()};
     }
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{1}, Y{1}, total_w - Width{2.f}, tab_h - Height{2.f}),
+        dl.rect_outline(delegate_detail::make_rect(X{1}, Y{1}, total_w - Width{2.f}, tab_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 }
 
@@ -104,19 +104,19 @@ inline bool tabs_handle_input(const InputEvent& ev, WidgetNode& node,
     return false;
 }
 
-} // namespace detail
+} // namespace tabs_detail
 
 inline void Widget<TabBar<>>::record(DrawList& dl, const Field<TabBar<>>& field,
                                        WidgetNode& node) {
     if (node.tab_names && !node.tab_names->empty())
-        detail::tabs_record(dl, node, field.get().selected, *node.tab_names);
+        tabs_detail::tabs_record(dl, node, field.get().selected, *node.tab_names);
 }
 
 inline void Widget<TabBar<>>::handle_input(Field<TabBar<>>& field, const InputEvent& ev,
                                               WidgetNode& node) {
     size_t count = node.tab_names ? node.tab_names->size() : 0;
     if (count == 0) return;
-    detail::tabs_handle_input(ev, node, field.get().selected, count,
+    tabs_detail::tabs_handle_input(ev, node, field.get().selected, count,
         [&](size_t idx) {
             auto tb = field.get();
             tb.selected = idx;

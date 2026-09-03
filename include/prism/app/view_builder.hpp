@@ -188,7 +188,7 @@ private:
         auto& t = node_theme(node);
         auto sz = node_allocated(node);
         auto color = (vs.pressed || vs.hovered) ? t.divider_hover : t.divider;
-        node.draws.filled_rect(ui::detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
+        node.draws.filled_rect(ui::delegate_detail::make_rect(X{0}, Y{0}, sz.w, sz.h), color);
     }
 
     void wire_split_handles(Node& container) {
@@ -605,7 +605,7 @@ public:
             wn.record = [&field, names_ptr](WidgetNode& node) {
                 node.draws.clear();
                 node.overlay_draws.clear();
-                prism::ui::detail::tabs_record(node.draws, node, field.get().selected, *names_ptr);
+                prism::ui::tabs_detail::tabs_record(node.draws, node, field.get().selected, *names_ptr);
             };
             wn.record(wn);
             wn.wire = [&field, names_ptr](WidgetNode& node) {
@@ -613,7 +613,7 @@ public:
                     node.on_input.connect([&field, names_ptr, &node](const InputEvent& ev) {
                         size_t count = names_ptr->size();
                         if (count == 0) return;
-                        prism::ui::detail::tabs_handle_input(ev, node, field.get().selected, count,
+                        prism::ui::tabs_detail::tabs_handle_input(ev, node, field.get().selected, count,
                             [&field](size_t idx) {
                                 field.value.selected = idx;
                                 field.on_change().emit(field.value);
