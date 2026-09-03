@@ -47,11 +47,18 @@ if python3.found()
       # ("INPUT ( /usr/lib64/libasan.so.8.0.0 )"), not the actual ELF shared object,
       # which LD_PRELOAD then refuses to load ("file too short"). ldconfig's cache
       # always names the real runtime .so and works the same way on Ubuntu (CI).
-      libasan = run_command('sh', '-c', 'ldconfig -p | grep -m1 "libasan\.so" | awk \'{print $NF}\'', check : true).stdout().strip()
-      python_bindings_env += ['LD_PRELOAD=' + libasan, 'ASAN_OPTIONS=detect_leaks=0']
+      # `set -o pipefail` (bash, not sh — dash doesn't support it) + the empty-stdout
+      # check make this fail loudly at configure time instead of silently proceeding
+      # with an empty LD_PRELOAD (grep's exit code would otherwise be masked by awk's).
+      libasan = run_command('bash', '-c', 'set -o pipefail; ldconfig -p | grep -m1 "libasan\.so" | awk \'{print $NF}\'', check : true).stdout().strip()
+      if libasan == ''
+        error('libasan.so not found via ldconfig -p; needed for LD_PRELOAD under b_sanitize=address')
+      endif
+      # detect_odr_violation=0: unsanitized CPython host trips false positives.
+      python_bindings_env += ['LD_PRELOAD=' + libasan, 'ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0']
     endif
     if sanitize.contains('undefined')
-      python_bindings_env += ['UBSAN_OPTIONS=print_stacktrace=1']
+      python_bindings_env += ['UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1']
     endif
 
     test('python_bindings',
