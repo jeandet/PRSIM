@@ -17,18 +17,13 @@ class Counter(prism.Model):
     label = prism.field("Hello, PRISM!")
 
 
-def _main():
-    m = Counter()
+m = Counter()
 
-    # observe: type-safe via descriptor, no string name
-    conn = Counter.count.observe(m, lambda v: print(f"count -> {v}"))
+# observe: type-safe via descriptor, no string name
+conn = Counter.count.observe(m, lambda v: print(f"count -> {v}"))
 
-    # any thread may mutate; here main thread before run
-    m.count.value = 43
+# any thread may mutate; here main thread before run
+m.count.value = 43
 
-    # blocking window; releases GIL around SDL pump
-    prism.run(m, title="Counter — Python")
-
-
-if __name__ == "__main__":
-    _main()
+# blocking window; releases GIL around SDL pump
+prism.run(m, title="Counter — Python")

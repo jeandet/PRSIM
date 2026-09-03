@@ -1315,6 +1315,151 @@ def test_derived_field_survives_run_headless_teardown():
     assert result.returncode == 0
 
 
+def test_run_headless_releases_module_global_model_without_leak_warning():
+    """Task 8 repro: a Model left in a module global (the shape every example
+    used to need `_main()`/`if __name__` to avoid) must not trip nanobind's
+    leak check once _run_headless() returns, when an observer captures the
+    model itself (Model -> handle -> Connection -> closure -> Model — the
+    same cycle shape the pre-existing _atexit_clear() was written for, but
+    now broken deterministically by run()/_run_headless() itself rather than
+    left to interpreter-shutdown timing). Runs in a subprocess so the
+    'leaked' check reads the real process's stderr, not pytest's own.
+
+    Before this task's fix, run()/_run_headless() had no finally-time
+    observer cleanup of their own — only the interpreter-exit _atexit_clear()
+    disconnected this cycle, and only by accident of atexit ordering. This
+    test's own opt-out below (discarding the model from _all_models) proves
+    the fix is run()'s own doing, not atexit riding along.
+    """
+    code = (
+        "import prism\n"
+        "class Counter(prism.Model):\n"
+        "    count = prism.field(42)\n"
+        "m = Counter()\n"
+        "conn = Counter.count.observe(m, lambda v: setattr(m, '_x', v))\n"
+        "prism._all_models.discard(m)  # isolate: rely only on run()'s own cleanup\n"
+        "prism._run_headless(m, delay_ms=50)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" not in result.stderr, result.stderr
+
+
+def test_run_headless_keeps_field_cache_so_post_run_reads_see_last_value():
+    """Task 8 design point: run()'s new cleanup disconnects observers but must
+    NOT clear the model's _prism_fields cache — clearing it would make the
+    next `m.count` re-`_allocate()` a brand-new slot at the descriptor's
+    default, silently resetting `m.count.value` back to 42 instead of the
+    last value set before the app closed. That's worse than either keeping
+    the real value or raising: it's silent data loss. Verified empirically
+    (see task-8-report.md) that clearing fields is not even necessary to
+    avoid the leak warning for non-derived models — only the observer
+    keepalive cycle needs breaking."""
+    code = (
+        "import prism\n"
+        "class Counter(prism.Model):\n"
+        "    count = prism.field(42)\n"
+        "m = Counter()\n"
+        "m.count.value = 99\n"
+        "prism._run_headless(m, delay_ms=50)\n"
+        "assert m.count.value == 99, m.count.value\n"
+        "m.count.value = 100\n"
+        "assert m.count.value == 100, m.count.value\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_run_headless_does_not_fix_derived_field_model_leak():
+    """Task 8 known limitation, pinned so a future fix notices: a Model with
+    a derived() field still trips nanobind's leak check when left in a
+    module global, even after run()/_run_headless() disconnect its
+    observers. Root-caused (see task-8-report.md) to SlotDerived's C++-side
+    py_fn/dep_keepalive_ members — real, GIL-protected strong references to
+    Python objects held entirely on the C++ side, invisible to and
+    unreachable from any Python-level cleanup (disconnecting observers,
+    clearing _prism_fields, clearing the model's whole __dict__, explicit
+    gc.collect() — none of it moves the leak; only dropping the Model's own
+    last Python reference does, which `_main()`/function-scope achieves and
+    a module global cannot). Fixing this needs a C++-side change to
+    SlotDerived's teardown — out of scope for a Python-only task, so
+    examples using derived() still wrap their body in `_main()`. This test
+    exists to catch the day that stops being true, not to enforce it."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    counter = prism.field(0)\n"
+        "    doubled = prism.derived(lambda self: self.counter.value * 2, 'counter')\n"
+        "m = M()\n"
+        "prism._run_headless(m, delay_ms=50)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" in result.stderr, (
+        "derived-field leak appears to be fixed now — if so, drop this test's "
+        "assertion (and _main() from 05_lists_and_derived.py, 06_live_plot.py, "
+        "08_dashboard.py; see task-8-report.md)"
+    )
+
+
+def test_run_headless_does_not_fix_view_override_model_leak():
+    """Task 8 second known limitation, found while verifying which examples
+    could safely drop `_main()`: a Model that overrides `view(self, vb)` also
+    still trips nanobind's leak check when left in a module global, even with
+    NO derived() field at all and even after run()/_run_headless() disconnect
+    its observers. Root-caused to the same shape of bug as the derived-field
+    one (see task-8-report.md and test_run_headless_does_not_fix_derived_field_model_leak):
+    `Model.__init__` passes the view trampoline to `self._set_view_callback(...)`,
+    a C++ binding that stores it as an nb::object member — and simply storing
+    ANY nb::object that way (proven with a callback that captures nothing at
+    all — `m._set_view_callback(lambda vb: None)`) is enough to make nanobind
+    misreport the whole Model as leaked at shutdown, regardless of what the
+    callback itself references. So `view()`-overriding examples (02, 03, 04,
+    06, 07, 08) all still need `_main()`, not just the derived-field ones —
+    only 01_counter.py (no view() override, no derived field) was safe to
+    convert to a straight script. This test exists to catch the day that
+    stops being true, not to enforce it."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    count = prism.field(0)\n"
+        "    def view(self, vb):\n"
+        "        vb.widget(self.count)\n"
+        "m = M()\n"
+        "prism._run_headless(m, delay_ms=50)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" in result.stderr, (
+        "view()-override leak appears to be fixed now — if so, this changes "
+        "which examples can drop _main(); see task-8-report.md"
+    )
+
+
 def test_view_and_derived_together_survive_run_headless_teardown():
     """Task 3 repro: 02_mixer.py and 05_lists_and_derived.py used to carry a
     note that a Model overriding view() while also having a derived field hit

@@ -221,12 +221,38 @@ def _disconnect_keepalive(handle):
         pass
 
 
-def _clear_model_observers(model):
+def _disconnect_model_observers(model):
+    """Disconnect every observer keepalive reachable from *model*, without
+    touching its ``_prism_fields`` cache.
+
+    This is the half of ``_clear_model_observers`` that's safe to run while
+    *model* is still in active use (e.g. from ``run()``'s ``finally``): it
+    breaks the Model -> handle -> Connection -> ... -> Model reference cycle
+    an observer closure that captures the model creates (invisible to
+    nanobind's leak check, same class of bug as the pre-Task-14 observe()
+    self-cycle), but keeps each handle object alive and cached so
+    ``m.field.value`` still reads/writes the *same* underlying slot after
+    the app has closed. Clearing ``_prism_fields`` here instead would make
+    the next ``m.field`` re-``_allocate()`` a brand-new slot at its
+    descriptor default — a silent reset back to the constructor's default,
+    not just "stale data" — which is worse than leaving the cache in place.
+    """
     d = getattr(model, "__dict__", {})
     fields = d.get("_prism_fields", {})
     for h in list(fields.values()):
         _disconnect_keepalive(h)
     _disconnect_keepalive(model)  # future: model may carry its own _prism_keepalive directly
+
+
+def _clear_model_observers(model):
+    """Full interpreter-exit teardown: disconnect observers *and* drop the
+    ``_prism_fields`` cache. Only safe once the model is genuinely done
+    (process exiting) — see ``_disconnect_model_observers`` for the
+    still-in-use-safe half of this, used by ``run()``/``_run_headless()``.
+    """
+    _disconnect_model_observers(model)
+    d = getattr(model, "__dict__", {})
+    fields = d.get("_prism_fields", {})
     # break Model -> handle cycle so nanobind doesn't report Bound* as leaked
     # when Model is still in __main__ globals at shutdown (common for examples)
     try:
@@ -261,9 +287,29 @@ def _atexit_clear():
         _prism_ext._observed_handles.clear()
     except Exception:
         pass
-    # A Model left in a module global at interpreter exit stays alive past
-    # nanobind's leak check and may print a leak warning; that is acceptable.
-    # Examples should use `def _main(): m = ...` (function scope) to avoid it.
+    # run()/_run_headless() already disconnect the model they were given
+    # (see _disconnect_model_observers there) before returning, so a plain
+    # field/shared/channel/list/plot/tree Model with no `derived()` field and
+    # no `view()` override, left in a module global, no longer trips
+    # nanobind's leak check once the app closes — that shape of example
+    # doesn't need `def _main(): m = ...` (function scope) any more.
+    #
+    # Two known exceptions remain, both C++-side and out of reach from here:
+    # a `derived()` field (SlotDerived's py_fn/dep_keepalive_ members) and a
+    # `view(self, vb)` override (the trampoline passed to
+    # `self._set_view_callback(...)`) each independently keep the *Model
+    # itself* reachable past nanobind's leak check whenever the Model
+    # outlives run() in a module global — proven for `view()` too: even a
+    # callback that captures nothing at all (`m._set_view_callback(lambda
+    # vb: None)`) triggers it, so it's simply about PyModel holding *any*
+    # nb::object member, not about what that object references. No
+    # Python-side cleanup moves this (verified: disconnecting observers,
+    # clearing `_prism_fields`, clearing the model's whole `__dict__`,
+    # explicit `gc.collect()` — none of it helps; only dropping the Model's
+    # own last Python reference does, which `_main()`/function-scope
+    # achieves and a module global cannot). Fixing either needs a C++-side
+    # change to PyModel/SlotDerived's teardown, so examples using
+    # `derived()` and/or overriding `view()` still use `_main()`.
 
 
 _atexit_mod.register(_atexit_clear)
@@ -917,6 +963,7 @@ def run(model, title="PRISM App"):
         return _run(model, title)
     finally:
         _stop_all_workers()
+        _disconnect_model_observers(model)
 
 
 def _run_headless(model, delay_ms=100):
@@ -929,6 +976,7 @@ def _run_headless(model, delay_ms=100):
         return _run_headless_impl(model, delay_ms)
     finally:
         _stop_all_workers()
+        _disconnect_model_observers(model)
 
 
 # Mirror of the handler installed via _set_error_handler: the C++ side has no
