@@ -1,3 +1,15 @@
+"""PRISM's Python SDK.
+
+Models declare fields as class attributes via descriptors (``field()``,
+``slider()``, ``checkbox()``, ``shared()``, ``channel()``, ``derived()``,
+``list_field()``, ``plot_field()``, ``tree_field()``); the underlying C++
+handle (``FieldInt``, ``BoundSliderValue``, ...) is allocated the first time
+a descriptor is accessed on a ``Model`` instance. Handles are created by
+descriptors and are never constructed directly — the type-suffixed handle
+classes stay importable from ``prism._prism_ext`` for low-level/testing use,
+but are not part of the public surface (``__all__``).
+"""
+
 from collections.abc import Callable as _Callable
 from typing import Annotated, Protocol, get_args, get_origin, runtime_checkable
 
@@ -145,28 +157,6 @@ __all__ = [
     "is_tree_source",
     "is_table_source",
     "validator_for",
-    "FieldInt",
-    "FieldFloat",
-    "FieldStr",
-    "FieldBool",
-    "SharedInt",
-    "SharedFloat",
-    "SharedStr",
-    "SharedBool",
-    "ChannelInt",
-    "ChannelFloat",
-    "ChannelStr",
-    "ChannelBool",
-    "BoundDerivedInt",
-    "BoundDerivedFloat",
-    "BoundDerivedStr",
-    "BoundDerivedBool",
-    "BoundListInt",
-    "BoundListFloat",
-    "BoundListStr",
-    "ListInt",
-    "ListFloat",
-    "ListStr",
     "BoundPlot",
     "PlotHandle",
     "BoundTree",

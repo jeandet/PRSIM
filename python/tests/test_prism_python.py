@@ -16,6 +16,17 @@ import prism
 from prism import Model, field, shared, channel, transaction
 
 
+def test_all_excludes_type_suffixed_handle_classes():
+    """Task 12: handle classes (FieldInt, BoundSharedFloat, ...) are created
+    by descriptors, never constructed directly — __all__ shouldn't offer them
+    for `from prism import *`, though they stay importable from
+    prism._prism_ext (and as prism.FieldInt etc., used throughout this file)."""
+    pattern = re.compile(
+        r"^(Field|Bound|Shared|Channel|List)(Shared|Channel|Derived|List)?(Int|Float|Str|Bool)$"
+    )
+    assert [name for name in prism.__all__ if pattern.match(name)] == []
+
+
 def test_field_basic():
     class M(Model):
         a = field(0)

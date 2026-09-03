@@ -1,12 +1,12 @@
-"""01_counter.py — Minimal PRISM Python example.
+"""01_counter.py — minimal PRISM model: two fields, auto-stacked view.
 
-Mirrors examples/showcase/showcase_counter.cpp (two Fields) and the
-README hello-world. Uses auto-stacked view (no def view needed).
+Demonstrates:
+  - prism.field() descriptors with an auto-stacked view (no view() needed)
+  - m.field.observe(cb), fire-and-forget
+  - any-thread field write before prism.run()
 
 Run:
-  PYTHONPATH=build/python python python/examples/01_counter.py
-Requires a display (SDL). For headless smoke test:
-  PYTHONPATH=build/python python -c "import prism; m=Counter(); prism._run_headless(m)"
+  PYTHONPATH=builddir/python python3 python/examples/01_counter.py
 """
 
 import prism
@@ -18,12 +18,6 @@ class Counter(prism.Model):
 
 
 m = Counter()
-
-# observe: fire-and-forget, no local reference needed
 m.count.observe(lambda v: print(f"count -> {v}"))
-
-# any thread may mutate; here main thread before run
 m.count.value = 43
-
-# blocking window; releases GIL around SDL pump
 prism.run(m, title="Counter — Python")

@@ -1,13 +1,13 @@
-"""04_background_shared_channel.py — Shared<T> + Channel<T> + threads.
+"""04_background_shared_channel.py — Shared<T> latest-value + Channel<T> ordered stream.
 
-Demonstrates cross-thread primitives (AGENTS.md taxonomy):
-  - Shared<T>: latest-value, coalescing, any-thread set/get
-  - Channel<T>: lossless ordered event stream, every send delivered
-  - List field + observe_* for streamed data
-  - any-thread mutation posted to logic thread (see doc/design/python-sdk.md §2)
+Demonstrates:
+  - prism.shared(): any-thread latest-value slot, coalesced on drain
+  - prism.channel(): any-thread lossless event stream, one observer fire per send
+  - prism.list_field() + vb.list() growing a log from a channel observer
+  - a background prism.worker() driving both from another thread
 
 Run:
-  PYTHONPATH=build/python python python/examples/04_background_shared_channel.py
+  PYTHONPATH=builddir/python python3 python/examples/04_background_shared_channel.py
 """
 
 import itertools
@@ -17,11 +17,10 @@ import prism
 
 
 class SensorBoard(prism.Model):
-    # latest-value sensor reading (background thread overwrites, UI drains)
     temperature = prism.shared(20.0)
     label = prism.field("Sensor idle")
-    events = prism.channel(0)  # lossless int event stream
-    log = prism.list_field([])  # growing log, displayed via vb.list
+    events = prism.channel(0)
+    log = prism.list_field([])
 
     def view(self, vb):
         vb.vstack(self.temperature, self.label)
@@ -29,31 +28,19 @@ class SensorBoard(prism.Model):
 
 
 m = SensorBoard()
-_event_ids = itertools.count()
+event_ids = itertools.count()
 
 
 def sensor_tick():
-    # Shared: latest value wins, intermediate writes coalesced
     m.temperature.value = 20.0 + random.uniform(-2, 8)
-    # Channel: every send ordered and delivered
-    m.events.send(next(_event_ids))
+    m.events.send(next(event_ids))
 
 
-# observe Shared (fires on drain) and Channel (fires per send)
-m.temperature.observe(lambda v: print(f"[shared] temp={v:.2f}"))
-m.events.observe(lambda v: m.log.push(f"event {v}"))
-
-
-# also periodic UI update from observer
 def on_temp(v):
     m.label.value = f"Temp {v:.1f} °C — {m.log.size()} events"
 
 
+m.events.observe(lambda v: m.log.push(f"event {v}"))
 m.temperature.observe(on_temp)
-
-# prism.worker() starts immediately, before run(), to prove pre-run vs
-# in-run dispatch paths (spec §2 pre-run direct) — and is stopped by
-# run()'s exit, so no manual stop event / join is needed here.
 prism.worker(sensor_tick, interval=0.3)
-
 prism.run(m, title="Shared + Channel — Python")

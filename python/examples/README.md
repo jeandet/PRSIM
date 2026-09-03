@@ -1,18 +1,14 @@
 # Python Examples
 
-Standalone runnable demos for the PRISM Python SDK (`python/prism/`). They mirror the C++ `examples/showcase/` snippets but are pure Python. All use the same MVB architecture: `prism.Model` + `ViewBuilder` trampoline, fully multi-threaded (any thread may `m.value = x`).
+Standalone runnable demos for the PRISM Python SDK (`python/prism/`). Each is the shortest honest program for its topic on `prism.Model` + `ViewBuilder` — fully multi-threaded (any thread may `m.field.value = x`).
 
 ## Prerequisites
 
-Built extension at `build/python/prism/_prism_ext.cpython-*.so`:
+Built extension at `builddir/python/prism/_prism_ext.cpython-*.so`:
 
 ```bash
-CC=clang CXX=/opt/homebrew/bin/g++-16 meson setup build --wipe \
-  --force-fallback-for=fmt -Dsdl3:werror=false -Dsdl3:warning_level=0
-ninja -C build
-# or editable install:
-# CXX=/opt/homebrew/bin/g++-16 pip install -e . --no-build-isolation \
-#   --config-settings=setup-args="--force-fallback-for=fmt"
+meson setup builddir
+ninja -C builddir
 ```
 
 Needs `pydantic` only for `03_*` (validation). `pytest` for the test suite.
@@ -20,63 +16,61 @@ Needs `pydantic` only for `03_*` (validation). `pytest` for the test suite.
 ## Running
 
 ```bash
-PYTHONPATH=build/python python python/examples/01_counter.py
-PYTHONPATH=build/python python python/examples/02_mixer.py
-PYTHONPATH=build/python python python/examples/03_validation_and_transaction.py
-PYTHONPATH=build/python python python/examples/04_background_shared_channel.py
-PYTHONPATH=build/python python python/examples/05_lists_and_derived.py
+PYTHONPATH=builddir/python python3 python/examples/01_counter.py
+PYTHONPATH=builddir/python python3 python/examples/02_mixer.py
+PYTHONPATH=builddir/python python3 python/examples/03_validation_and_transaction.py
+PYTHONPATH=builddir/python python3 python/examples/04_background_shared_channel.py
+PYTHONPATH=builddir/python python3 python/examples/05_lists_and_derived.py
 # Fancy
-PYTHONPATH=build/python python python/examples/06_live_plot.py
-PYTHONPATH=build/python python python/examples/07_file_tree.py
-PYTHONPATH=build/python python python/examples/08_dashboard.py
-PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py
-PYTHONPATH=build/python python python/examples/11_error_handling.py
-PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py
+PYTHONPATH=builddir/python python3 python/examples/06_live_plot.py
+PYTHONPATH=builddir/python python3 python/examples/07_file_tree.py
+PYTHONPATH=builddir/python python3 python/examples/08_dashboard.py
+PYTHONPATH=builddir/python python3 python/examples/10_worker_pool_plot.py
+PYTHONPATH=builddir/python python3 python/examples/11_error_handling.py
+PYTHONPATH=builddir/python python3 python/examples/12_asyncio_bridge.py
 ```
 
-Each opens a window (`prism.run` blocks, releases GIL). Close the window to exit.
+Each opens a window (`prism.run` blocks, releases the GIL). Close the window to exit.
 
-`09_headless_multithread_stress.py` never opens a window — it drives
-`prism.headless()` and asserts exact counts, so it doubles as the pytest/CI
-check the `3.14t` free-threaded lane runs:
+`09_headless_multithread_stress.py` never opens a window — it drives `prism.headless()` and asserts exact counts, so it doubles as the pytest/CI check the `3.14t` free-threaded lane runs:
 
 ```bash
-PYTHONPATH=build/python python python/examples/09_headless_multithread_stress.py
+PYTHONPATH=builddir/python python3 python/examples/09_headless_multithread_stress.py
 ```
 
-`11_error_handling.py`, `10_worker_pool_plot.py` and `12_asyncio_bridge.py` also run without a display via `--headless`:
+`10_worker_pool_plot.py`, `11_error_handling.py` and `12_asyncio_bridge.py` also run without a display via `--headless`:
 
 ```bash
-PYTHONPATH=build/python python python/examples/11_error_handling.py --headless
-PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py --headless
-PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py --headless
+PYTHONPATH=builddir/python python3 python/examples/10_worker_pool_plot.py --headless
+PYTHONPATH=builddir/python python3 python/examples/11_error_handling.py --headless
+PYTHONPATH=builddir/python python3 python/examples/12_asyncio_bridge.py --headless
 ```
 
 ## Index
 
-| Example | What it shows | C++ equivalent |
-|---|---|---|
-| `01_counter.py` | `field(int/str)` auto-stacked view, `observe` | `showcase_counter.cpp` |
-| `02_mixer.py` | `slider`/`checkbox`, manual `view()` with `hstack`/`widget`, background thread mutation | `showcase_slider.cpp`, `README Mixer` |
-| `03_validation_and_transaction.py` | `Annotated` + `validator_for` (pydantic), `transaction()` coalescing | `Field` + `transaction.hpp` |
-| `04_background_shared_channel.py` | `Shared<T>` latest-value + `Channel<T>` lossless stream + `list_field`, any-thread set/post | `model_system_monitor` (Shared/Channel) |
-| `05_lists_and_derived.py` | `list_field` `push/erase/observe_*`, `derived` over scalars | `List<T>` + `Derived<T>` |
-| `06_live_plot.py` | `plot_field()` + `canvas(plot)`, single-post `replace_series`/`set_labels`, sliders + thread jitter | `model_plot` / `showcase_plot` (`widgets/plot.hpp:282`) |
-| `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, `TreeStorage` Python object, lazy expansion, detail panel | `model_tree_browser` / `showcase_tree` (`ui/tree.hpp:182`) |
-| `08_dashboard.py` | Plot + Tree + Shared ticker in one `vstack`/`hstack` | `model_dashboard` / `model_system_monitor` |
-| `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`/`derived`, no display; also the `3.14t` free-threaded CI check | — |
-| `10_worker_pool_plot.py` | `ThreadPoolExecutor(max_workers=4)` computing a pure-Python (`cmath`) FFT spectrum per window inside a `prism.worker`, each window posted straight to the plot via `plot.replace_series()`, windows/sec status via a `channel(int)` tick, `--headless` mode | — |
-| `11_error_handling.py` | `prism.on_error(handler)`, an observer + a worker that raise, `--headless` mode | — |
-| `12_asyncio_bridge.py` | asyncio event loop inside a `prism.worker`, `asyncio.run_coroutine_threadsafe` from an observer, a coroutine feeding a `channel` back to the logic thread, `--headless` mode | — |
+| Example | What it shows |
+|---|---|
+| `01_counter.py` | `field()` auto-stacked view, `observe` |
+| `02_mixer.py` | `slider`/`checkbox`, manual `view()` with `hstack`/`widget`, `field.add()` from a background `worker()` |
+| `03_validation_and_transaction.py` | `Annotated` + `validator_for` (pydantic), `transaction()` coalescing |
+| `04_background_shared_channel.py` | `shared()` latest-value + `channel()` lossless stream + `list_field()`, any-thread writes |
+| `05_lists_and_derived.py` | `list_field()` `push`/`erase`/`observe_*`, `derived()` over scalars |
+| `06_live_plot.py` | `plot_field()` + `canvas(plot)`, `replace_series()`/`set_labels()`, sliders + a jittering worker (blocked on the pending `derived_attach_dep` fix for slider deps — see docstring) |
+| `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, a `TreeSource` Python object, lazy expansion |
+| `08_dashboard.py` | Plot + Tree + slider controls composed via one custom `view()` |
+| `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`/`derived`, no display; also the `3.14t` free-threaded CI check |
+| `10_worker_pool_plot.py` | `ThreadPoolExecutor(max_workers=4)` computing a pure-Python (`cmath`) FFT spectrum per window inside a `prism.worker`, each window posted via `plot.replace_series()`, `--headless` mode |
+| `11_error_handling.py` | `prism.on_error(handler)`, an observer + a worker that raise, `--headless` mode |
+| `12_asyncio_bridge.py` | an asyncio loop pumped from a single `prism.worker` (no raw thread), `run_coroutine_threadsafe` from an observer, a coroutine feeding a `channel` back, `--headless` mode |
 
 ## Notes
 
-- `ViewBuilder` Python now exposes `widget`, `list`, `canvas` (`BoundPlot`), `tree` (`BoundTree`), `hstack`, `vstack` (`python/src/prism_ext.cpp:1242`). Plot uses the canvas escape hatch `vb.canvas(plot).depends_on(...)` (`app/view_builder.hpp:292`); Tree uses `vb.tree(ctrl)` (`app/view_builder.hpp:375`). See `python/prism/__init__.py:plot_field`/`tree_field`.
-- Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — mirrors `TreeStorage` tier 2 (`ui/tree.hpp:40`). See `tree_sources.py:DictTreeSource` and `FsTreeSource` (shared by `07_file_tree.py` and `08_dashboard.py`; the script directory is on `sys.path` when either is run directly, so `import tree_sources` just works).
-- `m.count.value` get/set uses the binding cache + posted queue (`doc/design/python-sdk.md` §2). `Shared`/`Channel` are the cross-thread latest/ordered primitives per `AGENTS.md`.
-- `prism.transaction()` buffers per-Python-thread and flushes as one closure on the logic thread.
-- `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived` callback or a `prism.worker()` fn — `handler(exc)` receives the original Python exception (or a `RuntimeError` wrapping a non-Python one). Observer/derived exceptions route through the logic thread; a `worker()` exception is instead caught and reported directly on that worker's own background thread (see `11_error_handling.py`) — write handlers that don't assume a single calling thread. `prism.on_error(None)` restores the default, which prints a traceback to stderr; a raising handler itself falls back to that same default. A failing callback never stops the drain — the next event still fires.
+- `ViewBuilder` exposes `widget`, `list`, `canvas` (`BoundPlot`), `tree` (`BoundTree`), `hstack`, `vstack`. Plot uses the canvas escape hatch `vb.canvas(plot)`; Tree uses `vb.tree(ctrl)`. See `python/prism/__init__.py:plot_field`/`tree_field`.
+- Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — see `tree_sources.py:DictTreeSource`/`FsTreeSource` (shared by `07_file_tree.py` and `08_dashboard.py`; the script directory is on `sys.path` when either runs directly, so `import tree_sources` just works).
+- `m.field.value` get/set goes through the binding cache and posted queue. `shared()`/`channel()` are the cross-thread latest-value/ordered primitives.
+- `prism.transaction()` buffers writes per Python thread and flushes as one closure on the logic thread.
+- `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived` callback or a `prism.worker()` fn — `handler(exc)` receives the original exception. Observer/derived exceptions route through the logic thread; a `worker()` exception is caught and reported on that worker's own thread (see `11_error_handling.py`). `prism.on_error(None)` restores the default (traceback to stderr). A failing callback never stops the drain.
 
 ## Threading guarantees
 
-One logic thread owns the widget tree and every field. Any thread may read or write a field handle — writes are posted to the logic thread, reads are dispatched to it and block. Never read-modify-write (`f.value += 1`) off the logic thread; send through a `channel` and increment in its observer (see `09_headless_multithread_stress.py`). Any thread may call `prism.shared(...).set()`, `prism.channel(...).send()`, or post a closure; these are safe under arbitrary concurrency. `prism.shared()` publishes only the latest value — intermediate values are dropped by design. `prism.channel()` is lossless and per-producer FIFO. A posted closure wakes an idle logic thread exactly once per burst. Exceptions thrown by posted or observed callbacks are routed to `prism.on_error()` (default: printed to stderr) and never stop the drain. `prism.transaction()` batches and coalesces notifications on the calling thread; it does not roll back on exception.
+One logic thread owns the widget tree and every field. Any thread may read or write a field handle — writes are posted to the logic thread, reads are dispatched to it and block. Never read-modify-write (`f.value += 1`) off the logic thread; use the atomic `field.add(n)`, or send through a `channel` and increment in its observer (see `09_headless_multithread_stress.py`). Any thread may call `shared().value = x`, `channel().send(x)`, or `field.add(n)`; these are safe under arbitrary concurrency. `shared()` publishes only the latest value — intermediate values are dropped by design. `channel()` is lossless and per-producer FIFO. `plot.replace_series()`/`set_labels()` are each a single dispatched post (clear+add+notify), so concurrent callers never see a torn plot. `prism.headless()` runs an app with no display and returns an `App` handle whose `wait_until()` is the convergence signal for tests/CI. A posted closure wakes an idle logic thread exactly once per burst. Exceptions thrown by posted or observed callbacks are routed to `prism.on_error()` (default: printed to stderr) and never stop the drain. `prism.transaction()` batches and coalesces notifications on the calling thread; it does not roll back on exception.

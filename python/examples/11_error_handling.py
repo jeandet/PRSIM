@@ -1,21 +1,16 @@
 """11_error_handling.py — prism.on_error() hook for observer/worker exceptions.
 
 Demonstrates:
-  - An observer that raises on odd values
-  - A worker that raises once (one-shot, no interval)
-  - prism.on_error(handler) counting and logging exceptions without ever
-    stopping the drain — the next event still fires, the app keeps running
-  - ``--headless`` to run under prism.headless() for CI / no display
-
-The handler runs on whichever thread raised: observer/derived exceptions
-route through the logic thread, but a ``prism.worker()`` exception is
-caught and reported directly on that worker's own thread (see
-``prism/__init__.py:_report_worker_error``). So the handler below only
-does a thread-safe ``list.append`` — never a field read-modify-write.
+  - an observer that raises on odd values
+  - a one-shot prism.worker() that raises
+  - prism.on_error(handler) counting exceptions without ever stopping the
+    drain — the handler runs on whichever thread raised: the logic thread
+    for observer exceptions, a worker's own thread for prism.worker() ones
+  - --headless to run under prism.headless() for CI / no display
 
 Run:
-  PYTHONPATH=build/python python python/examples/11_error_handling.py
-  PYTHONPATH=build/python python python/examples/11_error_handling.py --headless
+  PYTHONPATH=builddir/python python3 python/examples/11_error_handling.py
+  PYTHONPATH=builddir/python python3 python/examples/11_error_handling.py --headless
 """
 
 import sys

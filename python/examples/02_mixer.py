@@ -1,13 +1,12 @@
-"""02_mixer.py — Sliders, checkbox, custom layout, observe.
+"""02_mixer.py — sliders, checkbox, custom layout.
 
-Mirrors showcase_slider.cpp + README Mixer. Demonstrates:
-  - prism.slider / prism.checkbox sentinels
-  - manual view() with hstack/vstack (ViewBuilder trampoline)
-  - observer + GIL-free background thread mutation
-  - (for derived see 05_lists_and_derived.py)
+Demonstrates:
+  - prism.slider()/prism.checkbox() descriptors
+  - manual view() with vb.hstack/vb.widget (overrides auto-stack)
+  - m.field.observe(cb) and a background prism.worker() mutating a field
 
 Run:
-  PYTHONPATH=build/python python python/examples/02_mixer.py
+  PYTHONPATH=builddir/python python3 python/examples/02_mixer.py
 """
 
 import prism
@@ -19,29 +18,11 @@ class Mixer(prism.Model):
     count = prism.field(42)
 
     def view(self, vb):
-        # explicit layout overrides auto-stack
         vb.hstack(self.volume_slider, self.mute)
         vb.widget(self.count)
 
 
 m = Mixer()
-
-# observe field
 m.count.observe(lambda v: print(f"[observe] count={v}"))
-
-# background thread mutates from any thread (posted to logic thread).
-# prism.worker() is stopped by run() on exit, so 'm' can be captured
-# directly — no weakref needed. repeat=5 stops the worker itself after the
-# 5th call, so bump() needs neither the stop event nor a sentinel check.
-values = iter(range(50, 55))
-
-
-def bump():
-    v = next(values)
-    print(f"[worker] setting count={v} (is_logic_thread={prism.is_logic_thread()})")
-    m.count.value = v
-
-
-prism.worker(bump, interval=1.0, repeat=5)
-
+prism.worker(lambda: m.count.add(1), interval=1.0, repeat=5)
 prism.run(m, title="Mixer — Python")

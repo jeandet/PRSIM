@@ -1,27 +1,22 @@
-"""10_worker_pool_plot.py — ThreadPoolExecutor(4) computing spectra into a live plot.
+"""10_worker_pool_plot.py — ThreadPoolExecutor(4) computing FFT spectra into a live plot.
 
 Demonstrates:
-  - A producer prism.worker() submitting one FFT job per window to a
-    ThreadPoolExecutor(max_workers=4) — on a free-threaded (3.14t) build
-    those 4 workers run truly in parallel, which is what pushes
-    windows/sec up; on a GIL build they still overlap I/O-free CPU work
-    less, but the demo runs the same way either way.
-  - A pure-Python radix-2 FFT (cmath, no numpy) computing a magnitude
-    spectrum per window on the pool threads.
-  - Each pool thread posting its spectrum straight to the plot via
-    `plot.replace_series(xs, ys)` — one dispatched call that does
-    clear+add+notify atomically on the logic thread, so 4 pool threads
-    calling it concurrently never leaves the plot showing a mix of two
-    windows.
-  - Windows/sec status tracked separately via a `channel(int)` tick: each
-    pool thread also sends a tick, and the logic-thread observer (single-
-    threaded) updates the "N windows, R windows/sec" status field.
-  - prism.headless() for --headless / CI: runs until at least one window
-    is plotted (or 1s elapses), then asserts it.
+  - a prism.worker() producer submitting one FFT job per window to a
+    ThreadPoolExecutor(max_workers=4)
+  - a pure-Python radix-2 FFT (cmath, no numpy) computing a magnitude
+    spectrum per window on the pool threads
+  - each pool thread posting straight to the plot via plot.replace_series(),
+    so concurrent posts never leave the plot showing a mix of two windows
+  - a channel(int) tick counted by a single logic-thread observer into
+    windows_done/status
+  - no view(): the auto-stacked view shows windows_done next to status too
+    (it used to be hidden behind a custom view()) — simpler than adding one
+    back just to hide a field
+  - prism.headless() for --headless / CI
 
 Run:
-  PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py
-  PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py --headless
+  PYTHONPATH=builddir/python python3 python/examples/10_worker_pool_plot.py
+  PYTHONPATH=builddir/python python3 python/examples/10_worker_pool_plot.py --headless
 """
 
 import cmath
@@ -60,9 +55,7 @@ def compute_spectrum(window: list[float]) -> list[float]:
 
 def _make_window(phase: float) -> list[float]:
     freq = 5.0 + 3.0 * math.sin(phase * 0.05)
-    return [
-        math.sin(2 * math.pi * freq * i / WINDOW_SIZE + phase) for i in range(WINDOW_SIZE)
-    ]
+    return [math.sin(2 * math.pi * freq * i / WINDOW_SIZE + phase) for i in range(WINDOW_SIZE)]
 
 
 class WorkerPoolPlot(prism.Model):
@@ -85,7 +78,7 @@ def main() -> None:
     m.plot.set_labels(x="Frequency bin", y="Magnitude")
 
     def on_tick(_: int) -> None:
-        m.windows_done.value += 1
+        m.windows_done.add(1)
         elapsed = time.monotonic() - start
         rate = m.windows_done.value / elapsed if elapsed > 0 else 0.0
         m.status.value = f"{m.windows_done.value} windows, {rate:.1f} windows/sec"
@@ -95,7 +88,7 @@ def main() -> None:
     def producer(stop: threading.Event) -> None:
         phase = 0.0
         with ThreadPoolExecutor(max_workers=4) as pool:
-            pending = []
+            pending: list = []
             while not stop.is_set():
                 pending = [f for f in pending if not f.done()]
                 if len(pending) >= MAX_PENDING:
@@ -115,10 +108,8 @@ def main() -> None:
     print(f"status={m.status.value}")
     if hasattr(sys, "_is_gil_enabled"):
         print(f"GIL enabled: {sys._is_gil_enabled()}")
-
     if "--headless" in sys.argv:
         assert m.windows_done.value >= 1, "no window was plotted"
-        print(f"windows_done={m.windows_done.value}")
 
 
 if __name__ == "__main__":
