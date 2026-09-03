@@ -50,8 +50,9 @@ environment = { PATH = "/opt/rh/gcc-toolset-14/root/usr/bin:$PATH", CC = "gcc", 
 
 [tool.cibuildwheel.macos]
 # C++ with Homebrew GCC (the maintainer's setup; the exact g++-N is exported by the workflow
-# step), C with Apple clang (SDL3's darwin sources need Blocks). SDL3/SDL3_ttf stay SHARED here:
-# their Objective-C @available checks need clang's compiler-rt (___isPlatformVersionAtLeast),
-# which a g++-driven link of a static libSDL3.a cannot provide; delocate bundles the dylibs.
+# step), C with Apple clang (SDL3's darwin sources need Blocks). SDL3 stays SHARED here: its
+# Objective-C @available checks need clang's compiler-rt (___isPlatformVersionAtLeast), which a
+# g++-driven link of a static libSDL3.a cannot provide; delocate bundles libSDL3.dylib. SDL3_ttf
+# (plain C, not installed by its subproject) stays static.
 before-all = "brew install gcc pkg-config freetype harfbuzz"
-config-settings = { "setup-args" = ["-Dsdl3:default_library=shared", "-Dsdl3_ttf:default_library=shared"] }
+config-settings = { "setup-args" = ["-Dsdl3:default_library=shared"] }
