@@ -36,10 +36,28 @@ if python3.found()
     # Python binding tests — part of `meson test` so WTF doesn't happen again.
     # Runs pytest against the source test file with PYTHONPATH pointing at
     # the just-built extension in builddir/python.
+    python_bindings_env = ['PYTHONPATH=' + meson.project_build_root() / 'python']
+    sanitize = get_option('b_sanitize')
+    if sanitize.contains('address')
+      # Loading a sanitized extension into an unsanitized CPython needs libasan
+      # preloaded first; detect_leaks=0 keeps CPython's own allocations (which
+      # LeakSanitizer can't unwind through the interpreter for) out of the report.
+      # Resolved via ldconfig, not `gcc -print-file-name=libasan.so`: on some distros
+      # (observed on Fedora 45) that command returns a GNU ld linker script
+      # ("INPUT ( /usr/lib64/libasan.so.8.0.0 )"), not the actual ELF shared object,
+      # which LD_PRELOAD then refuses to load ("file too short"). ldconfig's cache
+      # always names the real runtime .so and works the same way on Ubuntu (CI).
+      libasan = run_command('sh', '-c', 'ldconfig -p | grep -m1 "libasan\.so" | awk \'{print $NF}\'', check : true).stdout().strip()
+      python_bindings_env += ['LD_PRELOAD=' + libasan, 'ASAN_OPTIONS=detect_leaks=0']
+    endif
+    if sanitize.contains('undefined')
+      python_bindings_env += ['UBSAN_OPTIONS=print_stacktrace=1']
+    endif
+
     test('python_bindings',
       python3,
       args : ['-m', 'pytest', meson.project_source_root() / 'python/tests/test_prism_python.py', '-q', '--import-mode=importlib'],
-      env : ['PYTHONPATH=' + meson.project_build_root() / 'python'],
+      env : python_bindings_env,
       depends : _prism_ext,
       timeout : 60,
     )

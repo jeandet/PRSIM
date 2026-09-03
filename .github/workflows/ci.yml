@@ -37,6 +37,22 @@ jobs:
       - name: Run TSan tests (C++ + Python via meson test, SDL flaky suites excluded)
         run: meson test -C builddir-tsan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
 
+  asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
+          pip install meson-python nanobind pytest
+      - name: Setup ASan+UBSan builddir
+        run: meson setup builddir-asan -Db_sanitize=address,undefined -Dbuildtype=debugoptimized
+      - name: Build ASan+UBSan
+        run: ninja -C builddir-asan
+      - name: Run ASan+UBSan tests (C++ + Python via meson test, SDL flaky suites excluded)
+        run: meson test -C builddir-asan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
+
   free-threaded:
     runs-on: ubuntu-latest
     steps:
