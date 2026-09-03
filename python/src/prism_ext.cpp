@@ -587,11 +587,23 @@ struct SlotList : SlotBase {
 // (value/min/max/step, checked/label) each held whole inside one Field —
 // unlike Slot<T>'s scalar Field<T>, there is no separate Field<double>/
 // Field<bool> to point a BoundField at, so these get their own slot types.
-struct SlotSlider : SlotBase {
-    Field<Slider<double>> field;
-    explicit SlotSlider(Slider<double> v) : field(std::move(v)) {}
+//
+// Orientation O is Slider<T,O>'s only template parameter and it does not
+// affect the struct's data layout (value/min/max/step) at all — it only
+// selects which Widget<Slider<T,O>> specialization renders it (delegate.hpp
+// already defines that specialization generically over O, so instantiating
+// it for Vertical here needs no new widget code). SlotSliderT<O> is
+// templated purely so both orientations get their own Field<Slider<double,O>>
+// storage; SlotSlider stays the Horizontal alias other code already refers
+// to by that name.
+template <Orientation O>
+struct SlotSliderT : SlotBase {
+    Field<Slider<double, O>> field;
+    explicit SlotSliderT(Slider<double, O> v) : field(std::move(v)) {}
     void build(ViewBuilder& vb) override { vb.widget(field); }
 };
+using SlotSlider = SlotSliderT<Orientation::Horizontal>;
+using SlotSliderV = SlotSliderT<Orientation::Vertical>;
 struct SlotCheckbox : SlotBase {
     Field<Checkbox> field;
     explicit SlotCheckbox(Checkbox v) : field(std::move(v)) {}
@@ -924,29 +936,76 @@ struct BoundField {
     }
 };
 
-// Bound handle for a slider's inner value. Slider<double> holds value/min/max/step
-// together in one struct behind one Field (see SlotSlider above), so unlike BoundField<T>
-// there is no Field<double> to point at directly. min/max are cached here at construction
-// (Python has no API to change them at runtime) so .value writes can replace the whole
-// Slider struct without first reading it back — no read-modify-write race with a
-// concurrent writer. step is fixed at 0 (continuous) — Python's slider() doesn't expose it.
+// Per-orientation slider ops shared by BoundSliderValue below. Each posts (or
+// buffers under prism.transaction()) a single read-modify-write closure that
+// runs entirely on the logic thread — the only thread allowed to touch
+// Field<T> directly — so a concurrent set()/set_range() from another thread
+// can never race a read against a write: whichever closure runs first is
+// fully applied (including the fields it leaves untouched) before the next
+// one reads.
+template <Orientation O>
+double slider_get(Field<Slider<double, O>>* field) {
+    Field<Slider<double, O>>* p = field;
+    return dispatch_sync_read<Slider<double, O>>([p](){ return p->get(); }).value;
+}
+template <Orientation O>
+void slider_set(std::shared_ptr<void> keep, Field<Slider<double, O>>* field, double v) {
+    Field<Slider<double, O>>* p = field;
+    list_op_dispatch(std::move(keep), [p, v](){ auto s = p->get(); s.value = v; p->set(s); });
+}
+template <Orientation O>
+nb::tuple slider_range(Field<Slider<double, O>>* field) {
+    Field<Slider<double, O>>* p = field;
+    auto s = dispatch_sync_read<Slider<double, O>>([p](){ return p->get(); });
+    return nb::make_tuple(s.min, s.max);
+}
+template <Orientation O>
+void slider_set_range(std::shared_ptr<void> keep, Field<Slider<double, O>>* field, double mn, double mx) {
+    Field<Slider<double, O>>* p = field;
+    list_op_dispatch(std::move(keep), [p, mn, mx](){ auto s = p->get(); s.min = mn; s.max = mx; p->set(s); });
+}
+template <Orientation O>
+Connection slider_observe(Field<Slider<double, O>>* field, nb::callable cb) {
+    Field<Slider<double, O>>* f = field;
+    return f->on_change().connect([wc = WeakCallback(cb)](const Slider<double, O>& val) { wc(val.value); });
+}
+
+// Bound handle for a slider's inner value. Slider<double,O> holds
+// value/min/max/step together in one struct behind one Field (see
+// SlotSliderT above), so unlike BoundField<T> there is no Field<double> to
+// point at directly. Orientation is a compile-time Slider<T,O> template
+// parameter (see SlotSliderT's comment) — it doesn't affect the struct's
+// layout, only which Widget<Slider<T,O>> renders it — so a Field<Slider<double,
+// Horizontal>> and a Field<Slider<double,Vertical>> are two distinct C++
+// types with identical semantics. Exactly one of field_h/field_v is set
+// (chosen once at allocation, by orientation), and every method below just
+// branches on which.
 struct BoundSliderValue {
     std::shared_ptr<SlotBase> owner;
-    Field<Slider<double>>* field = nullptr;
-    double min = 0.0, max = 1.0;
+    Field<Slider<double, Orientation::Horizontal>>* field_h = nullptr;
+    Field<Slider<double, Orientation::Vertical>>* field_v = nullptr;
     double get() const {
-        if (!field) return 0.0;
-        Field<Slider<double>>* p = field;
-        return dispatch_sync_read<Slider<double>>([p](){ return p->get(); }).value;
+        if (field_h) return slider_get(field_h);
+        if (field_v) return slider_get(field_v);
+        return 0.0;
     }
     void set(double v) {
-        if (field) field_set_dispatch<Slider<double>>(owner, field, Slider<double>{v, min, max, 0.0});
+        if (field_h) slider_set(owner, field_h, v);
+        else if (field_v) slider_set(owner, field_v, v);
+    }
+    nb::tuple range() const {
+        if (field_h) return slider_range(field_h);
+        if (field_v) return slider_range(field_v);
+        return nb::make_tuple(0.0, 1.0);
+    }
+    void set_range(double mn, double mx) {
+        if (field_h) slider_set_range(owner, field_h, mn, mx);
+        else if (field_v) slider_set_range(owner, field_v, mn, mx);
     }
     Connection observe(nb::callable cb) {
-        if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
+        if (!field_h && !field_v) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
-        Field<Slider<double>>* f = field;
-        auto conn = f->on_change().connect([wc = WeakCallback(cb)](const Slider<double>& val) { wc(val.value); });
+        Connection conn = field_h ? slider_observe(field_h, cb) : slider_observe(field_v, cb);
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -1416,17 +1475,31 @@ void derived_attach_dep(std::shared_ptr<SlotDerived<T>> slot, nb::object dep) {
         slot->dep_keepalive_.push_back(dep);
         return true;
     };
+    // BoundSliderValue holds field_h XOR field_v (see its own comment) instead
+    // of one `h.field` member field_ptr_of() can read generically, so it gets
+    // its own connect — otherwise identical to connect_field: only h.owner and
+    // whichever field's on_change() are needed to trigger recompute() on
+    // change, never the field's value type (the derived compute fn reads the
+    // dep's actual value itself, e.g. self.v.value).
+    auto connect_slider = [&]() -> bool {
+        if (!nb::isinstance<BoundSliderValue>(dep)) return false;
+        auto& h = nb::cast<BoundSliderValue&>(dep);
+        auto connect_one = [&](auto* ptr) {
+            if (!ptr) return;
+            slot->deps_.push_back(ptr->on_change().connect([weak](const auto&){ if (auto s = weak.lock()) s->recompute(); }));
+        };
+        connect_one(h.field_h);
+        connect_one(h.field_v);
+        if (h.owner) slot->dep_owners_.push_back(h.owner);
+        slot->dep_keepalive_.push_back(dep);
+        return true;
+    };
     // Bound handles
     if (connect_field((BoundField<int>*)nullptr)) return;
     if (connect_field((BoundField<double>*)nullptr)) return;
     if (connect_field((BoundField<std::string>*)nullptr)) return;
     if (connect_field((BoundField<bool>*)nullptr)) return;
-    // Slider/Checkbox: connect_field only needs h.field (a Field<Slider<double>>*/
-    // Field<Checkbox>*) and h.owner — it never touches the field's value type, so the
-    // same generic lambda used for scalar Bound* handles works unchanged here. The
-    // derived compute fn reads the dep's actual value itself (self.v.value /
-    // self.c.value); this connection only triggers recompute() on change.
-    if (connect_field((BoundSliderValue*)nullptr)) return;
+    if (connect_slider()) return;
     if (connect_field((BoundCheckboxValue*)nullptr)) return;
     if (connect_shared((BoundShared<int>*)nullptr)) return;
     if (connect_shared((BoundShared<double>*)nullptr)) return;
@@ -1457,7 +1530,11 @@ inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
     else if (nb::isinstance<BoundShared<double>>(h)) vb.widget(*nb::cast<BoundShared<double>&>(h).shared);
     else if (nb::isinstance<BoundShared<std::string>>(h)) vb.widget(*nb::cast<BoundShared<std::string>&>(h).shared);
     else if (nb::isinstance<BoundShared<bool>>(h)) vb.widget(*nb::cast<BoundShared<bool>&>(h).shared);
-    else if (nb::isinstance<BoundSliderValue>(h)) vb.widget(*nb::cast<BoundSliderValue&>(h).field);
+    else if (nb::isinstance<BoundSliderValue>(h)) {
+        auto& b = nb::cast<BoundSliderValue&>(h);
+        if (b.field_h) vb.widget(*b.field_h);
+        else if (b.field_v) vb.widget(*b.field_v);
+    }
     else if (nb::isinstance<BoundCheckboxValue>(h)) vb.widget(*nb::cast<BoundCheckboxValue&>(h).field);
     else if (nb::isinstance<BoundDerived<int>>(h)) vb.widget_generic<int>(*nb::cast<BoundDerived<int>&>(h).derived);
     else if (nb::isinstance<BoundDerived<double>>(h)) vb.widget_generic<double>(*nb::cast<BoundDerived<double>&>(h).derived);
@@ -1486,6 +1563,14 @@ inline void py_tree_dispatch(ViewBuilder& vb, nb::object h) {
         if (b.ctrl) vb.tree(*b.ctrl);
     } else throw std::runtime_error("ViewBuilder.tree: unsupported handle type (expected BoundTree)");
 }
+
+// add_slider_slot()'s return type: exactly one of field_h/field_v is set,
+// matching BoundSliderValue's own field_h/field_v split (see its comment).
+struct SliderAlloc {
+    std::shared_ptr<SlotBase> owner;
+    Field<Slider<double, Orientation::Horizontal>>* field_h = nullptr;
+    Field<Slider<double, Orientation::Vertical>>* field_v = nullptr;
+};
 
 struct PyModel {
     std::vector<std::shared_ptr<SlotBase>> slots;
@@ -1519,12 +1604,18 @@ struct PyModel {
         slots.push_back(s);
         return {s, p};
     }
-    std::pair<std::shared_ptr<SlotBase>, Field<Slider<double>>*> add_slider_slot(double v, double mn, double mx) {
+    SliderAlloc add_slider_slot(double v, double mn, double mx, bool vertical) {
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        if (vertical) {
+            auto s = std::make_shared<SlotSliderV>(Slider<double, Orientation::Vertical>{v, mn, mx, 0.0});
+            auto* p = &s->field;
+            slots.push_back(s);
+            return {s, nullptr, p};
+        }
         auto s = std::make_shared<SlotSlider>(Slider<double>{v, mn, mx, 0.0});
         auto* p = &s->field;
-        std::lock_guard<std::mutex> lk(slots_mutex);
         slots.push_back(s);
-        return {s, p};
+        return {s, p, nullptr};
     }
     std::pair<std::shared_ptr<SlotBase>, Field<Checkbox>*> add_checkbox_slot(bool v, std::string label) {
         auto s = std::make_shared<SlotCheckbox>(Checkbox{v, std::move(label)});
@@ -2133,11 +2224,13 @@ NB_MODULE(_prism_ext, m) {
 
     nb::class_<BoundSliderValue>(m, "BoundSlider", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundSliderValue::get, &validated_set<BoundSliderValue, double>)
+        .def_prop_ro("range", &BoundSliderValue::range)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb), cb);
         }, nb::arg("callback"))
         .def("get", &BoundSliderValue::get)
-        .def("set", &validated_set<BoundSliderValue, double>);
+        .def("set", &validated_set<BoundSliderValue, double>)
+        .def("set_range", &BoundSliderValue::set_range, nb::arg("min"), nb::arg("max"));
 
     nb::class_<BoundCheckboxValue>(m, "BoundCheckbox", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>)
@@ -2237,10 +2330,14 @@ NB_MODULE(_prism_ext, m) {
                 auto [owner, p] = self.add_bool_slot(v);
                 BoundField<bool> h; h.owner = std::move(owner); h.field = p; return h;
             }, nb::arg("value")=false)
-        .def("_add_slider_internal", [](PyModel& self, double v, double mn, double mx){
-                auto [owner, p] = self.add_slider_slot(v, mn, mx);
-                BoundSliderValue h; h.owner = std::move(owner); h.field = p; h.min = mn; h.max = mx; return h;
-            }, nb::arg("value")=0.0, nb::arg("min")=0.0, nb::arg("max")=1.0)
+        .def("_add_slider_internal", [](PyModel& self, double v, double mn, double mx, std::string orientation){
+                bool vertical;
+                if (orientation == "horizontal") vertical = false;
+                else if (orientation == "vertical") vertical = true;
+                else throw nb::value_error(("slider(): orientation must be 'horizontal' or 'vertical', got '" + orientation + "'").c_str());
+                auto alloc = self.add_slider_slot(v, mn, mx, vertical);
+                BoundSliderValue h; h.owner = std::move(alloc.owner); h.field_h = alloc.field_h; h.field_v = alloc.field_v; return h;
+            }, nb::arg("value")=0.0, nb::arg("min")=0.0, nb::arg("max")=1.0, nb::arg("orientation")="horizontal")
         .def("_add_checkbox_internal", [](PyModel& self, bool v, std::string label){
                 auto [owner, p] = self.add_checkbox_slot(v, label);
                 BoundCheckboxValue h; h.owner = std::move(owner); h.field = p; h.label = std::move(label); return h;

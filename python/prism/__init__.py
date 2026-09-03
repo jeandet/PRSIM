@@ -410,8 +410,7 @@ class _FieldDescriptor:
         # allocate via Model's internal add_* (no keep_alive cycle — Model owns slots)
         if self.kind == "slider":
             mn, mx = self.meta["range"]
-            h = instance._add_slider_internal(self.default, mn, mx)
-            h.__dict__["range"] = (mn, mx)
+            h = instance._add_slider_internal(self.default, mn, mx, self.meta["orientation"])
         elif self.kind == "checkbox":
             h = instance._add_checkbox_internal(self.default, self.meta["label"])
         else:
@@ -455,20 +454,29 @@ def field(default, validator=None):
     return _FieldDescriptor(default, validator=validator)
 
 
-def slider(default, min=0.0, max=1.0, validator=None):
+def slider(default, min=0.0, max=1.0, validator=None, *, orientation="horizontal"):
     """Value may be set from any thread (posted to the logic thread).
 
     Float field rendered as a ranged slider widget (C++ ``Slider<double>``
-    delegate). ``.range`` on the returned handle exposes ``(min, max)``.
-    Setting ``.value`` outside ``[min, max]`` is accepted unclamped — that's
-    what the underlying ``Field::set()`` does; only dragging the rendered
-    widget with the mouse clamps into range.
+    delegate). ``orientation`` is ``"horizontal"`` (default) or ``"vertical"``
+    — anything else raises ``ValueError``. ``.range`` on the returned handle
+    reads the current ``(min, max)`` (posted to and read back from the logic
+    thread, like ``.value``); ``set_range(min, max)`` changes it the same way
+    ``.value =`` changes the value. Setting ``.value`` outside ``[min, max]``
+    is accepted unclamped — that's what the underlying ``Field::set()`` does;
+    only dragging the rendered widget with the mouse clamps into range, and
+    changing the range never retroactively clamps an existing out-of-range
+    value either.
     """
+    if orientation not in ("horizontal", "vertical"):
+        raise ValueError(
+            f"slider(): orientation must be 'horizontal' or 'vertical', got {orientation!r}"
+        )
     return _FieldDescriptor(
         float(default),
         validator=validator,
         kind="slider",
-        meta={"range": (float(min), float(max))},
+        meta={"range": (float(min), float(max)), "orientation": orientation},
     )
 
 

@@ -615,9 +615,9 @@ def test_slider_checkbox_descriptors():
 
 
 def test_slider_range_is_exposed_as_a_tuple():
-    """.range is a plain (min, max) tuple set once at allocation — it has no
-    C++-backed setter, so writing it only rebinds the Python attribute; it
-    does not reach (and cannot change) the underlying Slider's min/max."""
+    """.range reads the Slider's current (min, max) from the logic thread
+    (dispatch_sync_read) rather than a value cached once at allocation —
+    set_range() is the way to change it, and .range reflects that change."""
 
     class Mixer(Model):
         volume = prism.slider(0.5, min=0.0, max=1.0)
@@ -625,6 +625,50 @@ def test_slider_range_is_exposed_as_a_tuple():
     m = Mixer()
     assert m.volume.range == (0.0, 1.0)
     assert isinstance(m.volume.range, tuple)
+    m.volume.set_range(-1.0, 2.0)
+    assert m.volume.range == (-1.0, 2.0)
+
+
+def test_slider_invalid_orientation_raises_value_error():
+    with pytest.raises(ValueError):
+        prism.slider(0.5, orientation="diagonal")
+
+
+def test_slider_vertical_renders_headless():
+    """Golden/headless smoke test: orientation="vertical" instantiates the
+    C++ Slider<double, Orientation::Vertical> delegate (no new widget code —
+    Widget<Slider<T,O>> in delegate.hpp is already generic over O) and must
+    render without error, same as the default horizontal orientation."""
+
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0, orientation="vertical")
+
+    m = Mixer()
+    prism._run_headless(m, delay_ms=50)
+    assert m.volume.value == 0.5
+
+
+def test_slider_set_range_from_background_thread_updates_range_unclamped():
+    """set_range() posts a read-modify-write closure to the logic thread,
+    same dispatch shape as .value = (field_set_dispatch/list_op_dispatch in
+    prism_ext.cpp). Called from a background thread under prism.headless(),
+    .range (read via dispatch_sync_read) must reflect the new bounds once
+    the post is applied. Field::set() semantics are unchanged by a range
+    change: a value beyond the old max stays accepted unclamped."""
+
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+
+    m = Mixer()
+    with prism.headless(m) as app:
+        th = threading.Thread(target=lambda: m.volume.set_range(0.0, 10.0))
+        th.start()
+        th.join()
+        app.wait_until(lambda: m.volume.range == (0.0, 10.0))
+        assert m.volume.range == (0.0, 10.0)
+        m.volume.value = 5.0  # beyond the old max=1.0, within the new max=10.0
+        app.wait_until(lambda: m.volume.value == 5.0)
+        assert m.volume.value == 5.0
 
 
 def test_slider_value_round_trips():
