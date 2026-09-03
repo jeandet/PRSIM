@@ -433,6 +433,45 @@ std::shared_ptr<U> make_tracked_state(Args&&... args) {
     });
 }
 
+// Wraps a Python observer callback for storage inside a C++ SenderHub::receivers_ entry
+// without giving receivers_ its own strong reference to it. The callback's only strong
+// reference is meant to live in the observing handle's __dict__["_prism_callbacks"]
+// (appended by keep_connection() below) — a second, independent strong nb::callable copy
+// held here would be a reference the cyclic GC can't see (plain C++ storage has no
+// tp_traverse), which is exactly what used to pin a self-capturing observer's
+// Model -> handle -> callback -> Model cycle forever, uncollectable, even once nothing
+// else referenced the Model (Python's GC can only reclaim a cycle if every strong
+// reference into it is visible via tp_traverse). A weakref doesn't contribute to the
+// callback's refcount, so once the handle (and its callbacks list) becomes unreachable
+// and is collected, this weakref starts resolving to None and operator() below silently
+// no-ops — same observable behavior as an already-disconnected observer. Falls back to
+// holding `cb` directly (old behavior) for the rare callable that can't be
+// weak-referenced (some C-implemented callables) — such an observer keeps working, just
+// without this fix's GC-visibility for that one case.
+class WeakCallback {
+public:
+    explicit WeakCallback(nb::callable cb) {
+        try {
+            weak_.emplace(cb);
+        } catch (nb::python_error&) {
+            strong_ = std::move(cb);
+        }
+    }
+
+    template <typename... Args>
+    void operator()(Args&&... args) const {
+        if (!Py_IsInitialized()) return;
+        nb::gil_scoped_acquire acq;
+        nb::object target = strong_ ? nb::object(strong_) : (*weak_)();
+        if (!target || target.is_none()) return;
+        try { target(std::forward<Args>(args)...); } catch (...) { report_python_callback_error(); }
+    }
+
+private:
+    std::optional<nb::weakref> weak_;
+    nb::callable strong_;
+};
+
 // Standalone field (owns storage) — for quick tests / non-model usage. State lives behind
 // a shared_ptr (like SharedHandle/ChannelHandle below) so observe()'s Connection can
 // keep_alive(field) instead of relying on nanobind's nb::keep_alive<0,1> on the handle
@@ -451,12 +490,7 @@ struct FieldHandle {
     }
     void set(T v) { field_set_dispatch(field, field.get(), std::move(v)); }
     Connection observe(nb::callable cb) {
-        auto wrapper = [cb](const T& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = field->on_change().connect(std::move(wrapper));
+        auto conn = field->on_change().connect(WeakCallback(cb));
         conn.keep_alive(field);
         return conn;
     }
@@ -884,12 +918,7 @@ struct BoundField {
         if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Field<T>* f = field;
-        auto wrapper = [cb](const T& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = f->on_change().connect(std::move(wrapper));
+        auto conn = f->on_change().connect(WeakCallback(cb));
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -917,12 +946,7 @@ struct BoundSliderValue {
         if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Field<Slider<double>>* f = field;
-        auto wrapper = [cb](const Slider<double>& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val.value); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = f->on_change().connect(std::move(wrapper));
+        auto conn = f->on_change().connect([wc = WeakCallback(cb)](const Slider<double>& val) { wc(val.value); });
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -947,12 +971,7 @@ struct BoundCheckboxValue {
         if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Field<Checkbox>* f = field;
-        auto wrapper = [cb](const Checkbox& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val.checked); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = f->on_change().connect(std::move(wrapper));
+        auto conn = f->on_change().connect([wc = WeakCallback(cb)](const Checkbox& val) { wc(val.checked); });
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -995,12 +1014,7 @@ struct SharedHandle {
     T get() const { return shared->get(); }
     void set(T v) { shared->set(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
-        auto wrapper = [cb](const T& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = shared->on_change().connect(std::move(wrapper));
+        auto conn = shared->on_change().connect(WeakCallback(cb));
         conn.keep_alive(shared);
         return conn;
     }
@@ -1017,12 +1031,7 @@ struct BoundShared {
         if (!shared) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Shared<T>* s = shared;
-        auto wrapper = [cb](const T& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = s->on_change().connect(std::move(wrapper));
+        auto conn = s->on_change().connect(WeakCallback(cb));
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -1048,12 +1057,7 @@ struct ChannelHandle {
     ChannelHandle& operator=(ChannelHandle&&) = delete;
     void send(T v) { channel->send(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
-        auto wrapper = [cb](const T& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = channel->on_receive().connect(std::move(wrapper));
+        auto conn = channel->on_receive().connect(WeakCallback(cb));
         conn.keep_alive(channel);
         return conn;
     }
@@ -1069,12 +1073,7 @@ struct BoundChannel {
         if (!channel) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Channel<T>* c = channel;
-        auto wrapper = [cb](const T& val) {
-            if (!Py_IsInitialized()) return;
-            nb::gil_scoped_acquire acq;
-            try { cb(val); } catch (...) { report_python_callback_error(); }
-        };
-        auto conn = c->on_receive().connect(std::move(wrapper));
+        auto conn = c->on_receive().connect(WeakCallback(cb));
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -1190,8 +1189,7 @@ struct BoundDerived {
         if (!derived) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         auto* d = derived;
-        auto wrapper = [cb](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(...){report_python_callback_error();} };
-        auto conn = d->on_change().connect(std::move(wrapper));
+        auto conn = d->on_change().connect(WeakCallback(cb));
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
     }
@@ -1246,20 +1244,17 @@ struct ListHandle {
         nb::list out; for (auto& v : vec) out.append(v); return out;
     }
     Connection observe_insert(nb::callable cb) {
-        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
-        auto conn = list->on_insert().connect(std::move(w));
+        auto conn = list->on_insert().connect(WeakCallback(cb));
         conn.keep_alive(list);
         return conn;
     }
     Connection observe_remove(nb::callable cb) {
-        auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(...){report_python_callback_error();} };
-        auto conn = list->on_remove().connect(std::move(w));
+        auto conn = list->on_remove().connect(WeakCallback(cb));
         conn.keep_alive(list);
         return conn;
     }
     Connection observe_update(nb::callable cb) {
-        auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
-        auto conn = list->on_update().connect(std::move(w));
+        auto conn = list->on_update().connect(WeakCallback(cb));
         conn.keep_alive(list);
         return conn;
     }
@@ -1293,13 +1288,13 @@ struct BoundList {
         nb::list out; for (auto& v : vec) out.append(v); return out;
     }
     Connection observe_insert(nb::callable cb) {
-        if(!list) throw nb::value_error("observe_insert(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_insert(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto c=p->on_insert().connect(WeakCallback(cb)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_remove(nb::callable cb) {
-        if(!list) throw nb::value_error("observe_remove(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx);}catch(...){report_python_callback_error();} }; auto c=p->on_remove().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_remove(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto c=p->on_remove().connect(WeakCallback(cb)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
     Connection observe_update(nb::callable cb) {
-        if(!list) throw nb::value_error("observe_update(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} }; auto c=p->on_update().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
+        if(!list) throw nb::value_error("observe_update(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto c=p->on_update().connect(WeakCallback(cb)); if(owner_copy) c.keep_alive(owner_copy); return c;
     }
 };
 
@@ -1767,7 +1762,20 @@ static nb::handle observed_handles() {
 // list -> Connection is a plain acyclic chain that dies with `self`, not a GC-invisible
 // self-cycle. Wraps the Connection into a Python object exactly once and returns that
 // same object.
-static nb::object keep_connection(nb::object self, Connection conn) {
+//
+// `cb` is also appended to self.__dict__["_prism_callbacks"] — this is now the callback's
+// ONLY strong reference (see WeakCallback above: every observe*() wrapper holds just a weak
+// reference to `cb`, resolved under the GIL at call time). A callback that captures the
+// owning Model (`m.x.observe(lambda v: m.rebuild())`) closes a Model -> ... -> handle ->
+// callback -> Model cycle; making the handle's own dynamic_attr dict the sole strong owner
+// of `cb` — which nanobind's inst_traverse walks — puts every strong reference in that cycle
+// on a Python-visible edge, so the cyclic GC can actually detect and collect it (a real
+// std::function-held nb::callable copy from a plain C++ member, as it was before, would be
+// an extra reference the GC can never see — subtract_refs()'s refcount bookkeeping treats
+// that as "referenced from outside," which keeps the whole cycle alive forever regardless of
+// what else also references the same callback; mirroring `cb` elsewhere without first making
+// the receivers_ side weak would not have fixed anything).
+static nb::object keep_connection(nb::object self, Connection conn, nb::callable cb) {
     nb::object result = nb::cast(std::move(conn));
     nb::dict d = self.attr("__dict__");
     // setdefault, not contains()-then-[]= : the two-step check-then-set race
@@ -1776,6 +1784,8 @@ static nb::object keep_connection(nb::object self, Connection conn) {
     // setdefault's own C level get-or-insert is atomic under the dict's lock.
     nb::list keepalive = nb::cast<nb::list>(d.attr("setdefault")("_prism_keepalive", nb::list()));
     keepalive.append(result);
+    nb::list callbacks = nb::cast<nb::list>(d.attr("setdefault")("_prism_callbacks", nb::list()));
+    callbacks.append(cb);
     observed_handles().attr("add")(self);
     return result;
 }
@@ -1826,7 +1836,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def("get", &FieldHandle<T>::get)
         .def("set", &validated_set<FieldHandle<T>, T>);
     field_cls.def("observe", [](nb::object self, nb::callable cb) {
-        return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb));
+        return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb), cb);
     }, nb::arg("callback"));
     if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) {
         field_cls.def("add", [](nb::object self, T n) {
@@ -1839,7 +1849,7 @@ void bind_scalar(nb::module_& m, const char* suffix) {
     auto bound_field_cls = nb::class_<BoundField<T>>(m, bound_field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<T>::get, &validated_set<BoundField<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundField<T>&>(self).observe(cb));
+            return keep_connection(self, nb::cast<BoundField<T>&>(self).observe(cb), cb);
         }, nb::arg("callback"))
         .def("get", &BoundField<T>::get)
         .def("set", &validated_set<BoundField<T>, T>);
@@ -1856,14 +1866,14 @@ void bind_scalar(nb::module_& m, const char* suffix) {
         .def_prop_rw("value", &SharedHandle<T>::get, &validated_set<SharedHandle<T>, T>)
         .def("get", &SharedHandle<T>::get).def("set", &validated_set<SharedHandle<T>, T>);
     shared_cls.def("observe", [](nb::object self, nb::callable cb) {
-        return keep_connection(self, nb::cast<SharedHandle<T>&>(self).observe(cb));
+        return keep_connection(self, nb::cast<SharedHandle<T>&>(self).observe(cb), cb);
     }, nb::arg("callback"));
 
     std::string bound_shared_name = std::string("BoundShared") + suffix;
     nb::class_<BoundShared<T>>(m, bound_shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundShared<T>::get, &validated_set<BoundShared<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundShared<T>&>(self).observe(cb));
+            return keep_connection(self, nb::cast<BoundShared<T>&>(self).observe(cb), cb);
         }, nb::arg("callback"))
         .def("get", &BoundShared<T>::get).def("set", &validated_set<BoundShared<T>, T>);
 
@@ -1871,21 +1881,21 @@ void bind_scalar(nb::module_& m, const char* suffix) {
     nb::class_<ChannelHandle<T>>(m, channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<>()).def("send", &ChannelHandle<T>::send)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<ChannelHandle<T>&>(self).observe(cb));
+            return keep_connection(self, nb::cast<ChannelHandle<T>&>(self).observe(cb), cb);
         }, nb::arg("callback"));
 
     std::string bound_channel_name = std::string("BoundChannel") + suffix;
     nb::class_<BoundChannel<T>>(m, bound_channel_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def("send", &BoundChannel<T>::send)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundChannel<T>&>(self).observe(cb));
+            return keep_connection(self, nb::cast<BoundChannel<T>&>(self).observe(cb), cb);
         }, nb::arg("callback"));
 
     std::string bound_derived_name = std::string("BoundDerived") + suffix;
     nb::class_<BoundDerived<T>>(m, bound_derived_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_ro("value", &BoundDerived<T>::get).def("get", &BoundDerived<T>::get)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundDerived<T>&>(self).observe(cb));
+            return keep_connection(self, nb::cast<BoundDerived<T>&>(self).observe(cb), cb);
         }, nb::arg("callback"));
 }
 
@@ -1899,13 +1909,13 @@ void bind_list(nb::module_& m, const char* suffix) {
         .def("set", &ListHandle<T>::set).def("replace_all", &ListHandle<T>::replace_all)
         .def("size", &ListHandle<T>::size).def("get", &ListHandle<T>::get).def("to_list", &ListHandle<T>::to_list)
         .def("observe_insert", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_insert(cb));
+            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_insert(cb), cb);
         }, nb::arg("callback"))
         .def("observe_remove", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_remove(cb));
+            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_remove(cb), cb);
         }, nb::arg("callback"))
         .def("observe_update", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_update(cb));
+            return keep_connection(self, nb::cast<ListHandle<T>&>(self).observe_update(cb), cb);
         }, nb::arg("callback"));
 
     std::string bound_list_name = std::string("BoundList") + suffix;
@@ -1913,13 +1923,13 @@ void bind_list(nb::module_& m, const char* suffix) {
         .def("push", &BoundList<T>::push).def("erase", &BoundList<T>::erase).def("set", &BoundList<T>::set).def("replace_all", &BoundList<T>::replace_all)
         .def("size", &BoundList<T>::size).def("get", &BoundList<T>::get).def("to_list", &BoundList<T>::to_list)
         .def("observe_insert", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_insert(cb));
+            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_insert(cb), cb);
         }, nb::arg("callback"))
         .def("observe_remove", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_remove(cb));
+            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_remove(cb), cb);
         }, nb::arg("callback"))
         .def("observe_update", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_update(cb));
+            return keep_connection(self, nb::cast<BoundList<T>&>(self).observe_update(cb), cb);
         }, nb::arg("callback"));
 }
 
@@ -2124,7 +2134,7 @@ NB_MODULE(_prism_ext, m) {
     nb::class_<BoundSliderValue>(m, "BoundSlider", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundSliderValue::get, &validated_set<BoundSliderValue, double>)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb));
+            return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb), cb);
         }, nb::arg("callback"))
         .def("get", &BoundSliderValue::get)
         .def("set", &validated_set<BoundSliderValue, double>);
@@ -2132,7 +2142,7 @@ NB_MODULE(_prism_ext, m) {
     nb::class_<BoundCheckboxValue>(m, "BoundCheckbox", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>)
         .def("observe", [](nb::object self, nb::callable cb) {
-            return keep_connection(self, nb::cast<BoundCheckboxValue&>(self).observe(cb));
+            return keep_connection(self, nb::cast<BoundCheckboxValue&>(self).observe(cb), cb);
         }, nb::arg("callback"))
         .def("get", &BoundCheckboxValue::get)
         .def("set", &validated_set<BoundCheckboxValue, bool>);

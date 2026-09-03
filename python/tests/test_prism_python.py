@@ -214,6 +214,60 @@ def test_observed_handles_model_owned_handle_still_works():
     assert seen == [5]
 
 
+def test_self_capturing_observer_model_is_gc_collectable():
+    """Task 1 residual repro: `m.x.observe(lambda v: m)` forms
+    Model -> _prism_fields -> handle -> __dict__["_prism_keepalive"] ->
+    Connection -> (C++) SenderHub::receivers_ -> std::function -> nb::callable
+    -> Model, and the last hop used to be invisible to the cyclic GC (a plain
+    C++ std::function member, not a Python object graph edge), so the Model
+    lived forever once nothing else referenced it. keep_connection() now also
+    appends the callback itself to the handle's own __dict__, which nanobind's
+    dynamic_attr dict traversal exposes to the cyclic GC — closing the last
+    hop in Python-visible terms.
+
+    Builds `m` inside a nested function and returns only a weakref, rather
+    than `del m` at this scope: `lambda v: m` makes `m` a closure (cell)
+    variable here, and `del` on a cell variable clears the cell's contents
+    directly — a CPython-level effect, not exercised via the callback closure
+    at all — which frees `m` immediately regardless of whether the bug is
+    fixed and would make this test pass unconditionally. A normal function
+    return only drops the frame's own reference to the (shared) cell, so the
+    lambda's copy of that cell — the one actually reachable from the
+    Model -> handle -> callback path this test is exercising — is what's left
+    holding `m`."""
+
+    class M(Model):
+        x = field(0)
+
+    def make():
+        m = M()
+        m.x.observe(lambda v: m)
+        return weakref.ref(m)
+
+    w = make()
+    gc.collect()
+    assert w() is None
+
+
+def test_self_capturing_observer_fires_then_stops_after_disconnect():
+    """Task 1: the fix must not change ordinary observe()/disconnect()
+    behavior — a self-capturing observer still fires under prism.headless()
+    and stops firing once disconnected, same as any other observer."""
+
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    seen = []
+    conn = m.x.observe(lambda v: seen.append((v, m.x.value)))
+    with prism.headless(m) as app:
+        m.x.value = 5
+        app.wait_until(lambda: seen == [(5, 5)])
+        conn.disconnect()
+        m.x.value = 6
+        assert seen == [(5, 5)]
+
+
 def test_observe_values():
     class M(Model):
         count = field(0)
@@ -1785,6 +1839,45 @@ def test_run_headless_releases_module_global_model_without_leak_warning():
         "conn = Counter.count.observe(m, lambda v: setattr(m, '_x', v))\n"
         "prism._all_models.discard(m)  # isolate: rely only on run()'s own cleanup\n"
         "prism._run_headless(m, delay_ms=50)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" not in result.stderr, result.stderr
+
+
+def test_module_global_self_capturing_observer_no_leak_at_exit():
+    """Task 1 residual repro: a module-global Model with a self-capturing
+    observer that is never run() at all — the process must still exit
+    cleanly with no nanobind leak warning.
+
+    Discards `m`/`m.x` from `_all_models`/`_observed_handles` right after
+    wiring the observer, same isolation idiom as
+    `test_run_headless_releases_module_global_model_without_leak_warning`
+    above: `_atexit_clear()` also walks those two registries and explicitly
+    disconnects every keepalive it finds there, which already breaks this
+    exact cycle regardless of this task's fix (it doesn't need the cycle to
+    be GC-visible — it just calls `.disconnect()` directly on every live
+    Model/handle it can still find). Discarding both isolates the mechanism
+    actually under test here: with no explicit-cleanup registry to fall back
+    on, only interpreter shutdown's own `gc.collect()` pass stands between
+    this self-capturing observer and a permanent leak — and before this
+    fix, that pass could not find the cycle at all (its last hop lived
+    inside SenderHub::receivers_, a plain C++ std::function member with no
+    Python-visible edge)."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    x = prism.field(0)\n"
+        "m = M()\n"
+        "m.x.observe(lambda v: m)\n"
+        "prism._all_models.discard(m)\n"
+        "prism._prism_ext._observed_handles.discard(m.x)\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", code],

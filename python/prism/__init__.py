@@ -187,31 +187,54 @@ from . import _prism_ext
 # forms no GC-invisible cycle: observed handles (Model-owned or standalone) are plain refcounted
 # and self-collect once unreferenced; `_all_models`/`_observed_handles` plus the idempotent
 # `_disconnect_keepalive` below just cover whatever handles are still alive at interpreter exit.
+# The *callback itself* (not just the handle) is GC-collectable the same way — see
+# _disconnect_keepalive's `_prism_callbacks` handling below and WeakCallback/keep_connection
+# in prism_ext.cpp for the observer-captures-its-own-Model case this doesn't cover.
 _all_models: _wr_mod.WeakSet = _wr_mod.WeakSet()
 
 
-def _disconnect_keepalive(handle):
-    lst = None
+def _dict_or_attr(handle, key):
+    """Fetch a handle's own list attr from its __dict__ (nanobind dynamic_attr
+    handles support plain dict access), falling back to getattr if that
+    itself fails for some reason."""
     try:
-        lst = handle.__dict__.get("_prism_keepalive")  # type: ignore[attr-defined]
+        val = handle.__dict__.get(key)  # type: ignore[attr-defined]
     except (AttributeError, TypeError):
-        lst = None
-    if lst is None:
+        val = None
+    if val is None:
         try:
-            lst = getattr(handle, "_prism_keepalive", None)
+            val = getattr(handle, key, None)
         except Exception:
-            lst = None
-    if not lst:
-        return
-    for conn in list(lst):
+            val = None
+    return val
+
+
+def _disconnect_keepalive(handle):
+    lst = _dict_or_attr(handle, "_prism_keepalive")
+    if lst:
+        for conn in list(lst):
+            try:
+                conn.disconnect()
+            except Exception:
+                pass
         try:
-            conn.disconnect()
+            lst.clear()
         except Exception:
             pass
-    try:
-        lst.clear()
-    except Exception:
-        pass
+
+    # _prism_callbacks mirrors _prism_keepalive index-for-index (both appended
+    # together by keep_connection() in prism_ext.cpp) — disconnecting the
+    # Connections above already stops them firing; clearing this list drops
+    # the handle's own strong ref to each callback, which is now the
+    # callback's *only* strong ref (see WeakCallback/keep_connection in
+    # prism_ext.cpp) — this is what lets `del`ing everything else actually
+    # free it instead of leaving it pinned by the receivers_ entry.
+    callbacks = _dict_or_attr(handle, "_prism_callbacks")
+    if callbacks:
+        try:
+            callbacks.clear()
+        except Exception:
+            pass
 
 
 def _disconnect_model_observers(model):
@@ -220,15 +243,24 @@ def _disconnect_model_observers(model):
 
     This is the half of ``_clear_model_observers`` that's safe to run while
     *model* is still in active use (e.g. from ``run()``'s ``finally``): it
-    breaks the Model -> handle -> Connection -> ... -> Model reference cycle
-    an observer closure that captures the model creates (invisible to
-    nanobind's leak check, same class of bug as the pre-Task-14 observe()
-    self-cycle), but keeps each handle object alive and cached so
-    ``m.field.value`` still reads/writes the *same* underlying slot after
-    the app has closed. Clearing ``_prism_fields`` here instead would make
-    the next ``m.field`` re-``_allocate()`` a brand-new slot at its
-    descriptor default — a silent reset back to the constructor's default,
-    not just "stale data" — which is worse than leaving the cache in place.
+    breaks the Model -> handle -> callback -> Model reference cycle an
+    observer closure that captures the model creates, but keeps each handle
+    object alive and cached so ``m.field.value`` still reads/writes the
+    *same* underlying slot after the app has closed. Clearing
+    ``_prism_fields`` here instead would make the next ``m.field``
+    re-``_allocate()`` a brand-new slot at its descriptor default — a silent
+    reset back to the constructor's default, not just "stale data" — which
+    is worse than leaving the cache in place.
+
+    That cycle is now GC-visible on its own (prism_ext.cpp's WeakCallback +
+    keep_connection make the handle's own ``_prism_callbacks`` list the
+    callback's only strong reference, so a self-capturing observer with no
+    other referrers is reclaimed by a plain ``gc.collect()`` without any
+    help from here). This function still runs explicitly, rather than
+    leaving it to the GC: ``run()``'s ``finally`` needs the observer stopped
+    *immediately* — the app loop has just closed, and nothing should keep
+    firing into a Model no one has read since — not whenever some future
+    ``gc.collect()`` happens to run.
     """
     d = getattr(model, "__dict__", {})
     fields = d.get("_prism_fields", {})
