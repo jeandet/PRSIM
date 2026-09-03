@@ -677,10 +677,6 @@ def derived(fn=None, *deps, type_hint=None):
     ``type_hint`` accepts either a sample value (``type_hint=0.0``) or a
     bare type (``type_hint=float``) — both select the same ``float`` kind.
     """
-    if fn is not None and callable(fn) and not deps and type_hint is None:
-        # called as @derived without args -> fn is the function, no deps yet (must be supplied elsewhere)
-        # treat as decorator waiting for deps: return descriptor with fn and no deps
-        return _DerivedDescriptor(fn)
     if callable(fn):
         return _DerivedDescriptor(fn, *deps, type_hint=type_hint)
     # called as derived('a','b') -> fn is first dep string, need decorator

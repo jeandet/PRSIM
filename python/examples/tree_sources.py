@@ -21,7 +21,6 @@ class DictTreeSource(prism.TreeSource):
         self._data = data
         self._roots = roots
         # stable id = hash of string key
-        self._id_of = {k: hash(k) for k in data}
         self._key_of = {hash(k): k for k in data}
 
     # TreeStorage protocol — these run on logic thread with GIL held (C++ calls with GIL)
