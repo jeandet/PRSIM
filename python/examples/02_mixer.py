@@ -14,7 +14,8 @@ import prism
 
 
 class Mixer(prism.Model):
-    # sentinel widgets: type inside Field determines rendering
+    # slider()/checkbox() are plain float/bool field() aliases today — the
+    # min/max/label they accept aren't wired to a ranged/labeled widget yet.
     volume_slider = prism.slider(0.75, min=0.0, max=1.0)
     mute = prism.checkbox(False, label="Mute")
     count = prism.field(42)

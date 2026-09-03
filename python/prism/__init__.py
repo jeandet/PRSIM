@@ -298,13 +298,8 @@ def _kind_of(value, who="field"):
 
 
 class _FieldDescriptor:
-    def __init__(self, default, kind=None, meta=None, validator=None):
+    def __init__(self, default, validator=None):
         self.default = default
-        # simplify: kind/meta are written by slider()/checkbox() but nothing reads
-        # them yet — no widget renderer branches on them. Upgrade path: a real
-        # slider/checkbox Widget<T> that consults these when one is wired up.
-        self.kind = kind
-        self.meta = meta or {}
         self.validator = validator
         self.name = None
 
@@ -357,27 +352,18 @@ def field(default, validator=None):
 def slider(default, min=0.0, max=1.0, validator=None):
     """Value may be set from any thread (posted to the logic thread).
 
-    Float field (slider rendering not wired yet).
+    Float field; a ranged slider widget is not implemented yet. ``min``/``max``
+    are accepted for API stability but are currently unused.
     """
-    return _FieldDescriptor(
-        float(default),
-        kind="slider",
-        meta={"min": float(min), "max": float(max)},
-        validator=validator,
-    )
+    return _FieldDescriptor(float(default), validator=validator)
 
 
 def checkbox(default, label=None, validator=None):
     """Value may be set from any thread (posted to the logic thread).
 
-    Bool field (checkbox rendering not wired yet).
+    Bool field. ``label`` is accepted for API stability but is currently unused.
     """
-    return _FieldDescriptor(
-        bool(default),
-        kind="checkbox",
-        meta={"label": label} if label is not None else {},
-        validator=validator,
-    )
+    return _FieldDescriptor(bool(default), validator=validator)
 
 
 class _SharedDescriptor:

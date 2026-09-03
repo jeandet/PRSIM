@@ -506,6 +506,22 @@ def test_slider_checkbox_descriptors():
     assert m.volume.value == 0.9
 
 
+def test_slider_checkbox_are_plain_field_aliases():
+    """slider()/checkbox() are thin aliases over field() — no ranged/labeled
+    widget is wired up yet, so the descriptor must not carry kind/meta."""
+
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+        mute = prism.checkbox(False, label="Mute")
+
+    volume_descriptor = Mixer.__dict__["volume"]
+    mute_descriptor = Mixer.__dict__["mute"]
+    assert not hasattr(volume_descriptor, "kind")
+    assert not hasattr(volume_descriptor, "meta")
+    assert not hasattr(mute_descriptor, "kind")
+    assert not hasattr(mute_descriptor, "meta")
+
+
 def test_headless_app_concurrent_post():
     """App-based storm: run headless app and mutate from workers via queue (not direct fallback)."""
     import time
