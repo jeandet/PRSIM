@@ -63,7 +63,7 @@ inline void tabs_record(DrawList& dl, WidgetNode& node,
     }
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{-1}, Y{-1}, total_w + Width{2.f}, tab_h + Height{2.f}),
+        dl.rect_outline(make_rect(X{1}, Y{1}, total_w - Width{2.f}, tab_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 }
 

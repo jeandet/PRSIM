@@ -54,7 +54,7 @@ void text_field_record(DrawList& dl, const Field<Sentinel>& field, const WidgetN
     dl.filled_rect(make_rect(X{0}, Y{0}, w, tf_widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{-1}, Y{-1}, w + Width{2.f}, tf_widget_h + Height{2.f}),
+        dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, tf_widget_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 
     Width text_area_w = w - tf_padding_x * 2.f;
@@ -244,7 +244,7 @@ void text_area_record(DrawList& dl, const Field<Sentinel>& field, const WidgetNo
     dl.filled_rect(make_rect(X{0}, Y{0}, w, widget_h), bg);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{-1}, Y{-1}, w + Width{2.f}, widget_h + Height{2.f}),
+        dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 
     dl.clip_push(make_point(X{ta_padding_x.raw()}, Y{ta_padding_y.raw()}), Size{text_area_w, text_area_h});

@@ -403,7 +403,7 @@ struct Widget<Checkbox> {
             dl.text(cb.label, detail::make_point(X{32}, Y{7}), 14, t.text);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, w + Width{2.f}, widget_h + Height{2.f}),
+            dl.rect_outline(detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
                             t.focus_ring, 2.0f);
     }
 
@@ -441,7 +441,7 @@ struct Widget<bool> {
         draw_check_box(dl, X{8}, box_y, field.get(), vs, t);
 
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, w + Width{2.f}, widget_h + Height{2.f}),
+            dl.rect_outline(detail::make_rect(X{1}, Y{1}, w - Width{2.f}, widget_h - Height{2.f}),
                             t.focus_ring, 2.0f);
     }
 
@@ -522,7 +522,7 @@ struct Widget<Slider<T, O>> {
             Y thumb_y{(1.f - r) * (tl - thumb_len)};
             dl.filled_rect(detail::make_rect(X{0}, thumb_y, Width{widget_extent}, Height{thumb_len}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, Width{widget_extent + 2}, Height{tl + 2}),
+                dl.rect_outline(detail::make_rect(X{1}, Y{1}, Width{widget_extent - 2}, Height{tl - 2}),
                                 t.focus_ring, 2.0f);
         } else {
             Y track_y{(widget_extent - track_thick) / 2.f};
@@ -530,7 +530,7 @@ struct Widget<Slider<T, O>> {
             X thumb_x{r * (tl - thumb_len)};
             dl.filled_rect(detail::make_rect(thumb_x, Y{0}, Width{thumb_len}, Height{widget_extent}), thumb_color);
             if (vs.focused)
-                dl.rect_outline(detail::make_rect(X{-1}, Y{-1}, Width{tl + 2}, Height{widget_extent + 2}),
+                dl.rect_outline(detail::make_rect(X{1}, Y{1}, Width{tl - 2}, Height{widget_extent - 2}),
                                 t.focus_ring, 2.0f);
         }
     }
@@ -582,7 +582,7 @@ struct Widget<Button> {
         dl.rect_outline(detail::make_rect(X{0}, Y{0}, w, Height{32}), t.primary_outline, 1.0f);
         dl.text(field.get().text, detail::make_point(X{8}, Y{7}), 14, t.text_on_primary);
         if (vs.focused)
-            dl.rect_outline(detail::make_rect(X{-2}, Y{-2}, w + Width{4.f}, Height{36}), t.focus_ring, 2.0f);
+            dl.rect_outline(detail::make_rect(X{1}, Y{1}, w - Width{2.f}, Height{30}), t.focus_ring, 2.0f);
     }
 
     static void handle_input(Field<Button>& field, const InputEvent& ev, WidgetNode&) {

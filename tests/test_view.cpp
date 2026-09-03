@@ -552,3 +552,85 @@ TEST_CASE("canvas-only model fills entire viewport") {
     CHECK(r.extent.w.raw() == doctest::Approx(800));
     CHECK(r.extent.h.raw() == doctest::Approx(600));
 }
+
+// ── Focus-ring size stability ────────────────────────────────────────────────
+// A focused delegate paints a focus ring; that decoration must not feed back
+// into layout measurement (Leaf hints come from draws.bounding_box()). When it
+// does, a focused widget in a Row grows by the ring's inset on every publish
+// (its width is re-recorded from the freshly-grown allocation each frame), and
+// a focused widget in a Column sits permanently 2px taller, shifting siblings
+// on every focus toggle.
+
+struct FocusRowModel {
+    prism::Field<prism::Button> a{{"A"}};
+    prism::Field<prism::Button> b{{"B"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.hstack([&] {
+            vb.widget(a);
+            vb.widget(b);
+        });
+    }
+};
+
+TEST_CASE("focused widget in a row keeps a stable size across publishes") {
+    FocusRowModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    tree.clear_dirty();
+
+    auto focus = tree.focus_order();
+    REQUIRE(focus.size() == 2);
+    tree.set_focused(focus[0]); // marks the widget dirty, like a click would
+
+    float prev_b_x = -1.f;
+    for (uint64_t v = 2; v < 8; ++v) {
+        auto snap = tree.build_snapshot(800, 600, v);
+        tree.clear_dirty();
+        bool found = false;
+        for (auto& [id, r] : snap->geometry) {
+            if (id == focus[1]) {
+                found = true;
+                if (prev_b_x >= 0.f)
+                    CHECK(r.origin.x.raw() == doctest::Approx(prev_b_x));
+                prev_b_x = r.origin.x.raw();
+            }
+        }
+        REQUIRE(found);
+        // Simulate unrelated activity (e.g. hover transitions elsewhere)
+        // pumping another publish, as model_app's event dispatch does.
+        tree.mark_dirty_by_id(focus[1]);
+    }
+}
+
+struct FocusColumnModel {
+    prism::Field<prism::Button> a{{"A"}};
+    prism::Field<prism::Button> b{{"B"}};
+
+    void view(prism::WidgetTree::ViewBuilder& vb) {
+        vb.vstack(a, b);
+    }
+};
+
+TEST_CASE("focusing a widget in a column does not shift its siblings") {
+    FocusColumnModel model;
+    prism::WidgetTree tree(model);
+    (void)tree.build_snapshot(800, 600, 1);
+    tree.clear_dirty();
+
+    auto focus = tree.focus_order();
+    REQUIRE(focus.size() == 2);
+
+    auto b_y = [&](uint64_t v) {
+        auto snap = tree.build_snapshot(800, 600, v);
+        tree.clear_dirty();
+        for (auto& [id, r] : snap->geometry)
+            if (id == focus[1]) return r.origin.y.raw();
+        return -1.f;
+    };
+
+    float unfocused_y = b_y(2);
+    tree.set_focused(focus[0]);
+    float focused_y = b_y(3);
+    CHECK(focused_y == doctest::Approx(unfocused_y));
+}

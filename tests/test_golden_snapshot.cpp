@@ -141,14 +141,14 @@ TEST_CASE("golden: clicking the checkbox flips its rendered state") {
     FilledRect rect=(0.0,0.0,300.0,30.0) color=#2d2d37ff
     Text "0" at=(4.0,4.0) size=14.0 color=#dcdcdcff
     ClipPop
-[widget 3] rect=(-1.0,29.0,302.0,32.0)
-    ClipPush rect=(0.0,30.0,300.0,32.0)
+[widget 3] rect=(0.0,30.0,300.0,30.0)
+    ClipPush rect=(0.0,30.0,300.0,30.0)
     FilledRect rect=(0.0,30.0,300.0,30.0) color=#2d2d37ff
     FilledRect rect=(8.0,37.0,16.0,16.0) color=#0078b4ff
     Text "✓" at=(10.0,38.0) size=13.0 color=#f0f0f0ff
     RectOutline rect=(8.0,37.0,16.0,16.0) color=#5a5a69ff thickness=1.5
     Text "agree" at=(32.0,37.0) size=14.0 color=#dcdcdcff
-    RectOutline rect=(-1.0,29.0,302.0,32.0) color=#50a0f0ff thickness=2.0
+    RectOutline rect=(1.0,31.0,298.0,28.0) color=#50a0f0ff thickness=2.0
     ClipPop
 )GOLDEN");
 }

@@ -47,7 +47,7 @@ inline void dropdown_record(DrawList& dl, WidgetNode& node,
     dl.text("\xe2\x96\xbe", make_point(X{w.raw() - 20.f}, Y{7}), dd_font_size, t.text_muted);
 
     if (vs.focused)
-        dl.rect_outline(make_rect(X{-1}, Y{-1}, w + Width{2.f}, dd_widget_h + Height{2.f}),
+        dl.rect_outline(make_rect(X{1}, Y{1}, w - Width{2.f}, dd_widget_h - Height{2.f}),
                         t.focus_ring, 2.0f);
 
     node.overlay_draws.clear();
