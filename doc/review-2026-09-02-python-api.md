@@ -159,3 +159,9 @@ standalone handle state behind shared_ptr (self-drop safe) · no Python calls af
 Bugs found along the way (all fixed): `SlotDerived` member-destruction-order UAF; `PyModel::drain` holding `slots_mutex` across Python callbacks (self-deadlock with `tp_traverse`); `derived()` rejecting slider/checkbox deps; `field.add()` queuing an `nb::object`; run guards leaking when `model_app()` throws; `headless()` swallowing the runner's exception; `_request_quit` lost-wakeup.
 
 Still open (minor): a user observer strongly capturing its model is a GC-invisible cycle until `run()` returns or atexit (documented in `__init__.py`); `Worker` does not participate in `transaction()`; slider min/max/label fixed at construction, orientation horizontal only; `PlotHandle` del-during-flight has no dedicated repro; `list_field` has no atomic counter analogue to `field.add()`.
+
+## Status — 2026-09-03 evening, residuals series fd2dec8..886a938 (5 commits, 74/74, ASan lane green)
+
+Closed: observer callbacks are GC-visible (hubs hold a weakref; the handle owns the callback — a Model with a self-capturing observer is now collectable, and `conn = h.observe(cb); del h` leaves `conn` inert, documented in `kObserveDoc` and the README) · `slider(orientation=)` + `set_range()` (runtime min/max; `.value =` and `set_range` serialize as read-modify-write closures on the logic thread) · PlotHandle del-in-flight regression test · validator `__repr__`-raises guard · list class-level observe deprecation · `wait_until`/quit docs · worker+transaction idiom and list-op atomicity documented · one guarded Python-ref release helper shared by `PyHolder`, `~SlotDerived`, `~SlotTree`, `~WeakCallback`.
+
+Remaining (minor, untested rather than broken): no `derived()`+vertical-slider test; the `WeakCallback` GIL-guard reproducer is a behavioral guard (no pre-fix crash could be forced on this allocator — the ASan lane is the discriminator).
