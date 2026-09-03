@@ -278,22 +278,24 @@ inline void txn_flush_batch() {
 }
 
 template <typename T>
-inline bool txn_buffer_or_dispatch(Field<T>* field, const T& v) {
+inline bool txn_buffer_or_dispatch(std::shared_ptr<void> keep, Field<T>* field, const T& v) {
     if (!txn_active()) return false;
     T copy = v;
-    txn_queue.emplace_back([field, copy = std::move(copy)]() mutable {
+    txn_queue.emplace_back([keep, field, copy = std::move(copy)]() mutable {
         field->set(std::move(copy));
     });
     return true;
 }
 
-// Helper to post or direct-set a Field.
+// Helper to post or direct-set a Field. `keep` is the owning shared_ptr (standalone
+// handle state, or a Bound* handle's SlotBase owner) that the posted closure must
+// hold so `field` cannot be freed before the logic thread runs it.
 template <typename T>
-void field_set_dispatch(Field<T>* field, T v) {
-    if (txn_buffer_or_dispatch(field, v)) return;
+void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v) {
+    if (txn_buffer_or_dispatch(keep, field, v)) return;
     if (!prism::app::detail_is_logic_thread) {
         T copy = v;
-        auto res = try_post_via_handle_impl([field, copy = std::move(copy)]() mutable {
+        auto res = try_post_via_handle_impl([keep, field, copy = std::move(copy)]() mutable {
             field->set(std::move(copy));
         }, false);
         if (res == PostResult::Posted) return;
@@ -340,7 +342,7 @@ struct FieldHandle {
         Field<T>* p = field.get();
         return dispatch_sync_read<T>([p](){ return p->get(); });
     }
-    void set(T v) { field_set_dispatch(field.get(), std::move(v)); }
+    void set(T v) { field_set_dispatch(field, field.get(), std::move(v)); }
     Connection observe(nb::callable cb) {
         auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
@@ -434,9 +436,9 @@ struct SlotList : SlotBase {
 };
 
 // Forward declarations for dispatch helpers used by Plot/Tree handles
-inline void list_op_dispatch(std::function<void()> fn);
+inline void list_op_dispatch(std::shared_ptr<void> keep, std::function<void()> fn);
 template <typename T> T dispatch_sync_read(std::function<T()> reader);
-template <typename T> void field_set_dispatch(Field<T>* field, T v);
+template <typename T> void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v);
 
 // replace_series() shared parsing/dispatch — one series (xs, ys, color) worth of C++ data,
 // converted from Python objects on the calling thread before crossing to the logic thread.
@@ -488,7 +490,7 @@ inline void reject_stray_kwargs_in_list_form(const nb::object& ys, const nb::obj
         throw nb::type_error("replace_series(): color/fill are not valid with the list form — set color per series in the (xs, ys, color) tuple");
 }
 
-inline void replace_series_dispatch(prism::plot::PlotModel* p, std::vector<ReplaceSeriesSpec> specs, float thickness, bool fill) {
+inline void replace_series_dispatch(std::shared_ptr<void> keep, prism::plot::PlotModel* p, std::vector<ReplaceSeriesSpec> specs, float thickness, bool fill) {
     auto fn = [p, specs = std::move(specs), thickness, fill]() mutable {
         p->clear_series();
         for (auto& s : specs) {
@@ -506,7 +508,7 @@ inline void replace_series_dispatch(prism::plot::PlotModel* p, std::vector<Repla
         }
         p->notify();
     };
-    list_op_dispatch(std::move(fn));
+    list_op_dispatch(std::move(keep), std::move(fn));
 }
 
 // Plot support — Slot only (Bound* defined after list_op_dispatch)
@@ -519,14 +521,17 @@ struct SlotPlot : SlotBase {
             .depends_on(plot.revision);
     }
 };
+// Standalone Plot handle — state lives behind a shared_ptr (like FieldHandle/ListHandle
+// above) so posted mutation closures can capture it as `keep` and outlive a `del` that
+// races the logic thread draining the post.
 struct PlotHandle {
-    prism::plot::PlotModel plot;
+    std::shared_ptr<prism::plot::PlotModel> plot = std::make_shared<prism::plot::PlotModel>();
     void add_series(nb::list xs, nb::list ys, std::string color_str = "", float thickness = 2.f, bool fill = false) {
         std::vector<double> vx, vy;
         vx.reserve(nb::len(xs)); vy.reserve(nb::len(ys));
         for (auto h : xs) vx.push_back(nb::cast<double>(h));
         for (auto h : ys) vy.push_back(nb::cast<double>(h));
-        auto* p = &plot;
+        auto* p = plot.get();
         auto fn = [p, vx = std::move(vx), vy = std::move(vy), color_str, thickness, fill]() mutable {
             prism::plot::XYData data{std::move(vx), std::move(vy)};
             prism::plot::SeriesStyle style; style.thickness=thickness; style.fill=fill;
@@ -538,33 +543,33 @@ struct PlotHandle {
             }
             p->add_series(std::move(data), style);
         };
-        list_op_dispatch(std::move(fn));
+        list_op_dispatch(plot, std::move(fn));
     }
-    void clear_series(){ auto* p=&plot; list_op_dispatch([p](){ p->clear_series(); }); }
-    void notify(){ auto* p=&plot; list_op_dispatch([p](){ p->notify(); }); }
+    void clear_series(){ auto* p=plot.get(); list_op_dispatch(plot, [p](){ p->clear_series(); }); }
+    void notify(){ auto* p=plot.get(); list_op_dispatch(plot, [p](){ p->notify(); }); }
     // Single-post clear+add(+add...)+notify — see parse_replace_series_args for the two call forms.
     void replace_series(nb::object xs_or_series, nb::object ys = nb::none(), nb::object color = nb::none(),
                          float thickness = 2.f, bool fill = false) {
         reject_stray_kwargs_in_list_form(ys, color, fill);
-        replace_series_dispatch(&plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
+        replace_series_dispatch(plot, plot.get(), parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
     }
     void set_labels(nb::object x = nb::none(), nb::object y = nb::none()) {
-        auto* p = &plot;
+        auto* p = plot.get();
         bool has_x = !x.is_none(), has_y = !y.is_none();
         std::string xs = has_x ? nb::cast<std::string>(x) : std::string();
         std::string ys = has_y ? nb::cast<std::string>(y) : std::string();
-        list_op_dispatch([p, has_x, has_y, xs, ys](){
+        list_op_dispatch(plot, [p, has_x, has_y, xs, ys](){
             if (has_x) p->x_label.set(xs);
             if (has_y) p->y_label.set(ys);
         });
     }
-    void set_x_label(std::string s){ field_set_dispatch(&plot.x_label, std::move(s)); }
-    void set_y_label(std::string s){ field_set_dispatch(&plot.y_label, std::move(s)); }
-    std::string get_x_label() const { auto* p=&plot; return dispatch_sync_read<std::string>([p](){ return p->x_label.get(); }); }
-    std::string get_y_label() const { auto* p=&plot; return dispatch_sync_read<std::string>([p](){ return p->y_label.get(); }); }
-    size_t series_count() const { auto* p=&plot; return dispatch_sync_read<size_t>([p](){ return p->series_count(); }); }
-    size_t series_len(size_t i) const { auto* p=&plot; return dispatch_sync_read<size_t>([p,i](){ return p->series_len(i); }); }
-    void reset_view(){ auto* p=&plot; list_op_dispatch([p](){ p->reset_view(); }); }
+    void set_x_label(std::string s){ field_set_dispatch(plot, &plot->x_label, std::move(s)); }
+    void set_y_label(std::string s){ field_set_dispatch(plot, &plot->y_label, std::move(s)); }
+    std::string get_x_label() const { auto* p=plot.get(); return dispatch_sync_read<std::string>([p](){ return p->x_label.get(); }); }
+    std::string get_y_label() const { auto* p=plot.get(); return dispatch_sync_read<std::string>([p](){ return p->y_label.get(); }); }
+    size_t series_count() const { auto* p=plot.get(); return dispatch_sync_read<size_t>([p](){ return p->series_count(); }); }
+    size_t series_len(size_t i) const { auto* p=plot.get(); return dispatch_sync_read<size_t>([p,i](){ return p->series_len(i); }); }
+    void reset_view(){ auto* p=plot.get(); list_op_dispatch(plot, [p](){ p->reset_view(); }); }
 };
 
 // Tree support — Python-backed TreeSource
@@ -676,7 +681,7 @@ static nb::list tree_rows_to_pylist(const std::vector<prism::ui::TreeRow>& rows)
 struct BoundTree {
     std::shared_ptr<SlotBase> owner;
     prism::ui::TreeController* ctrl = nullptr;
-    void refresh(){ if(ctrl){ auto* p=ctrl; list_op_dispatch([p](){ p->refresh(); }); } }
+    void refresh(){ if(ctrl){ auto* p=ctrl; list_op_dispatch(owner, [p](){ p->refresh(); }); } }
     nb::list rows(){
         if(!ctrl) return nb::list();
         auto* p = ctrl;
@@ -691,11 +696,13 @@ struct TreeHandle {
 };
 
 // --- List dispatch helper (mirrors field_set_dispatch but for arbitrary op) ---
-inline void list_op_dispatch(std::function<void()> fn) {
-    if (txn_active()) { txn_queue.emplace_back(std::move(fn)); return; }
+// `keep` is the owning shared_ptr (standalone handle state, or a Bound* handle's
+// SlotBase owner) that any posted/buffered copy of `fn` carries along, so the object
+// `fn` closes over cannot be freed before the logic thread runs it.
+inline void list_op_dispatch(std::shared_ptr<void> keep, std::function<void()> fn) {
+    if (txn_active()) { txn_queue.emplace_back([keep, fn]() mutable { fn(); }); return; }
     if (!prism::app::detail_is_logic_thread) {
-        auto fn_copy = fn;
-        auto res = try_post_via_handle_impl([fn_copy = std::move(fn_copy)]() mutable { fn_copy(); }, false);
+        auto res = try_post_via_handle_impl([keep, fn]() mutable { fn(); }, false);
         if (res == PostResult::Posted) return;
         if (res == PostResult::Closed) return;
     }
@@ -716,7 +723,7 @@ struct BoundField {
         return dispatch_sync_read<T>([p](){ return p->get(); });
     }
     void set(T v) {
-        if (field) field_set_dispatch(field, std::move(v));
+        if (field) field_set_dispatch(owner, field, std::move(v));
     }
     Connection observe(nb::callable cb) {
         if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
@@ -932,21 +939,21 @@ struct ListHandle {
     ListHandle& operator=(ListHandle&&) = delete;
     void push(T v) {
         List<T>* p = list.get();
-        list_op_dispatch([p, v = std::move(v)]() mutable { p->push_back(std::move(v)); });
+        list_op_dispatch(list, [p, v = std::move(v)]() mutable { p->push_back(std::move(v)); });
     }
     void erase(size_t i) {
         List<T>* p = list.get();
-        list_op_dispatch([p, i](){ if (i < p->size()) p->erase(i); });
+        list_op_dispatch(list, [p, i](){ if (i < p->size()) p->erase(i); });
     }
     void set(size_t i, T v) {
         List<T>* p = list.get();
-        list_op_dispatch([p, i, v = std::move(v)]() mutable { if (i < p->size()) p->set(i, std::move(v)); });
+        list_op_dispatch(list, [p, i, v = std::move(v)]() mutable { if (i < p->size()) p->set(i, std::move(v)); });
     }
     void replace_all(nb::list py) {
         std::vector<T> vec; vec.reserve(nb::len(py));
         for (auto h : py) vec.push_back(nb::cast<T>(h));
         List<T>* p = list.get();
-        list_op_dispatch([p, vec = std::move(vec)]() mutable { p->replace_all(vec); });
+        list_op_dispatch(list, [p, vec = std::move(vec)]() mutable { p->replace_all(vec); });
     }
     size_t size() const {
         List<T>* p = list.get();
@@ -991,10 +998,10 @@ template <typename T>
 struct BoundList {
     std::shared_ptr<SlotBase> owner;
     List<T>* list = nullptr;
-    void push(T v) { if(list) { auto* p=list; list_op_dispatch([p, v=std::move(v)]() mutable { p->push_back(std::move(v)); }); } }
-    void erase(size_t i) { if(list) { auto* p=list; list_op_dispatch([p,i](){ if(i<p->size()) p->erase(i); }); } }
-    void set(size_t i, T v) { if(list) { auto* p=list; list_op_dispatch([p,i,v=std::move(v)]() mutable { if(i<p->size()) p->set(i,std::move(v)); }); } }
-    void replace_all(nb::list py) { if(!list) return; std::vector<T> vec; vec.reserve(nb::len(py)); for(auto h:py) vec.push_back(nb::cast<T>(h)); auto* p=list; list_op_dispatch([p, vec=std::move(vec)]() mutable { p->replace_all(vec); }); }
+    void push(T v) { if(list) { auto* p=list; list_op_dispatch(owner, [p, v=std::move(v)]() mutable { p->push_back(std::move(v)); }); } }
+    void erase(size_t i) { if(list) { auto* p=list; list_op_dispatch(owner, [p,i](){ if(i<p->size()) p->erase(i); }); } }
+    void set(size_t i, T v) { if(list) { auto* p=list; list_op_dispatch(owner, [p,i,v=std::move(v)]() mutable { if(i<p->size()) p->set(i,std::move(v)); }); } }
+    void replace_all(nb::list py) { if(!list) return; std::vector<T> vec; vec.reserve(nb::len(py)); for(auto h:py) vec.push_back(nb::cast<T>(h)); auto* p=list; list_op_dispatch(owner, [p, vec=std::move(vec)]() mutable { p->replace_all(vec); }); }
     size_t size() const {
         if (!list) return 0;
         List<T>* p = list;
@@ -1050,24 +1057,24 @@ struct BoundPlot {
             }
             p->add_series(std::move(data), style);
         };
-        list_op_dispatch(std::move(fn));
+        list_op_dispatch(owner, std::move(fn));
     }
     void clear_series() {
         if (!plot) return;
         auto* p = plot;
-        list_op_dispatch([p](){ p->clear_series(); });
+        list_op_dispatch(owner, [p](){ p->clear_series(); });
     }
     void notify() {
         if (!plot) return;
         auto* p = plot;
-        list_op_dispatch([p](){ p->notify(); });
+        list_op_dispatch(owner, [p](){ p->notify(); });
     }
     // Single-post clear+add(+add...)+notify — see parse_replace_series_args for the two call forms.
     void replace_series(nb::object xs_or_series, nb::object ys = nb::none(), nb::object color = nb::none(),
                          float thickness = 2.f, bool fill = false) {
         if (!plot) return;
         reject_stray_kwargs_in_list_form(ys, color, fill);
-        replace_series_dispatch(plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
+        replace_series_dispatch(owner, plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
     }
     void set_labels(nb::object x = nb::none(), nb::object y = nb::none()) {
         if (!plot) return;
@@ -1075,18 +1082,18 @@ struct BoundPlot {
         bool has_x = !x.is_none(), has_y = !y.is_none();
         std::string xs = has_x ? nb::cast<std::string>(x) : std::string();
         std::string ys = has_y ? nb::cast<std::string>(y) : std::string();
-        list_op_dispatch([p, has_x, has_y, xs, ys](){
+        list_op_dispatch(owner, [p, has_x, has_y, xs, ys](){
             if (has_x) p->x_label.set(xs);
             if (has_y) p->y_label.set(ys);
         });
     }
-    void set_x_label(std::string s) { if(plot) field_set_dispatch(&plot->x_label, std::move(s)); }
-    void set_y_label(std::string s) { if(plot) field_set_dispatch(&plot->y_label, std::move(s)); }
+    void set_x_label(std::string s) { if(plot) field_set_dispatch(owner, &plot->x_label, std::move(s)); }
+    void set_y_label(std::string s) { if(plot) field_set_dispatch(owner, &plot->y_label, std::move(s)); }
     std::string get_x_label() const { if(!plot) return ""; return dispatch_sync_read<std::string>([p=plot](){ return p->x_label.get(); }); }
     std::string get_y_label() const { if(!plot) return ""; return dispatch_sync_read<std::string>([p=plot](){ return p->y_label.get(); }); }
     size_t series_count() const { if(!plot) return 0; return dispatch_sync_read<size_t>([p=plot](){ return p->series_count(); }); }
     size_t series_len(size_t i) const { if(!plot) return 0; return dispatch_sync_read<size_t>([p=plot,i](){ return p->series_len(i); }); }
-    void reset_view() { if(plot){ auto* p=plot; list_op_dispatch([p](){ p->reset_view(); }); } }
+    void reset_view() { if(plot){ auto* p=plot; list_op_dispatch(owner, [p](){ p->reset_view(); }); } }
 };
 
 // helper to attach a single dep to a derived slot
@@ -1751,7 +1758,7 @@ NB_MODULE(_prism_ext, m) {
         .def("rows", &BoundTree::rows);
     nb::class_<TreeHandle>(m, "TreeHandle", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def(nb::init<nb::object>(), nb::arg("source"))
-        .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch([p](){ p->refresh(); }); })
+        .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch(h.ctrl, [p](){ p->refresh(); }); })
         .def("rows", [](TreeHandle& h){
             auto* p = h.ctrl.get();
             auto snapshot = dispatch_sync_read<std::vector<prism::ui::TreeRow>>([p](){ return snapshot_tree_rows(p); });

@@ -905,6 +905,77 @@ def test_standalone_state_alive_count_returns_to_baseline_after_del():
     assert result.returncode == 0
 
 
+def test_posted_mutations_keep_target_alive_across_del():
+    """Task 15 repro: field_set_dispatch()/list_op_dispatch() used to post a closure
+    to the logic thread that captured only a raw Field<T>*/List<T>* — never an owning
+    reference. If the calling Python thread dropped the handle's last reference (a
+    standalone FieldInt/ListInt, or a Model whose BoundField's owning Slot dies with
+    the Model) between the fire-and-forget `.set()`/`.push()`/`.value =` call
+    returning and the logic thread actually draining that closure, the target was
+    already freed — a use-after-free only ASan reliably catches (see
+    task-15-report.md for the ASan report from a deliberate revert to a raw
+    pointer). The fix makes every posted closure also capture the owning
+    shared_ptr (a standalone handle's state, or a Bound* handle's SlotBase owner)
+    so the target outlives the closure.
+
+    Needs a real running headless app so the calls take the async post path, not
+    the pre-run synchronous direct-write path. Uses one persistent background
+    thread (not 1500 short-lived OS threads) to execute the mutations concurrently
+    with the main thread creating/dropping each handle — same race as "from a
+    background thread, immediately del it", without blowing the suite's time
+    budget on thread-spawn overhead. Runs in a subprocess since a manifested
+    crash would otherwise take down the whole suite.
+    """
+    code = (
+        "import gc, queue, threading, time\n"
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    x = prism.field(0)\n"
+        "keepalive = M()\n"
+        "t = threading.Thread(target=lambda: prism._run_headless(keepalive, delay_ms=5000))\n"
+        "t.start()\n"
+        "for _ in range(500):\n"
+        "    if prism._is_running():\n"
+        "        break\n"
+        "    time.sleep(0.01)\n"
+        "assert prism._is_running()\n"
+        "work = queue.Queue()\n"
+        "def bg_worker():\n"
+        "    while True:\n"
+        "        item = work.get()\n"
+        "        if item is None:\n"
+        "            return\n"
+        "        item()\n"
+        "bg = threading.Thread(target=bg_worker)\n"
+        "bg.start()\n"
+        "for i in range(500):\n"
+        "    h = prism.FieldInt(0)\n"
+        "    work.put((lambda h=h, i=i: h.set(i)))\n"
+        "    del h\n"
+        "    gc.collect()\n"
+        "for i in range(500):\n"
+        "    h = prism.ListInt()\n"
+        "    work.put((lambda h=h, i=i: h.push(i)))\n"
+        "    del h\n"
+        "    gc.collect()\n"
+        "for i in range(500):\n"
+        "    bm = M()\n"
+        "    work.put((lambda bm=bm, i=i: setattr(bm.x, 'value', i)))\n"
+        "    del bm\n"
+        "    gc.collect()\n"
+        "work.put(None)\n"
+        "bg.join(timeout=10)\n"
+        "assert not bg.is_alive()\n"
+        "t.join()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=45,
+    )
+    assert result.returncode == 0
+
+
 def test_nested_transaction_abort_outer_preserved():
     class M(Model):
         a = field(0)
