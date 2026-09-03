@@ -601,12 +601,22 @@ struct BoundField {
 };
 
 // Standalone / bound handles for Shared<T> and Channel<T>
+//
+// The Shared<T> itself lives behind a shared_ptr ("state"), not by value in the
+// handle. drain_fn and every observer wrapper capture that shared_ptr (never
+// `this`/a raw pointer into the handle), so if a Python callback running inside
+// this handle's own drain_notifications() drops the handle's last Python
+// reference, the state a still-running call is reading/writing outlives that
+// call — only the (now pointless) handle wrapper goes away. keep_alive(state)
+// on the returned Connection means the state also outlives the handle whenever
+// something else (e.g. a Connection stored elsewhere) still needs it.
 template <typename T>
 struct SharedHandle {
-    Shared<T> shared;
+    std::shared_ptr<Shared<T>> shared;
     std::shared_ptr<std::function<void()>> drain_fn;
-    SharedHandle(T init) : shared(std::move(init)) {
-        drain_fn = std::make_shared<std::function<void()>>([this] { shared.drain_notifications(); });
+    SharedHandle(T init) : shared(std::make_shared<Shared<T>>(std::move(init))) {
+        auto state = shared;
+        drain_fn = std::make_shared<std::function<void()>>([state] { state->drain_notifications(); });
         register_standalone_drainer(drain_fn);
     }
     ~SharedHandle() {
@@ -617,15 +627,18 @@ struct SharedHandle {
     SharedHandle& operator=(const SharedHandle&) = delete;
     SharedHandle(SharedHandle&&) = delete;
     SharedHandle& operator=(SharedHandle&&) = delete;
-    T get() const { return shared.get(); }
-    void set(T v) { shared.set(std::move(v)); ensure_idle_wake(); }
+    T get() const { return shared->get(); }
+    void set(T v) { shared->set(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
-        auto wrapper = [cb](const T& val) {
+        auto state = shared;
+        auto wrapper = [cb, state](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
         };
-        return shared.on_change().connect(std::move(wrapper));
+        auto conn = state->on_change().connect(std::move(wrapper));
+        conn.keep_alive(state);
+        return conn;
     }
 };
 template <typename T>
@@ -650,12 +663,14 @@ struct BoundShared {
         return conn;
     }
 };
+// State ownership rationale mirrors SharedHandle above.
 template <typename T>
 struct ChannelHandle {
-    Channel<T> channel;
+    std::shared_ptr<Channel<T>> channel;
     std::shared_ptr<std::function<void()>> drain_fn;
-    ChannelHandle() {
-        drain_fn = std::make_shared<std::function<void()>>([this] { channel.drain_notifications(); });
+    ChannelHandle() : channel(std::make_shared<Channel<T>>()) {
+        auto state = channel;
+        drain_fn = std::make_shared<std::function<void()>>([state] { state->drain_notifications(); });
         register_standalone_drainer(drain_fn);
     }
     ~ChannelHandle() {
@@ -666,14 +681,17 @@ struct ChannelHandle {
     ChannelHandle& operator=(const ChannelHandle&) = delete;
     ChannelHandle(ChannelHandle&&) = delete;
     ChannelHandle& operator=(ChannelHandle&&) = delete;
-    void send(T v) { channel.send(std::move(v)); ensure_idle_wake(); }
+    void send(T v) { channel->send(std::move(v)); ensure_idle_wake(); }
     Connection observe(nb::callable cb) {
-        auto wrapper = [cb](const T& val) {
+        auto state = channel;
+        auto wrapper = [cb, state](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
         };
-        return channel.on_receive().connect(std::move(wrapper));
+        auto conn = state->on_receive().connect(std::move(wrapper));
+        conn.keep_alive(state);
+        return conn;
     }
 };
 template <typename T>
@@ -886,9 +904,14 @@ auto* field_ptr_of(FH& h) {
     if constexpr (std::is_pointer_v<decltype(h.field)>) return h.field;
     else return &h.field;
 }
+template <typename U> struct is_std_shared_ptr : std::false_type {};
+template <typename U> struct is_std_shared_ptr<std::shared_ptr<U>> : std::true_type {};
+
 template <typename SH>
 auto* shared_ptr_of(SH& h) {
-    if constexpr (std::is_pointer_v<decltype(h.shared)>) return h.shared;
+    using M = std::decay_t<decltype(h.shared)>;
+    if constexpr (std::is_pointer_v<M>) return h.shared;
+    else if constexpr (is_std_shared_ptr<M>::value) return h.shared.get();
     else return &h.shared;
 }
 template <typename T>

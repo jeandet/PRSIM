@@ -699,6 +699,61 @@ def test_standalone_drain_uaf_survives_handle_dropped_from_sibling_callback():
         assert result.returncode == 0
 
 
+def test_standalone_handle_self_drop_during_own_drain_survives():
+    """2026-09-03 followups Task 1 repro: SharedHandle<T>/ChannelHandle<T> used
+    to own their Shared<T>/Channel<T> by value, with drain_fn and every
+    observer wrapper capturing `this` (the handle). If an observer callback
+    dropped the LAST Python reference to the handle whose OWN
+    drain_notifications() is executing, the handle's members were freed while
+    that call was still running on them — the drain-registry weak_ptr (fixed
+    by 75256da) only protects drain_fn itself, not the state it reads.
+    Fixed by moving the state behind a shared_ptr that drain_fn and every
+    observer wrapper capture instead of `this`, so the state outlives both
+    the running call and the handle. Manually verified this repro does NOT
+    reliably crash on the allocator in this environment (CPython's
+    small-object allocator, not glibc malloc, owns these blocks — 3/3 clean
+    runs pre-fix), so the callback also churns a few hundred small
+    allocations after dropping the handle to encourage reuse of the freed
+    block, keeping the test meaningful without relying on a crash that may
+    not manifest. Runs in a subprocess since a manifested crash would
+    otherwise take down the whole suite."""
+    code = (
+        "import threading, time\n"
+        "import prism\n"
+        "holder = [prism.SharedInt(0)]\n"
+        "fired = []\n"
+        "def cb(v):\n"
+        "    fired.append(v)\n"
+        "    holder.clear()  # drops the only reference to the handle running THIS drain\n"
+        "    junk = [object() for _ in range(500)]  # encourage reuse of the freed block\n"
+        "    del junk\n"
+        "holder[0].observe(cb)\n"
+        "class M(prism.Model):\n"
+        "    x = prism.field(0)\n"
+        "m = M()\n"
+        "t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=300))\n"
+        "t.start()\n"
+        "for _ in range(300):\n"
+        "    if prism._is_running():\n"
+        "        break\n"
+        "    time.sleep(0.01)\n"
+        "def setter():\n"
+        "    holder[0].value = 1  # queues drain; cb runs and drops holder[0] mid-call\n"
+        "th = threading.Thread(target=setter)\n"
+        "th.start()\n"
+        "th.join()\n"
+        "t.join()\n"
+        "assert fired == [1], fired\n"
+    )
+    for _ in range(3):
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=os.environ,
+            timeout=30,
+        )
+        assert result.returncode == 0
+
+
 def test_nested_transaction_abort_outer_preserved():
     class M(Model):
         a = field(0)
