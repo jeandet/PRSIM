@@ -81,6 +81,13 @@ inline void measure_linear(LayoutNode& node, LayoutAxis own_axis, LayoutAxis par
     size_t pane_index = 0;
     for (auto& child : node.children) {
         layout_measure(child, own_axis);
+        // Read the child's expand intent BEFORE the split override below clears it:
+        // engaging split mode fixes pane sizes along this container's own axis, but says
+        // nothing about how the container itself should size in its parent -- a row with
+        // an expanding pane (e.g. a tree's VirtualList) must keep claiming expand-share
+        // from its parent column after the drag, or it falls back to its cross-hint and
+        // starves every other expander to zero height.
+        if (child.hint.expand) has_expander = true;
         if (!node.split_sizes.empty() && child.kind != LayoutNode::Kind::Handle) {
             if (pane_index < node.split_sizes.size()) {
                 child.hint.preferred = node.split_sizes[pane_index];
@@ -90,7 +97,6 @@ inline void measure_linear(LayoutNode& node, LayoutAxis own_axis, LayoutAxis par
         }
         sum += child.hint.preferred;
         max_cross = std::max(max_cross, child.hint.cross);
-        if (child.hint.expand) has_expander = true;
     }
     bool aligned = (own_axis == parent_axis);
     node.hint.preferred = aligned ? sum : max_cross;

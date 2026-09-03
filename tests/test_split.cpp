@@ -492,3 +492,87 @@ TEST_CASE("Dragging the handle after a PlotGroup resizes every panel together, n
     CHECK(b_rect2.extent.h.raw() > b_h0);
     CHECK(a_rect2.extent.h.raw() == doctest::Approx(b_rect2.extent.h.raw()));
 }
+
+// ── Split drag must not strip the container's outward expansion ──────────────
+// Mirrors python/examples/08_dashboard.py: controls row + status + canvas, then
+// a tree-style row (VirtualList | Handle | detail). Engaging split mode on the
+// tree row used to force every pane's hint.expand=false in measure_linear(),
+// which emptied the row's has_expander -- so the row stopped expanding in the
+// parent Column and fell back to its cross-hint height (for a VirtualList that
+// cross hint is a content *width*), ballooning until every expander above got a
+// zero-height share and vanished.
+
+namespace {
+struct SplitFixtureTree {
+    size_t root_count() const { return 1; }
+    prism::TreeNodeId root_at(size_t) const { return 1; }
+    size_t child_count(prism::TreeNodeId id) const { return id == 1 ? 2 : 0; }
+    prism::TreeNodeId child_at(prism::TreeNodeId, size_t i) const { return i == 0 ? 2 : 3; }
+    std::string label(prism::TreeNodeId id) const { return "n" + std::to_string(id); }
+    bool has_children(prism::TreeNodeId id) const { return id == 1; }
+};
+}
+
+struct DashboardLikeModel {
+    Field<Slider<double>> frequency{};
+    Field<Slider<double>> amplitude{};
+    Field<Checkbox> auto_sweep{{false, "Auto sweep"}};
+    Field<std::string> status{"ready"};
+    TreeController ctrl;
+    WidgetId tree_row_id = 0;
+
+    DashboardLikeModel() : ctrl(wrap_tree_storage(fixture_)) {}
+
+    void canvas(DrawList& dl, Rect r, const WidgetNode&) {
+        dl.filled_rect(r, Color::rgba(0, 0, 0));
+    }
+
+    void view(WidgetTree::ViewBuilder& vb) {
+        vb.hstack(frequency, amplitude, auto_sweep);
+        vb.widget(status);
+        vb.canvas(*this);
+        tree_row_id = vb.hstack([&] {
+            vb.list(ctrl.rows);
+            vb.handle();
+            vb.widget(ctrl.detail);
+        });
+    }
+
+private:
+    SplitFixtureTree fixture_;
+};
+
+TEST_CASE("Dragging a tree row's splitter does not collapse the widgets above it") {
+    DashboardLikeModel model;
+    WidgetTree tree(model);
+    auto snap1 = tree.build_snapshot(800, 600, 1);
+    REQUIRE(model.tree_row_id != 0);
+
+    auto ids = tree.leaf_ids();
+    REQUIRE(ids.size() >= 5);
+    // leaf order: slider, slider, checkbox, status, canvas, then tree-row contents
+    auto rect_of = [&](const SceneSnapshot& snap, WidgetId id) {
+        for (auto& [gid, r] : snap.geometry)
+            if (gid == id) return r;
+        return Rect{Point{X{0}, Y{0}}, Size{Width{-1}, Height{-1}}};
+    };
+
+    float slider_h0 = rect_of(*snap1, ids[0]).extent.h.raw();
+    float status_h0 = rect_of(*snap1, ids[3]).extent.h.raw();
+    float canvas_h0 = rect_of(*snap1, ids[4]).extent.h.raw();
+    REQUIRE(slider_h0 > 0.f);
+    REQUIRE(canvas_h0 > 0.f);
+
+    // Engage split mode on the tree row and drag the handle sideways.
+    float anchor = 0.f;
+    for (auto& [gid, r] : snap1->geometry)
+        if (r.extent.w.raw() == doctest::Approx(splitter::thickness_px).epsilon(0.01))
+            anchor = r.origin.x.raw();
+    tree.begin_split_drag(model.tree_row_id, 0, anchor);
+    tree.update_split_drag(anchor + 50.f);
+
+    auto snap2 = tree.build_snapshot(800, 600, 2);
+    CHECK(rect_of(*snap2, ids[0]).extent.h.raw() == doctest::Approx(slider_h0));
+    CHECK(rect_of(*snap2, ids[3]).extent.h.raw() == doctest::Approx(status_h0));
+    CHECK(rect_of(*snap2, ids[4]).extent.h.raw() == doctest::Approx(canvas_h0));
+}
