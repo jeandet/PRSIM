@@ -25,10 +25,13 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
+            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup builddir
-        run: meson setup builddir
+        run: meson setup builddir -Dsdl3:werror=false -Dsdl3:warning_level=0
       - name: Build
         run: ninja -C builddir
       - name: Run tests (C++ + Python via meson test)
@@ -44,10 +47,13 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
+            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup TSan builddir
-        run: meson setup builddir-tsan -Db_sanitize=thread -Dbuildtype=debugoptimized
+        run: meson setup builddir-tsan -Dsdl3:werror=false -Dsdl3:warning_level=0 -Db_sanitize=thread -Dbuildtype=debugoptimized
       - name: Build TSan
         run: ninja -C builddir-tsan
       - name: Run TSan tests (C++ + Python via meson test, SDL flaky suites excluded)
@@ -63,10 +69,13 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
+            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup ASan+UBSan builddir
-        run: meson setup builddir-asan -Db_sanitize=address,undefined -Dbuildtype=debugoptimized
+        run: meson setup builddir-asan -Dsdl3:werror=false -Dsdl3:warning_level=0 -Db_sanitize=address,undefined -Dbuildtype=debugoptimized
       - name: Build ASan+UBSan
         run: ninja -C builddir-asan
       - name: Run ASan+UBSan tests (C++ + Python via meson test, SDL flaky suites excluded)
@@ -86,10 +95,13 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
+            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup builddir
-        run: meson setup builddir-ft
+        run: meson setup builddir-ft -Dsdl3:werror=false -Dsdl3:warning_level=0
       - name: Build
         run: ninja -C builddir-ft
       - name: Run tests (C++ + Python via meson test, free-threaded)
