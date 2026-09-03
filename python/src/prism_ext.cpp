@@ -10,6 +10,7 @@
 #include <prism/core/transaction.hpp>
 #include <prism/app/model_app.hpp>
 #include <prism/app/backend.hpp>
+#include <prism/ui/delegate.hpp> // Slider<T>, Checkbox, Orientation — for BoundSliderValue/BoundCheckboxValue
 #include <prism/widgets/plot.hpp>
 #include <prism/ui/tree.hpp>
 
@@ -479,6 +480,20 @@ struct SlotList : SlotBase {
     explicit SlotList(std::vector<T> init = {}) { for (auto v : init) list.push_back(v); }
     void build(ViewBuilder& vb) override { vb.list(list); }
 };
+// Slider<T,O>/Checkbox (include/prism/ui/delegate.hpp) are plain structs
+// (value/min/max/step, checked/label) each held whole inside one Field —
+// unlike Slot<T>'s scalar Field<T>, there is no separate Field<double>/
+// Field<bool> to point a BoundField at, so these get their own slot types.
+struct SlotSlider : SlotBase {
+    Field<Slider<double>> field;
+    explicit SlotSlider(Slider<double> v) : field(std::move(v)) {}
+    void build(ViewBuilder& vb) override { vb.widget(field); }
+};
+struct SlotCheckbox : SlotBase {
+    Field<Checkbox> field;
+    explicit SlotCheckbox(Checkbox v) : field(std::move(v)) {}
+    void build(ViewBuilder& vb) override { vb.widget(field); }
+};
 
 // Forward declarations for dispatch helpers used by Plot/Tree handles
 inline void list_op_dispatch(std::shared_ptr<void> keep, std::function<void()> fn);
@@ -788,6 +803,69 @@ struct BoundField {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
+        };
+        auto conn = f->on_change().connect(std::move(wrapper));
+        if (owner_copy) conn.keep_alive(owner_copy);
+        return conn;
+    }
+};
+
+// Bound handle for a slider's inner value. Slider<double> holds value/min/max/step
+// together in one struct behind one Field (see SlotSlider above), so unlike BoundField<T>
+// there is no Field<double> to point at directly. min/max are cached here at construction
+// (Python has no API to change them at runtime) so .value writes can replace the whole
+// Slider struct without first reading it back — no read-modify-write race with a
+// concurrent writer. step is fixed at 0 (continuous) — Python's slider() doesn't expose it.
+struct BoundSliderValue {
+    std::shared_ptr<SlotBase> owner;
+    Field<Slider<double>>* field = nullptr;
+    double min = 0.0, max = 1.0;
+    double get() const {
+        if (!field) return 0.0;
+        Field<Slider<double>>* p = field;
+        return dispatch_sync_read<Slider<double>>([p](){ return p->get(); }).value;
+    }
+    void set(double v) {
+        if (field) field_set_dispatch<Slider<double>>(owner, field, Slider<double>{v, min, max, 0.0});
+    }
+    Connection observe(nb::callable cb) {
+        if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
+        auto owner_copy = owner;
+        Field<Slider<double>>* f = field;
+        auto wrapper = [cb](const Slider<double>& val) {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire acq;
+            try { cb(val.value); } catch (...) { report_python_callback_error(); }
+        };
+        auto conn = f->on_change().connect(std::move(wrapper));
+        if (owner_copy) conn.keep_alive(owner_copy);
+        return conn;
+    }
+};
+
+// Bound handle for a checkbox's inner checked flag — same rationale as BoundSliderValue:
+// Checkbox is a plain {checked, label} struct behind one Field, so label is cached here
+// at construction rather than read back on every set().
+struct BoundCheckboxValue {
+    std::shared_ptr<SlotBase> owner;
+    Field<Checkbox>* field = nullptr;
+    std::string label;
+    bool get() const {
+        if (!field) return false;
+        Field<Checkbox>* p = field;
+        return dispatch_sync_read<Checkbox>([p](){ return p->get(); }).checked;
+    }
+    void set(bool v) {
+        if (field) field_set_dispatch<Checkbox>(owner, field, Checkbox{v, label});
+    }
+    Connection observe(nb::callable cb) {
+        if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
+        auto owner_copy = owner;
+        Field<Checkbox>* f = field;
+        auto wrapper = [cb](const Checkbox& val) {
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire acq;
+            try { cb(val.checked); } catch (...) { report_python_callback_error(); }
         };
         auto conn = f->on_change().connect(std::move(wrapper));
         if (owner_copy) conn.keep_alive(owner_copy);
@@ -1261,6 +1339,8 @@ inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
     else if (nb::isinstance<BoundShared<double>>(h)) vb.widget(*nb::cast<BoundShared<double>&>(h).shared);
     else if (nb::isinstance<BoundShared<std::string>>(h)) vb.widget(*nb::cast<BoundShared<std::string>&>(h).shared);
     else if (nb::isinstance<BoundShared<bool>>(h)) vb.widget(*nb::cast<BoundShared<bool>&>(h).shared);
+    else if (nb::isinstance<BoundSliderValue>(h)) vb.widget(*nb::cast<BoundSliderValue&>(h).field);
+    else if (nb::isinstance<BoundCheckboxValue>(h)) vb.widget(*nb::cast<BoundCheckboxValue&>(h).field);
     else if (nb::isinstance<BoundDerived<int>>(h)) vb.widget_generic<int>(*nb::cast<BoundDerived<int>&>(h).derived);
     else if (nb::isinstance<BoundDerived<double>>(h)) vb.widget_generic<double>(*nb::cast<BoundDerived<double>&>(h).derived);
     else if (nb::isinstance<BoundDerived<std::string>>(h)) vb.widget_generic<std::string>(*nb::cast<BoundDerived<std::string>&>(h).derived);
@@ -1316,6 +1396,20 @@ struct PyModel {
     }
     std::pair<std::shared_ptr<SlotBase>, Field<bool>*> add_bool_slot(bool v) {
         auto s = std::make_shared<Slot<bool>>(v);
+        auto* p = &s->field;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Field<Slider<double>>*> add_slider_slot(double v, double mn, double mx) {
+        auto s = std::make_shared<SlotSlider>(Slider<double>{v, mn, mx, 0.0});
+        auto* p = &s->field;
+        std::lock_guard<std::mutex> lk(slots_mutex);
+        slots.push_back(s);
+        return {s, p};
+    }
+    std::pair<std::shared_ptr<SlotBase>, Field<Checkbox>*> add_checkbox_slot(bool v, std::string label) {
+        auto s = std::make_shared<SlotCheckbox>(Checkbox{v, std::move(label)});
         auto* p = &s->field;
         std::lock_guard<std::mutex> lk(slots_mutex);
         slots.push_back(s);
@@ -1919,6 +2013,22 @@ NB_MODULE(_prism_ext, m) {
     bind_scalar<std::string>(m, "Str");
     bind_scalar<bool>(m, "Bool");
 
+    nb::class_<BoundSliderValue>(m, "BoundSlider", nb::dynamic_attr(), nb::is_weak_referenceable())
+        .def_prop_rw("value", &BoundSliderValue::get, &validated_set<BoundSliderValue, double>)
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb));
+        }, nb::arg("callback"))
+        .def("get", &BoundSliderValue::get)
+        .def("set", &validated_set<BoundSliderValue, double>);
+
+    nb::class_<BoundCheckboxValue>(m, "BoundCheckbox", nb::dynamic_attr(), nb::is_weak_referenceable())
+        .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>)
+        .def("observe", [](nb::object self, nb::callable cb) {
+            return keep_connection(self, nb::cast<BoundCheckboxValue&>(self).observe(cb));
+        }, nb::arg("callback"))
+        .def("get", &BoundCheckboxValue::get)
+        .def("set", &validated_set<BoundCheckboxValue, bool>);
+
     bind_list<int>(m, "Int");
     bind_list<double>(m, "Float");
     bind_list<std::string>(m, "Str");
@@ -2009,6 +2119,14 @@ NB_MODULE(_prism_ext, m) {
                 auto [owner, p] = self.add_bool_slot(v);
                 BoundField<bool> h; h.owner = std::move(owner); h.field = p; return h;
             }, nb::arg("value")=false)
+        .def("_add_slider_internal", [](PyModel& self, double v, double mn, double mx){
+                auto [owner, p] = self.add_slider_slot(v, mn, mx);
+                BoundSliderValue h; h.owner = std::move(owner); h.field = p; h.min = mn; h.max = mx; return h;
+            }, nb::arg("value")=0.0, nb::arg("min")=0.0, nb::arg("max")=1.0)
+        .def("_add_checkbox_internal", [](PyModel& self, bool v, std::string label){
+                auto [owner, p] = self.add_checkbox_slot(v, label);
+                BoundCheckboxValue h; h.owner = std::move(owner); h.field = p; h.label = std::move(label); return h;
+            }, nb::arg("value")=false, nb::arg("label")="")
         // Shared internal allocators
         .def("_add_shared_int_internal", [](PyModel& self, int v){
                 auto [owner, p] = self.add_shared_int_slot(v);

@@ -366,9 +366,13 @@ def _warn_deprecated_class_observe(name):
 
 
 class _FieldDescriptor:
-    def __init__(self, default, validator=None):
+    # kind/meta select a non-scalar internal allocator (slider()/checkbox()); left
+    # as None for a plain field(), where _kind_of(default) picks int/float/str/bool.
+    def __init__(self, default, validator=None, kind=None, meta=None):
         self.default = default
         self.validator = validator
+        self.kind = kind
+        self.meta = meta
         self.name = None
 
     def __set_name__(self, owner, name):
@@ -379,8 +383,15 @@ class _FieldDescriptor:
         if self.name in cache:
             return cache[self.name]
         # allocate via Model's internal add_* (no keep_alive cycle — Model owns slots)
-        kind = _kind_of(self.default)
-        h = getattr(instance, f"_add_{kind}_internal")(self.default)
+        if self.kind == "slider":
+            mn, mx = self.meta["range"]
+            h = instance._add_slider_internal(self.default, mn, mx)
+            h.__dict__["range"] = (mn, mx)
+        elif self.kind == "checkbox":
+            h = instance._add_checkbox_internal(self.default, self.meta["label"])
+        else:
+            kind = _kind_of(self.default)
+            h = getattr(instance, f"_add_{kind}_internal")(self.default)
         h.__dict__["_prism_name"] = self.name
         if self.validator is not None:
             # Installed here so the C++ .value setter / .set() can run it too
@@ -422,18 +433,29 @@ def field(default, validator=None):
 def slider(default, min=0.0, max=1.0, validator=None):
     """Value may be set from any thread (posted to the logic thread).
 
-    Float field; a ranged slider widget is not implemented yet. ``min``/``max``
-    are accepted for API stability but are currently unused.
+    Float field rendered as a ranged slider widget (C++ ``Slider<double>``
+    delegate). ``.range`` on the returned handle exposes ``(min, max)``.
+    Setting ``.value`` outside ``[min, max]`` is accepted unclamped — that's
+    what the underlying ``Field::set()`` does; only dragging the rendered
+    widget with the mouse clamps into range.
     """
-    return _FieldDescriptor(float(default), validator=validator)
+    return _FieldDescriptor(
+        float(default),
+        validator=validator,
+        kind="slider",
+        meta={"range": (float(min), float(max))},
+    )
 
 
 def checkbox(default, label=None, validator=None):
     """Value may be set from any thread (posted to the logic thread).
 
-    Bool field. ``label`` is accepted for API stability but is currently unused.
+    Bool field rendered as a checkbox widget (C++ ``Checkbox`` delegate)
+    showing ``label``.
     """
-    return _FieldDescriptor(bool(default), validator=validator)
+    return _FieldDescriptor(
+        bool(default), validator=validator, kind="checkbox", meta={"label": label or ""}
+    )
 
 
 class _SharedDescriptor:

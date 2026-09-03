@@ -549,20 +549,102 @@ def test_slider_checkbox_descriptors():
     assert m.volume.value == 0.9
 
 
-def test_slider_checkbox_are_plain_field_aliases():
-    """slider()/checkbox() are thin aliases over field() — no ranged/labeled
-    widget is wired up yet, so the descriptor must not carry kind/meta."""
+def test_slider_range_is_exposed_as_a_tuple():
+    """.range is a plain (min, max) tuple set once at allocation — it has no
+    C++-backed setter, so writing it only rebinds the Python attribute; it
+    does not reach (and cannot change) the underlying Slider's min/max."""
 
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+
+    m = Mixer()
+    assert m.volume.range == (0.0, 1.0)
+    assert isinstance(m.volume.range, tuple)
+
+
+def test_slider_value_round_trips():
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+
+    m = Mixer()
+    m.volume.value = 0.25
+    assert m.volume.value == 0.25
+    m.volume.set(0.75)
+    assert m.volume.get() == 0.75
+
+
+def test_slider_observer_fires_with_new_value():
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+
+    m = Mixer()
+    seen = []
+    m.volume.observe(lambda v: seen.append(v))
+    m.volume.value = 0.9
+    assert seen == [0.9]
+
+
+def test_slider_out_of_range_set_is_accepted_unclamped():
+    """Field::set() (include/prism/core/field.hpp) does not clamp — only the
+    C++ Slider widget's own mouse-drag input path clamps into [min, max]
+    (Widget<Slider<T,O>>::apply_position, include/prism/ui/delegate.hpp).
+    A programmatic .value = write goes straight to Field::set(), so it is
+    accepted unclamped, same as slider()'s docstring states."""
+
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+
+    m = Mixer()
+    m.volume.value = 5.0
+    assert m.volume.value == 5.0
+
+
+def test_checkbox_is_bool_field_with_label():
+    class Mixer(Model):
+        mute = prism.checkbox(True, label="Mute")
+
+    m = Mixer()
+    assert m.mute.value is True
+    m.mute.value = False
+    assert m.mute.value is False
+
+
+def test_checkbox_observer_fires_with_new_value():
+    class Mixer(Model):
+        mute = prism.checkbox(False, label="Mute")
+
+    m = Mixer()
+    seen = []
+    m.mute.observe(lambda v: seen.append(v))
+    m.mute.value = True
+    assert seen == [True]
+
+
+def test_slider_checkbox_descriptors_carry_kind_and_meta():
     class Mixer(Model):
         volume = prism.slider(0.5, min=0.0, max=1.0)
         mute = prism.checkbox(False, label="Mute")
 
     volume_descriptor = Mixer.__dict__["volume"]
     mute_descriptor = Mixer.__dict__["mute"]
-    assert not hasattr(volume_descriptor, "kind")
-    assert not hasattr(volume_descriptor, "meta")
-    assert not hasattr(mute_descriptor, "kind")
-    assert not hasattr(mute_descriptor, "meta")
+    assert volume_descriptor.kind == "slider"
+    assert volume_descriptor.meta["range"] == (0.0, 1.0)
+    assert mute_descriptor.kind == "checkbox"
+    assert mute_descriptor.meta["label"] == "Mute"
+
+
+def test_headless_render_of_slider_and_checkbox():
+    """Golden/headless smoke test: a Model with slider() + checkbox() fields
+    (auto-view, no custom view()) must render without error."""
+
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+        mute = prism.checkbox(False, label="Mute")
+
+    m = Mixer()
+    prism._run_headless(m, delay_ms=50)
+    assert m.volume.value == 0.5
+    assert m.mute.value is False
 
 
 def test_headless_app_concurrent_post():
