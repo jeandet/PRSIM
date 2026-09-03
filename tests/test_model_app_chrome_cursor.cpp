@@ -59,9 +59,9 @@ TEST_CASE("model_app's cursor reclaims client content after a chrome-edge excurs
     // the process's real main thread (AppKit requirement) -- so it runs here, and the test's
     // own injection/assertions move to a worker thread instead.
     std::thread driver([&] {
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-        while (sdl_win.sdl_window() == nullptr && std::chrono::steady_clock::now() < deadline)
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        // ready fires after the renderer and font exist, not merely the SDL window: on a
+        // slow CI runner (Xvfb + llvmpipe) that setup alone can eat the hover deadline.
+        backend.wait_ready();
         REQUIRE(sdl_win.sdl_window() != nullptr);
         auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
 

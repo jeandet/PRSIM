@@ -47,7 +47,9 @@ if python3.found()
       # `set -o pipefail` (bash, not sh — dash doesn't support it) + the empty-stdout
       # check make this fail loudly at configure time instead of silently proceeding
       # with an empty LD_PRELOAD (grep's exit code would otherwise be masked by awk's).
-      libasan = run_command('bash', '-c', 'set -o pipefail; ldconfig -p | grep -m1 "libasan\.so" | awk \'{print $NF}\'', check : true).stdout().strip()
+      # No `grep -m1`/`head`: closing the pipe early gives ldconfig SIGPIPE, which
+      # pipefail then reports as a failure (seen on Ubuntu CI); awk picks the first line.
+      libasan = run_command('bash', '-c', 'set -o pipefail; ldconfig -p | grep "libasan\.so" | awk \'NR==1{print $NF}\'', check : true).stdout().strip()
       if libasan == ''
         error('libasan.so not found via ldconfig -p; needed for LD_PRELOAD under b_sanitize=address')
       endif
@@ -55,7 +57,7 @@ if python3.found()
       # --as-needed (Ubuntu) has no dependency on it either, so ASan's __cxa_throw
       # interceptor never resolves the real one and the first C++ exception dies with
       # "CHECK failed: real___cxa_throw != 0" (google/sanitizers#934).
-      libstdcxx = run_command('bash', '-c', 'set -o pipefail; ldconfig -p | grep -m1 "libstdc++\.so\.6 " | awk \'{print $NF}\'', check : true).stdout().strip()
+      libstdcxx = run_command('bash', '-c', 'set -o pipefail; ldconfig -p | grep "libstdc++\.so\.6 " | awk \'NR==1{print $NF}\'', check : true).stdout().strip()
       if libstdcxx == ''
         error('libstdc++.so.6 not found via ldconfig -p; needed for LD_PRELOAD under b_sanitize=address')
       endif
