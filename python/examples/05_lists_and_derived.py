@@ -24,14 +24,11 @@ class TodoApp(prism.Model):
     summary = prism.derived(lambda self: f"{self.counter.value} items", "counter")
     filter_len = prism.derived(lambda self: len(self.filter_text.value), "filter_text")
 
-    # auto-stacked view — no def view() needed for derived demo.
-    # Keeping view auto-generated avoids the view+derived headless race.
-    # Uncomment to see manual layout (then avoid _run_headless with derived):
-    # def view(self, vb):
-    #     vb.vstack(self.new_item, self.filter_text, self.counter)
-    #     vb.list(self.items)
-    #     vb.widget(self.summary)
-    #     vb.widget(self.filter_len)
+    def view(self, vb):
+        vb.vstack(self.new_item, self.filter_text, self.counter)
+        vb.list(self.items)
+        vb.widget(self.summary)
+        vb.widget(self.filter_len)
 
 
 def _main():

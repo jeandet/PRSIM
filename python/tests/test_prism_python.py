@@ -1131,6 +1131,41 @@ def test_derived_field_survives_run_headless_teardown():
     assert result.returncode == 0
 
 
+def test_view_and_derived_together_survive_run_headless_teardown():
+    """Task 3 repro: 02_mixer.py and 05_lists_and_derived.py used to carry a
+    note that a Model overriding view() while also having a derived field hit
+    an 'Invalid argument at exit' teardown race. That race shared its root
+    cause with test_derived_field_survives_run_headless_teardown's (fixed in
+    c4305d2/75256da: SlotDerived/dispatch_sync_read span the initial
+    registry.add() with an unconditional gil_scoped_release even though the
+    GIL is already released for the whole _run_headless() call). A manual
+    view() triggers the exact same registry.add() startup path, so once that
+    was guarded with PyGILState_Check() this combination stopped crashing
+    too. Runs in a subprocess since a manifested crash would otherwise take
+    down the whole suite."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    counter = prism.field(0)\n"
+        "    doubled = prism.derived(lambda self: self.counter.value * 2, 'counter')\n"
+        "    def view(self, vb):\n"
+        "        vb.widget(self.counter)\n"
+        "        vb.widget(self.doubled)\n"
+        "m = M()\n"
+        "prism._run_headless(m, delay_ms=200)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=30,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    for bad in ("Invalid argument", "terminate", "Fatal"):
+        assert bad not in result.stderr, result.stderr
+
+
 def test_run_headless_startup_does_not_spin_on_derived_reads():
     """Task 5 repro: the initial widget-tree build (registry.add, before the
     logic thread's post-handle exists) reads every placed Derived field's

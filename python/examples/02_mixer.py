@@ -6,10 +6,6 @@ Mirrors showcase_slider.cpp + README Mixer. Demonstrates:
   - observer + GIL-free background thread mutation
   - (for derived see 05_lists_and_derived.py)
 
-Note: view() + derived in the same Model currently hits a headless-
-teardown race (Invalid argument at exit). Keep them separate for
-now — 02 shows view, 05 shows derived auto-stacked.
-
 Run:
   PYTHONPATH=build/python python python/examples/02_mixer.py
 """
