@@ -22,6 +22,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 namespace nb = nanobind;
@@ -31,6 +32,17 @@ using namespace prism::app;
 // Defined near NB_MODULE below, alongside the rest of the prism.on_error() error hub —
 // forward-declared here since every Python callback wrapper in this file uses it.
 static void report_python_callback_error();
+
+// Python-facing spelling of a scalar field type, for TypeError messages (validator
+// rejects, derived recompute cast failures).
+template <typename T>
+static const char* py_type_name() {
+    if constexpr (std::is_same_v<T, int>) return "int";
+    else if constexpr (std::is_same_v<T, double>) return "float";
+    else if constexpr (std::is_same_v<T, std::string>) return "str";
+    else if constexpr (std::is_same_v<T, bool>) return "bool";
+    else return "value";
+}
 
 // Global PostHandle for off-thread posting (set during prism.run, cleared after).
 // Holds weak_ptrs to the mutation queue so post after model_app returns is not UAF.
@@ -120,13 +132,11 @@ static PostResult try_post_via_handle_impl(std::function<void()> fn, bool allow_
         auto sch = h.sched;
         exec::start_detached(stdexec::schedule(sch) | stdexec::then([qq, sf, tp, sch] {
             // AppContext::post's drain is now wrapped via logic_wrapper; keep GIL here too
-            // for the try_post path which bypasses AppContext::post.
-            if (Py_IsInitialized()) {
-                nb::gil_scoped_acquire gil;
-                drain_queue_loop(qq, sf, tp);
-            } else {
-                drain_queue_loop(qq, sf, tp);
-            }
+            // for the try_post path which bypasses AppContext::post. Once the interpreter
+            // is finalized, nothing queued here may run — it may hold Python callbacks.
+            if (!Py_IsInitialized()) return;
+            nb::gil_scoped_acquire gil;
+            drain_queue_loop(qq, sf, tp);
         }));
     }
     return PostResult::Posted;
@@ -526,6 +536,29 @@ struct SlotTree : SlotBase {
     explicit SlotTree(nb::object py_obj) : py_src_holder(std::make_shared<nb::object>(py_obj)), ctrl(PythonTreeSource::make(py_obj)) {}
     void build(ViewBuilder& vb) override { vb.tree(ctrl); }
 };
+// The posted reader may run on the logic thread after the interpreter is finalized
+// (see try_post_via_handle_impl's drain path), so it must not construct any nb::
+// object — TreeRow is plain C++ data, safe to copy there. The nb::list/nb::dict
+// conversion happens back on the calling (GIL-holding) thread, in *_to_pylist below.
+static std::vector<prism::ui::TreeRow> snapshot_tree_rows(const prism::ui::TreeController* p) {
+    std::vector<prism::ui::TreeRow> out;
+    out.reserve(p->rows.size());
+    for (size_t i = 0; i < p->rows.size(); ++i) out.push_back(p->rows[i]);
+    return out;
+}
+static nb::list tree_rows_to_pylist(const std::vector<prism::ui::TreeRow>& rows) {
+    nb::list out;
+    for (auto& r : rows) {
+        nb::dict d;
+        d["label"] = r.label;
+        d["depth"] = r.depth;
+        d["has_children"] = r.has_children;
+        d["expanded"] = r.expanded;
+        d["selected"] = r.selected;
+        out.append(d);
+    }
+    return out;
+}
 struct BoundTree {
     std::shared_ptr<SlotBase> owner;
     prism::ui::TreeController* ctrl = nullptr;
@@ -533,22 +566,8 @@ struct BoundTree {
     nb::list rows(){
         if(!ctrl) return nb::list();
         auto* p = ctrl;
-        return dispatch_sync_read<nb::list>([p](){
-            if (!Py_IsInitialized()) return nb::list();
-            nb::gil_scoped_acquire g;
-            nb::list out;
-            for(size_t i=0;i<p->rows.size();++i){
-                auto r = p->rows[i];
-                nb::dict d;
-                d["label"] = r.label;
-                d["depth"] = r.depth;
-                d["has_children"] = r.has_children;
-                d["expanded"] = r.expanded;
-                d["selected"] = r.selected;
-                out.append(d);
-            }
-            return out;
-        });
+        auto snapshot = dispatch_sync_read<std::vector<prism::ui::TreeRow>>([p](){ return snapshot_tree_rows(p); });
+        return tree_rows_to_pylist(snapshot);
     }
 };
 struct TreeHandle {
@@ -760,7 +779,20 @@ struct SlotDerived : SlotBase {
         {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire g;
-            try { nv = nb::cast<T>(py_fn()); } catch (...) { report_python_callback_error(); return; }
+            nb::object result;
+            try { result = py_fn(); } catch (...) { report_python_callback_error(); return; }
+            try {
+                nv = nb::cast<T>(result);
+            } catch (const std::bad_cast&) {
+                // Not a cast<T> the caller can retry — a clear TypeError, routed through
+                // on_error like any other derived-callback failure, rather than a silent
+                // no-op (value_ untouched below) or a crash.
+                std::string msg = std::string("derived function must return a ") + py_type_name<T>() +
+                                   " (or raise); got " + nb::cast<std::string>(nb::repr(result));
+                PyErr_SetString(PyExc_TypeError, msg.c_str());
+                prism::core::report_unhandled_error(std::make_exception_ptr(nb::python_error()));
+                return;
+            }
         }
         if (nv == value_) return;
         value_ = std::move(nv);
@@ -820,11 +852,15 @@ struct ListHandle {
     }
     nb::list to_list() const {
         const List<T>* p = &list;
-        return dispatch_sync_read<nb::list>([p](){
-            if (!Py_IsInitialized()) return nb::list();
-            nb::gil_scoped_acquire g;
-            nb::list out; for (size_t i=0;i<p->size();++i) out.append((*p)[i]); return out;
+        // Reader may run on the logic thread post-finalization; build a plain
+        // std::vector<T> there (no nb:: construction) and convert to nb::list
+        // back on this (GIL-holding) calling thread.
+        auto vec = dispatch_sync_read<std::vector<T>>([p](){
+            std::vector<T> out; out.reserve(p->size());
+            for (size_t i=0;i<p->size();++i) out.push_back((*p)[i]);
+            return out;
         });
+        nb::list out; for (auto& v : vec) out.append(v); return out;
     }
     Connection observe_insert(nb::callable cb) {
         auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} };
@@ -860,11 +896,12 @@ struct BoundList {
     nb::list to_list() const {
         if (!list) return nb::list();
         List<T>* p = list;
-        return dispatch_sync_read<nb::list>([p](){
-            if (!Py_IsInitialized()) return nb::list();
-            nb::gil_scoped_acquire g;
-            nb::list out; for (size_t i=0;i<p->size();++i) out.append((*p)[i]); return out;
+        auto vec = dispatch_sync_read<std::vector<T>>([p](){
+            std::vector<T> out; out.reserve(p->size());
+            for (size_t i=0;i<p->size();++i) out.push_back((*p)[i]);
+            return out;
         });
+        nb::list out; for (auto& v : vec) out.append(v); return out;
     }
     Connection observe_insert(nb::callable cb) {
         if(!list) throw nb::value_error("observe_insert(): handle is not bound to a Model"); auto owner_copy=owner; auto* p=list; auto w=[cb](size_t idx, const T& v){ if(!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(idx,v);}catch(...){report_python_callback_error();} }; auto c=p->on_insert().connect(std::move(w)); if(owner_copy) c.keep_alive(owner_copy); return c;
@@ -1274,7 +1311,15 @@ T apply_validator(nb::object self, T v) {
     nb::dict d = self.attr("__dict__");
     if (!d.contains("_prism_validator")) return v;
     nb::object validator = d["_prism_validator"];
-    return nb::cast<T>(validator(v));
+    nb::object result = validator(v);
+    try {
+        return nb::cast<T>(result);
+    } catch (const std::bad_cast&) {
+        std::string name = d.contains("_prism_name") ? nb::cast<std::string>(nb::str(d["_prism_name"])) : "<field>";
+        std::string msg = "validator for '" + name + "' must return a " + py_type_name<T>() +
+                           " (or raise); got " + nb::cast<std::string>(nb::repr(result));
+        throw nb::type_error(msg.c_str());
+    }
 }
 
 // Shared body for a handle's `.value` setter and `.set()` method — same
@@ -1549,17 +1594,8 @@ NB_MODULE(_prism_ext, m) {
         .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch([p](){ p->refresh(); }); })
         .def("rows", [](TreeHandle& h){
             auto* p = h.ctrl.get();
-            return dispatch_sync_read<nb::list>([p](){
-                nb::gil_scoped_acquire g;
-                nb::list out;
-                for(size_t i=0;i<p->rows.size();++i){
-                    auto r=p->rows[i];
-                    nb::dict d;
-                    d["label"]=r.label; d["depth"]=r.depth; d["has_children"]=r.has_children; d["expanded"]=r.expanded; d["selected"]=r.selected;
-                    out.append(d);
-                }
-                return out;
-            });
+            auto snapshot = dispatch_sync_read<std::vector<prism::ui::TreeRow>>([p](){ return snapshot_tree_rows(p); });
+            return tree_rows_to_pylist(snapshot);
          });
 
     nb::class_<ViewBuilder>(m, "ViewBuilder")
@@ -1746,7 +1782,11 @@ NB_MODULE(_prism_ext, m) {
         auto setup = [](AppContext& ctx){
             // Install GIL wrapper for logic-thread drains (mouse/tick) — SDL-free core hook
             ctx.set_logic_wrapper([](std::function<void()> fn){
-                if (Py_IsInitialized()) { nb::gil_scoped_acquire g; fn(); } else fn();
+                // Once the interpreter is finalized, nothing that might drain Python
+                // callbacks (mouse/tick logic-thread work) may run — drop it.
+                if (!Py_IsInitialized()) return;
+                nb::gil_scoped_acquire g;
+                fn();
             });
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();
@@ -1779,7 +1819,11 @@ NB_MODULE(_prism_ext, m) {
         auto& window = backend.create_window(cfg);
         auto setup = [](AppContext& ctx){
             ctx.set_logic_wrapper([](std::function<void()> fn){
-                if (Py_IsInitialized()) { nb::gil_scoped_acquire g; fn(); } else fn();
+                // Once the interpreter is finalized, nothing that might drain Python
+                // callbacks (mouse/tick logic-thread work) may run — drop it.
+                if (!Py_IsInitialized()) return;
+                nb::gil_scoped_acquire g;
+                fn();
             });
             std::lock_guard<std::mutex> lk(g_handle_mutex);
             g_post_handle = ctx.post_handle();

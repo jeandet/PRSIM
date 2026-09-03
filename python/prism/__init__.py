@@ -318,6 +318,7 @@ class _FieldDescriptor:
         # allocate via Model's internal add_* (no keep_alive cycle — Model owns slots)
         kind = _kind_of(self.default)
         h = getattr(instance, f"_add_{kind}_internal")(self.default)
+        h.__dict__["_prism_name"] = self.name
         if self.validator is not None:
             # Installed here so the C++ .value setter / .set() can run it too
             # (prism_ext.cpp's apply_validator) — one validation path shared
@@ -394,6 +395,7 @@ class _SharedDescriptor:
             return cache[self.name]
         kind = _kind_of(self.default, "shared")
         h = getattr(instance, f"_add_shared_{kind}_internal")(self.default)
+        h.__dict__["_prism_name"] = self.name
         if self.validator is not None:
             h.__dict__["_prism_validator"] = self.validator
         cache[self.name] = h
@@ -956,6 +958,8 @@ def on_error(handler):
     exceptions. Handlers must be thread-safe. None restores the default
     (traceback to stderr).
     """
+    if handler is not None and not callable(handler):
+        raise TypeError("on_error(): handler must be callable or None")
     global _error_handler
     _error_handler = handler
     _set_error_handler(handler)

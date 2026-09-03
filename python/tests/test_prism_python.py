@@ -248,6 +248,13 @@ def test_on_error_handler_that_raises_is_reported_and_app_keeps_running(capfd):
     assert "ZeroDivisionError" in captured.err
 
 
+def test_on_error_rejects_non_callable():
+    """Task 2: a non-callable, non-None handler must raise TypeError at
+    call time instead of being installed and failing obscurely later."""
+    with pytest.raises(TypeError, match="handler must be callable or None"):
+        prism.on_error(42)
+
+
 def test_shared_basic():
     class M(Model):
         s = shared(10)
@@ -1024,6 +1031,39 @@ def test_derived_type_hint_skips_probing():
     assert isinstance(m.ok, prism.BoundDerivedFloat)
 
 
+def test_derived_recompute_wrong_type_routes_type_error_via_on_error():
+    """Task 2: once running, if the compute fn returns a value that doesn't
+    match the derived's established type, the recompute cast failure must
+    surface as a clear TypeError via on_error — not a silent 0/no-op, and
+    not a crash. The app must keep dispatching afterward."""
+    from prism import derived
+
+    class M(Model):
+        a = field(2)
+        bad = derived(lambda self: self.a.value if self.a.value < 10 else "oops", "a")
+
+    m = M()
+    assert m.bad.value == 2
+
+    caught = []
+    try:
+        prism.on_error(lambda exc: caught.append(exc))
+        m.a.value = 20  # bad() now returns a str while the derived's type is int
+
+        assert len(caught) == 1
+        assert isinstance(caught[0], TypeError)
+        # value is left unchanged (no silent 0, no crash) and the app keeps running
+        assert m.bad.value == 2
+
+        seen = []
+        m.bad.observe(lambda v: seen.append(v))
+        m.a.value = 3
+        assert m.bad.value == 3
+        assert seen == [3]
+    finally:
+        prism.on_error(None)
+
+
 def test_derived_field_survives_run_headless_teardown():
     """Task 16 repro: a field with a derived depending on it must not crash
     when the Model is torn down after _run_headless(). Runs in a subprocess
@@ -1449,6 +1489,40 @@ def test_field_validator_applies_on_all_set_paths():
     assert m.count.value == 2
     m.count.set(3)
     assert m.count.value == 3
+
+
+def _return_wrong_type(v):
+    return "not an int"
+
+
+def _return_none(v):
+    return None
+
+
+def test_field_validator_wrong_return_type_raises_clear_type_error():
+    """Task 2: a validator that returns a value nb::cast<T> can't convert
+    must raise a TypeError naming the field, not an opaque cast error."""
+
+    class M(Model):
+        count = field(0, validator=_return_wrong_type)
+
+    m = M()
+    with pytest.raises(TypeError, match="count"):
+        m.count.value = 5
+    assert m.count.value == 0
+
+
+def test_field_validator_returns_none_raises_clear_type_error():
+    """Task 2: a validator that forgets to return the value (returns None)
+    must raise a clear TypeError, not silently store 0/None."""
+
+    class M(Model):
+        count = field(0, validator=_return_none)
+
+    m = M()
+    with pytest.raises(TypeError, match="count"):
+        m.count.value = 5
+    assert m.count.value == 0
 
 
 def test_shared_validator_applies_on_all_set_paths():
