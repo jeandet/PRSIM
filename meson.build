@@ -40,6 +40,12 @@ prism_inc = include_directories('include')
 
 subdir('src')
 subdir('python')
-subdir('tests')
-subdir('examples')
-subdir('benchmarks')
+if not get_option('tests').disabled()
+  subdir('tests')
+endif
+if not get_option('examples').disabled()
+  subdir('examples')
+endif
+if not get_option('benchmarks').disabled()
+  subdir('benchmarks')
+endif

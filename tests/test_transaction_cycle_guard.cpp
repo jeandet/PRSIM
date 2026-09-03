@@ -6,9 +6,15 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest.h>
 
+#ifndef NDEBUG
 #define NDEBUG
+#define PRISM_TEST_UNDEF_NDEBUG
+#endif
 #include <prism/core/transaction.hpp>
+#ifdef PRISM_TEST_UNDEF_NDEBUG
 #undef NDEBUG
+#undef PRISM_TEST_UNDEF_NDEBUG
+#endif
 
 #include <prism/core/field.hpp>
 

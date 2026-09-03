@@ -1,3 +1,9 @@
 # meson_options.txt
 option('prism_debug_tools', type : 'feature', value : 'auto',
        description : 'Compile in the live debug-tools hotkey (Ctrl+Shift+I) and its supporting infrastructure')
+option('tests', type : 'feature', value : 'auto',
+       description : 'Build the C++/Python test suites (disabled for wheel builds)')
+option('examples', type : 'feature', value : 'auto',
+       description : 'Build the C++ example apps')
+option('benchmarks', type : 'feature', value : 'auto',
+       description : 'Build the benchmarks')

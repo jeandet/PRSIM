@@ -17,5 +17,13 @@ pythonpath = ["builddir/python"]
 addopts = "--import-mode=importlib"
 
 [tool.meson-python.args]
-setup = ['-Doptimization=3', '-Dcpp_std=c++26', '--vsenv']
+setup = [
+  '-Doptimization=3', '-Dcpp_std=c++26',
+  '-Dtests=disabled', '-Dexamples=disabled', '-Dbenchmarks=disabled',
+  # vendored deps are linked statically so the wheel only needs system freetype/harfbuzz
+  '--force-fallback-for=fmt,sdl3,sdl3_ttf',
+  '-Dfmt:default_library=static', '-Dsdl3:default_library=static', '-Dsdl3_ttf:default_library=static',
+  '-Dsdl3:werror=false', '-Dsdl3:warning_level=0', '-Dsdl3_ttf:werror=false', '-Dsdl3_ttf:warning_level=0',
+  '--vsenv',
+]
 install = ['--tags=runtime,python-runtime']
