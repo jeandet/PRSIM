@@ -58,9 +58,12 @@ if python3.found()
       python_bindings_env += ['UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1']
     endif
 
+    # --capture=sys (not the default fd capture): sanitizer reports are written to
+    # fd 2 from C and the process exits right after, so with fd capture pytest
+    # swallows the report and the log shows only "exit status 1".
     test('python_bindings',
       python3,
-      args : ['-m', 'pytest', meson.project_source_root() / 'python/tests/test_prism_python.py', '-q', '-ra', '--import-mode=importlib'],
+      args : ['-m', 'pytest', meson.project_source_root() / 'python/tests/test_prism_python.py', '-q', '-ra', '--capture=sys', '--import-mode=importlib'],
       env : python_bindings_env,
       depends : _prism_ext,
       timeout : 60,
