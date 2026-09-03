@@ -379,12 +379,12 @@ def _dep_attr_name(dep):
     return name
 
 
-def _warn_deprecated_class_observe(name):
+def _warn_deprecated_class_observe(name, method="observe"):
     import warnings
 
     warnings.warn(
-        f"Class.{name}.observe(model, cb) is deprecated; use "
-        f"model.{name}.observe(cb) instead",
+        f"Class.{name}.{method}(model, cb) is deprecated; use "
+        f"model.{name}.{method}(cb) instead",
         DeprecationWarning,
         stacklevel=3,
     )
@@ -755,13 +755,19 @@ class _ListDescriptor:
             return self
         return self._allocate(instance)
 
+    # deprecated (2026-09-03 followups): prefer m.<name>.observe_insert(cb)
     def observe_insert(self, instance, callback):
+        _warn_deprecated_class_observe(self.name, "observe_insert")
         return self._allocate(instance).observe_insert(callback)
 
+    # deprecated (2026-09-03 followups): prefer m.<name>.observe_remove(cb)
     def observe_remove(self, instance, callback):
+        _warn_deprecated_class_observe(self.name, "observe_remove")
         return self._allocate(instance).observe_remove(callback)
 
+    # deprecated (2026-09-03 followups): prefer m.<name>.observe_update(cb)
     def observe_update(self, instance, callback):
+        _warn_deprecated_class_observe(self.name, "observe_update")
         return self._allocate(instance).observe_update(callback)
 
     # alias generic observe to update
@@ -1172,7 +1178,13 @@ class App:
         Raises ``TimeoutError`` if *timeout* seconds pass first. With
         *timeout* ``None`` (the default), waits indefinitely — but still
         raises ``RuntimeError`` if the app quits before *predicate* becomes
-        true, so a ``None`` timeout can't spin forever past shutdown.
+        true, so a ``None`` timeout can't spin forever past shutdown. This
+        includes ``quit()`` called from any other thread — e.g. by
+        ``prism.headless()``'s ``__exit__`` when the ``with`` block ends —
+        which makes an in-flight ``wait_until`` raise
+        ``RuntimeError("app quit before condition was met")`` shortly after
+        (within one *poll* interval, not immediately: quitting only flips
+        ``is_running`` to false, it doesn't interrupt this thread's sleep).
         Raises ``RuntimeError`` immediately if called from the logic thread
         (inside an observer/derived callback): that thread is the one that
         would need to keep running for *predicate* or ``quit()`` to ever

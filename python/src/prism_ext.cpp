@@ -408,6 +408,11 @@ void field_add_dispatch(nb::object self, std::shared_ptr<void> keep, Field<T>* f
         do_add = [field, n]() { field->set(field->get() + n); };
     }
     if (prism::app::detail_is_logic_thread) {
+        // No Py_IsInitialized()/gil_scoped_acquire dance needed here (unlike
+        // field_set_dispatch/list_op_dispatch): this function takes `self` as
+        // nb::object, so the GIL is already held for the `self.attr(...)`
+        // access above — every caller reaches this point via a nanobind-bound
+        // method, never from a GIL-released C++-only path.
         do_add();
         return;
     }
@@ -1898,8 +1903,18 @@ T apply_validator(nb::object self, T v) {
         return nb::cast<T>(result);
     } catch (const std::bad_cast&) {
         std::string name = d.contains("_prism_name") ? nb::cast<std::string>(nb::str(d["_prism_name"])) : "<field>";
+        // nb::repr(result) itself calls into Python (__repr__) and can raise (e.g. a
+        // validator returning an object whose __repr__ is broken) — fall back to a
+        // fixed placeholder so that failure doesn't replace the TypeError we're
+        // already in the middle of raising.
+        std::string repr;
+        try {
+            repr = nb::cast<std::string>(nb::repr(result));
+        } catch (...) {
+            repr = "<unrepresentable>";
+        }
         std::string msg = "validator for '" + name + "' must return a " + py_type_name<T>() +
-                           " (or raise); got " + nb::cast<std::string>(nb::repr(result));
+                           " (or raise); got " + repr;
         throw nb::type_error(msg.c_str());
     }
 }

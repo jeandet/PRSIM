@@ -1413,6 +1413,50 @@ def test_posted_mutations_keep_target_alive_across_del():
     assert result.returncode == 0
 
 
+def test_plot_handle_del_in_flight_during_replace_series():
+    """Task 3 item 1: standalone PlotHandle.replace_series() posts a closure that
+    must hold `keep` (the PlotModel's owning shared_ptr) so the target survives
+    a `del` racing the logic thread draining the post — same UAF shape as
+    test_posted_mutations_keep_target_alive_across_del above, but exercising
+    replace_series_dispatch()/PlotHandle specifically (its own capture list,
+    not field_set_dispatch's/list_op_dispatch's).
+
+    Needs a real running headless app so the calls take the async post path.
+    Runs in a subprocess since a manifested crash would otherwise take down
+    the whole suite; only ASan reliably catches a use-after-free here.
+    """
+    code = (
+        "import gc, queue, threading\n"
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    x = prism.field(0)\n"
+        "work = queue.Queue()\n"
+        "def bg_worker():\n"
+        "    while True:\n"
+        "        item = work.get()\n"
+        "        if item is None:\n"
+        "            return\n"
+        "        item()\n"
+        "bg = threading.Thread(target=bg_worker)\n"
+        "bg.start()\n"
+        "with prism.headless(M(), timeout=30):\n"
+        "    for i in range(300):\n"
+        "        ph = prism.PlotHandle()\n"
+        "        work.put((lambda ph=ph, i=i: ph.replace_series([float(i)], [float(i)])))\n"
+        "        del ph\n"
+        "        gc.collect()\n"
+        "    work.put(None)\n"
+        "    bg.join(timeout=10)\n"
+        "    assert not bg.is_alive()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=45,
+    )
+    assert result.returncode == 0
+
+
 def test_nested_transaction_abort_outer_preserved():
     class M(Model):
         a = field(0)
@@ -2658,6 +2702,37 @@ def test_field_validator_returns_none_raises_clear_type_error():
     assert m.count.value == 0
 
 
+class _UnrepresentableReturn:
+    """A validator return value whose own __repr__ raises — apply_validator's
+    error-message building (nb::repr(result)) must not let that exception
+    replace the TypeError it's in the middle of raising."""
+
+    def __repr__(self):
+        raise RuntimeError("boom from __repr__")
+
+
+def _return_unrepresentable(v):
+    return _UnrepresentableReturn()
+
+
+def test_field_validator_repr_raising_falls_back_to_placeholder():
+    """Task 3 item 3: apply_validator's error path calls nb::repr(result) to
+    build the TypeError message. If __repr__ itself raises, the TypeError must
+    still be the one raised, with a fixed '<unrepresentable>' placeholder
+    instead of the broken repr."""
+
+    class M(Model):
+        count = field(0, validator=_return_unrepresentable)
+
+    m = M()
+    prefix = re.escape(
+        "validator for 'count' must return a int (or raise); got <unrepresentable>"
+    )
+    with pytest.raises(TypeError, match=prefix):
+        m.count.value = 5
+    assert m.count.value == 0
+
+
 def test_shared_validator_applies_on_all_set_paths():
     """Task 15: same guarantee as test_field_validator_applies_on_all_set_paths,
     for prism.shared()."""
@@ -3133,6 +3208,60 @@ def test_class_level_derived_observe_emits_deprecation_warning():
     m = M()
     with pytest.warns(DeprecationWarning, match=r"model\.total\.observe"):
         M.total.observe(m, lambda v: None)
+
+
+def test_class_level_list_observe_insert_emits_deprecation_warning():
+    """Task 3 item 4: _ListDescriptor's class-level observe_insert/remove/update
+    forms are the list equivalent of Class.field.observe(model, cb) — they must
+    warn the same way, pointing at the preferred model.items.observe_insert(cb)
+    spelling."""
+    from prism import list_field
+
+    class M(Model):
+        items = list_field([0])
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.items\.observe_insert"):
+        M.items.observe_insert(m, lambda idx, v: None)
+
+
+def test_class_level_list_observe_remove_emits_deprecation_warning():
+    from prism import list_field
+
+    class M(Model):
+        items = list_field([0])
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.items\.observe_remove"):
+        M.items.observe_remove(m, lambda idx, v: None)
+
+
+def test_class_level_list_observe_update_emits_deprecation_warning():
+    from prism import list_field
+
+    class M(Model):
+        items = list_field([0])
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.items\.observe_update"):
+        M.items.observe_update(m, lambda idx, v: None)
+
+
+def test_instance_level_list_observe_insert_does_not_warn():
+    """model.items.observe_insert(cb) — the documented spelling — must not
+    itself trigger the deprecation warning."""
+    import warnings
+
+    from prism import list_field
+
+    class M(Model):
+        items = list_field([0])
+
+    m = M()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        conn = m.items.observe_insert(lambda idx, v: None)
+    conn.disconnect()
 
 
 def test_instance_level_observe_does_not_warn():
