@@ -51,8 +51,16 @@ if python3.found()
       if libasan == ''
         error('libasan.so not found via ldconfig -p; needed for LD_PRELOAD under b_sanitize=address')
       endif
+      # libstdc++ is preloaded too: CPython does not link it, and a libasan built with
+      # --as-needed (Ubuntu) has no dependency on it either, so ASan's __cxa_throw
+      # interceptor never resolves the real one and the first C++ exception dies with
+      # "CHECK failed: real___cxa_throw != 0" (google/sanitizers#934).
+      libstdcxx = run_command('bash', '-c', 'set -o pipefail; ldconfig -p | grep -m1 "libstdc++\.so\.6 " | awk \'{print $NF}\'', check : true).stdout().strip()
+      if libstdcxx == ''
+        error('libstdc++.so.6 not found via ldconfig -p; needed for LD_PRELOAD under b_sanitize=address')
+      endif
       # detect_odr_violation=0: unsanitized CPython host trips false positives.
-      python_bindings_env += ['LD_PRELOAD=' + libasan, 'ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0']
+      python_bindings_env += ['LD_PRELOAD=' + libasan + ':' + libstdcxx, 'ASAN_OPTIONS=detect_leaks=0:detect_odr_violation=0']
     endif
     if sanitize.contains('undefined')
       python_bindings_env += ['UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1']
