@@ -28,7 +28,7 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup builddir
         run: meson setup builddir -Dsdl3:werror=false -Dsdl3:warning_level=0
@@ -50,7 +50,7 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup TSan builddir
         run: meson setup builddir-tsan -Dsdl3:werror=false -Dsdl3:warning_level=0 -Db_sanitize=thread -Dbuildtype=debugoptimized
@@ -72,7 +72,7 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup ASan+UBSan builddir
         run: meson setup builddir-asan -Dsdl3:werror=false -Dsdl3:warning_level=0 -Db_sanitize=address,undefined -Dbuildtype=debugoptimized
@@ -98,7 +98,7 @@ jobs:
           sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
             libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
             libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
           pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup builddir
         run: meson setup builddir-ft -Dsdl3:werror=false -Dsdl3:warning_level=0
@@ -106,3 +106,68 @@ jobs:
         run: ninja -C builddir-ft
       - name: Run tests (C++ + Python via meson test, free-threaded)
         run: meson test -C builddir-ft --print-errorlogs
+
+  wheel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
+            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
+      - name: Build wheel (meson-python, vendored deps static, tests/examples off)
+        run: pip wheel . --no-deps -w dist
+      - name: Install wheel in a clean venv and smoke-test headless
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install dist/prism-*.whl
+          cd /tmp && /tmp/wheel-venv/bin/python - <<'PY'
+          import prism
+          class M(prism.Model):
+              x = prism.field(1)
+          m = M(); seen = []
+          m.x.observe(seen.append)
+          with prism.headless(m, timeout=5.0) as app:
+              m.x.value = 5
+              app.wait_until(lambda: seen == [5])
+          print("wheel OK", seen)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prism-wheel-linux-x86_64
+          path: dist/*.whl
+
+  # Mirrors the maintainer's macOS setup (Homebrew GCC + shared libstdc++); would have
+  # caught the "pointer being freed was not allocated" import crash of dc757b3.
+  macos-gcc:
+    runs-on: macos-latest
+    env:
+      CC: ''
+      CXX: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install deps
+        run: |
+          brew install gcc meson ninja pkg-config freetype harfbuzz
+          pip install meson-python nanobind pytest
+      - name: Setup builddir (newest Homebrew GCC)
+        run: |
+          export CXX=$(ls $(brew --prefix)/bin/g++-1[0-9] | sort -V | tail -1)
+          export CC=$(ls $(brew --prefix)/bin/gcc-1[0-9] | sort -V | tail -1)
+          echo "CXX=$CXX" >> "$GITHUB_ENV"; echo "CC=$CC" >> "$GITHUB_ENV"
+          meson setup builddir -Dsdl3:werror=false -Dsdl3:warning_level=0 -Dsdl3_ttf:werror=false -Dsdl3_ttf:warning_level=0
+      - name: Build
+        run: ninja -C builddir
+      - name: Import the extension and run the Python suite
+        run: |
+          PYTHONPATH=builddir/python python -c "import prism; print('import ok')"
+          meson test -C builddir python_bindings --print-errorlogs
