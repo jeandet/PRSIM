@@ -13,10 +13,11 @@ if python3.found()
       prism_cpp_args = []
     endif
 
+    # Never link the C++ runtime statically into the extension on macOS: the prism
+    # dylibs it loads (software-backend, fmt) use the shared libstdc++, and two runtimes
+    # in one process abort in std::ios_base::Init ("pointer being freed was not allocated").
     if build_machine.system() == 'windows'
       prism_link_args = ['-static-libstdc++', '-static-libgcc', '-static']
-    elif build_machine.system() == 'darwin' and meson.get_compiler('cpp').get_id() != 'clang'
-      prism_link_args = ['-static-libstdc++', '-static-libgcc']
     else
       prism_link_args = []
     endif
