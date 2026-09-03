@@ -51,7 +51,7 @@ struct LayoutNode {
     SizeHint hint;
     Rect allocated{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}};
     DrawList draws;
-    DrawList overlay_draws;  // after `DrawList draws;`
+    DrawList overlay_draws;
     std::vector<LayoutNode> children;
     enum class Kind { Leaf, Row, Column, Spacer, Canvas, Scroll, VirtualList, Table, Tabs, Handle } kind = Kind::Leaf;
     DY scroll_offset{0};        // only for Kind::Scroll and VirtualList
@@ -275,31 +275,34 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
 
 namespace layout_detail {
 
-inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
-    for (auto& cmd : dl.commands) {
-        std::visit([dx, dy](auto& c) {
-            if constexpr (requires { c.rect; }) {
-                c.rect.origin.x = X{c.rect.origin.x.raw() + dx.raw()};
-                c.rect.origin.y = Y{c.rect.origin.y.raw() + dy.raw()};
-            } else if constexpr (requires { c.center; c.radius; }) {
-                c.center.x = X{c.center.x.raw() + dx.raw()};
-                c.center.y = Y{c.center.y.raw() + dy.raw()};
-            } else if constexpr (requires { c.points; }) {
-                for (auto& p : c.points) {
-                    p.x = X{p.x.raw() + dx.raw()};
-                    p.y = Y{p.y.raw() + dy.raw()};
-                }
-            } else if constexpr (requires { c.from; c.to; }) {
-                c.from.x = X{c.from.x.raw() + dx.raw()};
-                c.from.y = Y{c.from.y.raw() + dy.raw()};
-                c.to.x = X{c.to.x.raw() + dx.raw()};
-                c.to.y = Y{c.to.y.raw() + dy.raw()};
-            } else if constexpr (requires { c.origin; }) {
-                c.origin.x = X{c.origin.x.raw() + dx.raw()};
-                c.origin.y = Y{c.origin.y.raw() + dy.raw()};
+inline void translate_cmd(DrawCmd& cmd, DX dx, DY dy) {
+    std::visit([dx, dy](auto& c) {
+        if constexpr (requires { c.rect; }) {
+            c.rect.origin.x = X{c.rect.origin.x.raw() + dx.raw()};
+            c.rect.origin.y = Y{c.rect.origin.y.raw() + dy.raw()};
+        } else if constexpr (requires { c.center; c.radius; }) {
+            c.center.x = X{c.center.x.raw() + dx.raw()};
+            c.center.y = Y{c.center.y.raw() + dy.raw()};
+        } else if constexpr (requires { c.points; }) {
+            for (auto& p : c.points) {
+                p.x = X{p.x.raw() + dx.raw()};
+                p.y = Y{p.y.raw() + dy.raw()};
             }
-        }, cmd);
-    }
+        } else if constexpr (requires { c.from; c.to; }) {
+            c.from.x = X{c.from.x.raw() + dx.raw()};
+            c.from.y = Y{c.from.y.raw() + dy.raw()};
+            c.to.x = X{c.to.x.raw() + dx.raw()};
+            c.to.y = Y{c.to.y.raw() + dy.raw()};
+        } else if constexpr (requires { c.origin; }) {
+            c.origin.x = X{c.origin.x.raw() + dx.raw()};
+            c.origin.y = Y{c.origin.y.raw() + dy.raw()};
+        }
+    }, cmd);
+}
+
+inline void translate_draw_list(DrawList& dl, DX dx, DY dy) {
+    for (auto& cmd : dl.commands)
+        translate_cmd(cmd, dx, dy);
 }
 
 inline void offset_subtree_y(LayoutNode& node, DY dy) {
@@ -345,15 +348,7 @@ inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_b
         DY hdr_dy{vp.origin.y.raw()};
         for (auto& cmd : node.overlay_draws.commands) {
             auto translated = cmd;
-            std::visit([hdr_dx, hdr_dy](auto& c) {
-                if constexpr (requires { c.rect; }) {
-                    c.rect.origin.x = X{c.rect.origin.x.raw() + hdr_dx.raw()};
-                    c.rect.origin.y = Y{c.rect.origin.y.raw() + hdr_dy.raw()};
-                } else if constexpr (requires { c.origin; }) {
-                    c.origin.x = X{c.origin.x.raw() + hdr_dx.raw()};
-                    c.origin.y = Y{c.origin.y.raw() + hdr_dy.raw()};
-                }
-            }, translated);
+            layout_detail::translate_cmd(translated, hdr_dx, hdr_dy);
             header_dl.commands.push_back(std::move(translated));
         }
         header_dl.clip_pop();

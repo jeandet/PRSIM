@@ -57,22 +57,11 @@ namespace buttons {
 
 inline InputEvent localize_mouse(const InputEvent& ev, Rect widget_rect) {
     Offset off{DX{widget_rect.origin.x.raw()}, DY{widget_rect.origin.y.raw()}};
-    if (auto* mb = std::get_if<MouseButton>(&ev)) {
-        auto local = *mb;
-        local.position = local.position - off;
-        return local;
-    }
-    if (auto* mm = std::get_if<MouseMove>(&ev)) {
-        auto local = *mm;
-        local.position = local.position - off;
-        return local;
-    }
-    if (auto* ms = std::get_if<MouseScroll>(&ev)) {
-        auto local = *ms;
-        local.position = local.position - off;
-        return local;
-    }
-    return ev;
+    return std::visit([&](auto e) -> InputEvent {
+        if constexpr (requires { e.position; })
+            e.position = e.position - off;
+        return e;
+    }, ev);
 }
 
 } // namespace prism::input
