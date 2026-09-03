@@ -16,8 +16,8 @@ Demonstrates:
   - Windows/sec status tracked separately via a `channel(int)` tick: each
     pool thread also sends a tick, and the logic-thread observer (single-
     threaded) updates the "N windows, R windows/sec" status field.
-  - prism._run_headless() for --headless / CI: runs for 1s then asserts
-    at least one window was plotted.
+  - prism.headless() for --headless / CI: runs until at least one window
+    is plotted (or 1s elapses), then asserts it.
 
 Run:
   PYTHONPATH=build/python python python/examples/10_worker_pool_plot.py
@@ -82,7 +82,7 @@ def _compute_and_plot(model: WorkerPoolPlot, window: list[float], bins: list[int
     model.tick.send(1)
 
 
-def main(headless: bool = False) -> None:
+def main() -> None:
     m = WorkerPoolPlot()
     start = time.monotonic()
     bins = list(range(WINDOW_SIZE // 2))
@@ -110,8 +110,9 @@ def main(headless: bool = False) -> None:
 
     prism.worker(producer)
 
-    if headless or "--headless" in sys.argv[1:]:
-        prism._run_headless(m, delay_ms=1000)
+    if "--headless" in sys.argv:
+        with prism.headless(m, timeout=1.0) as app:
+            app.wait_until(lambda: m.windows_done.value >= 1, timeout=1.0)
     else:
         prism.run(m, title="Worker Pool Plot — Python")
 
@@ -119,7 +120,7 @@ def main(headless: bool = False) -> None:
     if hasattr(sys, "_is_gil_enabled"):
         print(f"GIL enabled: {sys._is_gil_enabled()}")
 
-    if headless or "--headless" in sys.argv[1:]:
+    if "--headless" in sys.argv:
         assert m.windows_done.value >= 1, "no window was plotted"
         print(f"windows_done={m.windows_done.value}")
 

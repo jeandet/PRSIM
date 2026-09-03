@@ -50,6 +50,7 @@ from ._prism_ext import (
     _txn_abort,
     _run_headless as _run_headless_impl,
     _is_running,
+    _request_quit,
     _set_error_handler,
 )
 
@@ -172,6 +173,8 @@ __all__ = [
     "Connection",
     "is_logic_thread",
     "run",
+    "headless",
+    "App",
     "on_error",
     "worker",
     "Worker",
@@ -180,7 +183,9 @@ __all__ = [
 
 import weakref as _wr_mod
 import atexit as _atexit_mod
+import contextlib as _contextlib_mod
 import threading as _threading_mod
+import time as _time_mod
 import traceback as _traceback_mod
 
 from . import _prism_ext
@@ -953,14 +958,72 @@ def run(model, title="PRISM App"):
 def _run_headless(model, delay_ms=100):
     """Blocks the calling thread until the headless app exits; releases the GIL.
 
-    Test-only variant of :func:`run` that uses a headless backend and
-    quits after *delay_ms*.
+    Private primitive underlying :func:`headless`. Uses a headless backend
+    that quits after *delay_ms* or as soon as ``_request_quit()`` is called
+    from any thread — whichever comes first.
     """
     try:
         return _run_headless_impl(model, delay_ms)
     finally:
         _stop_all_workers()
         _disconnect_model_observers(model)
+
+
+class App:
+    """Any thread. Handle to a headless app started by :func:`headless`.
+
+    ``wait_until``/``quit``/``is_running`` may be called from any thread;
+    the predicate given to ``wait_until`` is polled on the calling thread,
+    not the logic thread.
+    """
+
+    def __init__(self, thread):
+        self._thread = thread
+
+    @property
+    def is_running(self):
+        return _is_running()
+
+    def wait_until(self, predicate, timeout=None, poll=0.005):
+        """Any thread. Poll *predicate* until it's truthy.
+
+        Raises ``TimeoutError`` if *timeout* seconds pass first. With
+        *timeout* ``None`` (the default), waits indefinitely.
+        """
+        deadline = None if timeout is None else _time_mod.monotonic() + timeout
+        while not predicate():
+            if deadline is not None and _time_mod.monotonic() >= deadline:
+                raise TimeoutError(f"condition not met within {timeout} s")
+            _time_mod.sleep(poll)
+
+    def quit(self):
+        """Any thread. Requests the app close. Idempotent."""
+        _request_quit()
+
+
+@_contextlib_mod.contextmanager
+def headless(model, *, timeout: float = 10.0):
+    """Any thread. Runs *model* headless for the ``with`` block; releases the GIL.
+
+    Starts :func:`_run_headless` on a background thread and blocks until
+    the app is up, yielding an :class:`App` handle. *timeout* is the
+    app's outer safety ceiling (seconds) — normally the block ends the app
+    sooner via ``app.quit()`` (called automatically on exit) or
+    ``app.wait_until(...)``. Exceptions raised inside the block propagate
+    after the app is stopped and joined.
+    """
+    thread = _threading_mod.Thread(
+        target=_run_headless, args=(model,), kwargs={"delay_ms": int(timeout * 1000)}, daemon=True
+    )
+    thread.start()
+    while not _is_running():
+        _time_mod.sleep(0.001)
+    app = App(thread)
+    try:
+        yield app
+    finally:
+        app.quit()
+        thread.join()
 
 
 # Mirror of the handler installed via _set_error_handler: the C++ side has no

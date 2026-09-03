@@ -5,7 +5,7 @@ Demonstrates:
   - A worker that raises once (one-shot, no interval)
   - prism.on_error(handler) counting and logging exceptions without ever
     stopping the drain — the next event still fires, the app keeps running
-  - ``--headless`` to run under prism._run_headless() for CI / no display
+  - ``--headless`` to run under prism.headless() for CI / no display
 
 The handler runs on whichever thread raised: observer/derived exceptions
 route through the logic thread, but a ``prism.worker()`` exception is
@@ -61,8 +61,9 @@ def main() -> None:
 
     prism.worker(flaky_worker)
 
-    if "--headless" in sys.argv[1:]:
-        prism._run_headless(m, delay_ms=600)
+    if "--headless" in sys.argv:
+        with prism.headless(m, timeout=0.6) as app:
+            app.wait_until(lambda: ticks[0] >= 10, timeout=0.5)
     else:
         prism.run(m, title="Error Handling — Python")
 

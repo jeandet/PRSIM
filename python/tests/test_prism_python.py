@@ -650,6 +650,61 @@ def test_headless_transaction_in_app():
     conn.disconnect()
 
 
+def test_headless_context_wait_until_observes_condition():
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    seen = []
+    m.x.observe(lambda v: seen.append(v))
+
+    with prism.headless(m) as app:
+        m.x.value = 5
+        app.wait_until(lambda: seen == [5])
+
+
+def test_headless_context_wait_until_times_out():
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    with prism.headless(m) as app:
+        with pytest.raises(TimeoutError):
+            app.wait_until(lambda: False, timeout=0.2)
+
+
+def test_headless_context_not_running_after_block():
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    with prism.headless(m):
+        pass
+    assert not prism._is_running()
+
+
+def test_headless_context_final_drain_delivers_shared_write_before_quit():
+    """A Shared<T> write applies directly (not posted) and is only surfaced to
+    observers on the next drain (tick or mutation-queue post) — see
+    test_standalone_shared_drained_by_app_tick. With no field posts and no
+    active animation in this test, nothing would ever drain it except the
+    final drain quit() triggers before WindowClose fires."""
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    h = prism.SharedInt(0)
+    seen = []
+    conn = h.observe(lambda v: seen.append(v))
+
+    with prism.headless(m) as app:
+        h.value = 7
+        app.quit()
+
+    assert seen == [7]
+    conn.disconnect()
+
+
 def test_standalone_shared_drained_by_app_tick():
     """Standalone SharedInt (not owned by a Model) must still be drained each app tick."""
     import time
@@ -2179,11 +2234,13 @@ def test_headless_multithread_stress_example_gil_disabled_on_free_threaded_build
     assert sys._is_gil_enabled() is False
 
 
-def test_worker_pool_plot_example_plots_at_least_one_window():
+def test_worker_pool_plot_example_plots_at_least_one_window(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [sys.argv[0], "--headless"])
     mod = _load_example("10_worker_pool_plot")
-    mod.main(headless=True)  # asserts windows_done >= 1 internally
+    mod.main()  # asserts windows_done >= 1 internally
 
 
-def test_asyncio_bridge_example_completes_a_round_trip():
+def test_asyncio_bridge_example_completes_a_round_trip(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [sys.argv[0], "--headless"])
     mod = _load_example("12_asyncio_bridge")
-    mod.main(headless=True)  # asserts round_trips >= 1 internally
+    mod.main()  # asserts round_trips >= 1 internally

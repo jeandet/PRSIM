@@ -15,8 +15,8 @@ Demonstrates:
     once more to let them finish cancelling, before closing it — a
     coroutine destroyed while pending would otherwise print an "was
     destroyed but it is pending" warning to stderr.
-  - prism._run_headless() for --headless / CI: runs for 1s then asserts
-    the round trip happened at least once.
+  - prism.headless() for --headless / CI: runs until a round trip happens
+    (or 1s elapses), then asserts it.
 
 Run:
   PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py
@@ -55,7 +55,7 @@ def shutdown_loop(loop: asyncio.AbstractEventLoop) -> None:
     loop.close()
 
 
-def main(headless: bool = False) -> None:
+def main() -> None:
     m = AsyncioBridge()
     loop = asyncio.new_event_loop()
 
@@ -92,14 +92,15 @@ def main(headless: bool = False) -> None:
 
     prism.worker(ticker, interval=0.05)
 
-    if headless or "--headless" in sys.argv[1:]:
-        prism._run_headless(m, delay_ms=1000)
+    if "--headless" in sys.argv:
+        with prism.headless(m, timeout=1.0) as app:
+            app.wait_until(lambda: m.round_trips.value >= 1, timeout=1.0)
     else:
         prism.run(m, title="Asyncio Bridge — Python")
 
     print(f"status={m.status.value} round_trips={m.round_trips.value}")
 
-    if headless or "--headless" in sys.argv[1:]:
+    if "--headless" in sys.argv:
         assert m.round_trips.value >= 1, "no asyncio round trip completed"
         print(f"round_trips={m.round_trips.value}")
 

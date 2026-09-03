@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -1769,6 +1770,68 @@ static int64_t standalone_state_use_count(nb::object h) {
     throw std::runtime_error("_standalone_shared_use_count: unsupported handle type");
 }
 
+// Headless backend for pytest and prism.headless() — stays alive until either
+// delay_ms elapses or _request_quit() is called from any thread. Single-instance
+// (only one _run_headless can be active at a time, enforced by g_run_guard), so a
+// plain global condition variable + flag is enough — no per-instance state needed.
+static std::mutex g_headless_cv_mutex;
+static std::condition_variable g_headless_cv;
+static std::atomic<bool> g_headless_quit_requested{false};
+
+// Runs the same drain a mutation-queue post/tick already does (drain_queue_loop,
+// whose tail is AppContext's shared drain_publish — WidgetTree::drain_shared(),
+// which calls model.drain(), then publish_dirty/schedule_tick) on the logic
+// thread, and blocks the caller until it completes. Called right before
+// WindowClose fires so a post/Shared-write made just before quit() is not
+// dropped (WindowClose sets the mutation queue's closed flag, after which any
+// later post is a silent no-op).
+static void final_drain_before_close() {
+    std::optional<AppContext::PostHandle> hopt;
+    {
+        std::lock_guard<std::mutex> lk(g_handle_mutex);
+        if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) return;
+        hopt = *g_post_handle;
+    }
+    auto q = hopt->queue.lock();
+    auto sf = hopt->scheduled.lock();
+    if (!q || !sf) return;
+    auto tp = hopt->drain_publish.lock();
+    auto prom = std::make_shared<std::promise<void>>();
+    auto fut = prom->get_future();
+    exec::start_detached(stdexec::schedule(hopt->sched) | stdexec::then([q, sf, tp, prom] {
+        if (Py_IsInitialized()) {
+            nb::gil_scoped_acquire gil;
+            drain_queue_loop(q, sf, tp);
+        }
+        prom->set_value();
+    }));
+    // This runs on the thread that called _run_headless (released the GIL around
+    // model_app()), same guard as the spins/waits above — only re-release if we
+    // actually hold it.
+    std::optional<nb::gil_scoped_release> rel;
+    if (Py_IsInitialized() && PyGILState_Check()) rel.emplace();
+    fut.wait();
+}
+
+struct DelayHeadlessBackend final : BackendBase {
+    HeadlessWindow window_{0, {}};
+    int delay_ms_ = 100;
+    explicit DelayHeadlessBackend(int d) : delay_ms_(d) {}
+    Window& create_window(WindowConfig cfg) override { window_ = HeadlessWindow{1, cfg}; return window_; }
+    void run(std::function<void(const WindowEvent&)> cb) override {
+        {
+            std::unique_lock<std::mutex> lk(g_headless_cv_mutex);
+            g_headless_cv.wait_for(lk, std::chrono::milliseconds(delay_ms_),
+                                    [] { return g_headless_quit_requested.load(std::memory_order_acquire); });
+        }
+        final_drain_before_close();
+        cb(WindowEvent{window_.id(), WindowClose{}});
+    }
+    void submit(WindowId, std::shared_ptr<const SceneSnapshot>) override {}
+    void wake() override {}
+    void quit() override {}
+};
+
 NB_MODULE(_prism_ext, m) {
     prism::core::set_unhandled_error_handler(python_error_hub);
     m.def("_set_error_handler", [](nb::object handler) {
@@ -1997,28 +2060,18 @@ NB_MODULE(_prism_ext, m) {
         }
     });
 
-    // Headless backend for pytest — stays alive for delay_ms then fires WindowClose.
-    struct DelayHeadlessBackend final : BackendBase {
-        HeadlessWindow window_{0, {}};
-        int delay_ms_ = 100;
-        explicit DelayHeadlessBackend(int d) : delay_ms_(d) {}
-        Window& create_window(WindowConfig cfg) override { window_ = HeadlessWindow{1, cfg}; return window_; }
-        void run(std::function<void(const WindowEvent&)> cb) override {
-            std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms_));
-            cb(WindowEvent{window_.id(), WindowClose{}});
-        }
-        void submit(WindowId, std::shared_ptr<const SceneSnapshot>) override {}
-        void wake() override {}
-        void quit() override {}
-    };
-
     m.def("_is_running", [](){ return g_has_handle.load(std::memory_order_acquire) || g_run_guard.load(std::memory_order_acquire); });
+    m.def("_request_quit", [](){
+        g_headless_quit_requested.store(true, std::memory_order_release);
+        g_headless_cv.notify_all();
+    });
     m.def("_run_headless", [](PyModel& model, int delay_ms){
         {
             bool expected = false;
             if (!g_run_guard.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
                 throw std::runtime_error("prism.run already running");
             g_app_closed.store(false, std::memory_order_release);
+            g_headless_quit_requested.store(false, std::memory_order_release);
         }
         nb::gil_scoped_release release;
         auto backend = Backend{std::make_unique<DelayHeadlessBackend>(delay_ms)};

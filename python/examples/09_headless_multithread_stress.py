@@ -8,26 +8,18 @@ Demonstrates:
     ``1``, and a logic-thread observer (single-threaded, so safe) does the
     actual ``+= 1``. Never read-modify-write a plain Field from a worker
     thread.
-  - prism._run_headless() driving the app with no display — this is what
-    the CI ``3.14t`` (free-threaded) lane runs to prove the threading model
-    holds with the GIL disabled.
-
-``delay_ms`` is a safety ceiling, not the convergence signal: the headless
-backend sleeps for exactly ``delay_ms`` then fires WindowClose with no final
-drain, and posts made after that close are dropped. There is no exposed
-quit/close binding to end the app early once the counts converge, so this
-example polls ``event_count``/``counter`` on the calling thread with a
-bounded timeout instead of trusting the wall clock — if a loaded runner
-hasn't converged before the timeout, it fails with an explicit "did not
-converge" message rather than a silent off-by-N count.
+  - prism.headless() driving the app with no display — this is what the CI
+    ``3.14t`` (free-threaded) lane runs to prove the threading model holds
+    with the GIL disabled. ``app.wait_until()`` is the convergence signal
+    (not the wall clock): the block exits — closing the app, with a final
+    drain so nothing posted right before is dropped — as soon as the counts
+    match, or raises ``TimeoutError`` if a loaded runner never converges.
 
 Run:
   PYTHONPATH=build/python python python/examples/09_headless_multithread_stress.py
 """
 
 import sys
-import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 import prism
@@ -36,9 +28,8 @@ N_WORKERS = 8
 N_SHARED_SETS = 1000
 N_CHANNEL_SENDS = 1000
 N_INCREMENTS = 100
-HEADLESS_CEILING_MS = 5300
+HEADLESS_TIMEOUT_S = 10.0
 CONVERGE_TIMEOUT_S = 5.0
-CONVERGE_POLL_S = 0.005
 
 
 class StressModel(prism.Model):
@@ -64,39 +55,19 @@ def main() -> None:
     StressModel.events.observe(m, lambda v: event_count.__setitem__(0, event_count[0] + 1))
     StressModel.incr.observe(m, lambda v: setattr(m.counter, "value", m.counter.value + 1))
 
-    t = threading.Thread(
-        target=lambda: prism._run_headless(m, delay_ms=HEADLESS_CEILING_MS)
-    )
-    t.start()
-    for _ in range(100):
-        if prism._is_running():
-            break
-        time.sleep(0.01)
-
-    with ThreadPoolExecutor(max_workers=N_WORKERS) as pool:
-        futures = [pool.submit(stress_worker, m, n) for n in range(N_WORKERS)]
-        for f in futures:
-            f.result()
-
     target_events = N_WORKERS * N_CHANNEL_SENDS
     target_counter = N_WORKERS * N_INCREMENTS
-    deadline = time.monotonic() + CONVERGE_TIMEOUT_S
-    while (
-        event_count[0] != target_events or m.counter.value != target_counter
-    ) and time.monotonic() < deadline:
-        time.sleep(CONVERGE_POLL_S)
-    converged_at = time.monotonic()
 
-    if event_count[0] != target_events or m.counter.value != target_counter:
-        raise AssertionError(
-            f"did not converge within {CONVERGE_TIMEOUT_S}s: "
-            f"event_count={event_count[0]} (want {target_events}), "
-            f"counter={m.counter.value} (want {target_counter})"
+    with prism.headless(m, timeout=HEADLESS_TIMEOUT_S) as app:
+        with ThreadPoolExecutor(max_workers=N_WORKERS) as pool:
+            futures = [pool.submit(stress_worker, m, n) for n in range(N_WORKERS)]
+            for f in futures:
+                f.result()
+
+        app.wait_until(
+            lambda: event_count[0] == target_events and m.counter.value == target_counter,
+            timeout=CONVERGE_TIMEOUT_S,
         )
-
-    t.join()
-    app_closed_at = time.monotonic()
-    assert converged_at <= app_closed_at, "converged after the headless app already closed"
 
     assert event_count[0] == target_events, event_count[0]
     assert m.counter.value == target_counter, m.counter.value

@@ -37,8 +37,8 @@ PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py
 Each opens a window (`prism.run` blocks, releases GIL). Close the window to exit.
 
 `09_headless_multithread_stress.py` never opens a window — it drives
-`prism._run_headless()` directly and asserts exact counts, so it doubles as
-the pytest/CI check the `3.14t` free-threaded lane runs:
+`prism.headless()` and asserts exact counts, so it doubles as the pytest/CI
+check the `3.14t` free-threaded lane runs:
 
 ```bash
 PYTHONPATH=build/python python python/examples/09_headless_multithread_stress.py
