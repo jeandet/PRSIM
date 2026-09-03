@@ -342,6 +342,26 @@ void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v) {
 // forward-declared here so field_add_dispatch below can call it.
 template <typename T> T apply_validator(nb::object self, T v);
 
+// Releases one nb::object's Python reference, guarded against the two hazards every
+// destructor in this file that can run off a posted/queued closure faces: the
+// mutation queue is destroyed by run() with the GIL released (model_app.hpp:190),
+// and CPython flips Py_IsInitialized() to false partway through Py_FinalizeEx(),
+// well before it finishes clearing module globals and running the final GC passes
+// — so ordinary, still-GIL-holding teardown (e.g. a module-level Model dropping to
+// a zero refcount at shutdown) can run with Py_IsInitialized() already false.
+// Checking GIL-held first (not Py_IsInitialized()) is therefore the right signal:
+// decref'ing is safe whenever this thread already holds the GIL, regardless of that
+// flag — only fall back to leaking (`.release()`) when there's truly no GIL to
+// decref under and no interpreter left to acquire one on. Shared by every site that
+// used to duplicate this dance: PyHolder, SlotDerived, SlotTree, WeakCallback.
+static void release_py_object_guarded(nb::object& obj) {
+    if (!obj.ptr()) return;
+    if (PyGILState_Check()) { obj.reset(); return; }
+    if (!Py_IsInitialized()) { obj.release(); return; }
+    nb::gil_scoped_acquire g;
+    obj.reset();
+}
+
 // Owns exactly one nb::object for a closure that may sit in the mutation queue and
 // be destroyed with the GIL released (model_app.hpp:190) or after interpreter
 // shutdown. Move-only (copied via shared_ptr<PyHolder> where a closure needs to be
@@ -357,17 +377,7 @@ struct PyHolder {
     PyHolder& operator=(const PyHolder&) = delete;
     PyHolder(PyHolder&&) = default;
     PyHolder& operator=(PyHolder&&) = default;
-    ~PyHolder() {
-        // Check GIL-held first, not Py_IsInitialized(): see the SlotDerived
-        // destructor's comment below for why Py_IsInitialized() alone is the
-        // wrong signal (it can already read false during ordinary,
-        // still-GIL-holding teardown at interpreter shutdown).
-        if (!obj.ptr()) return;
-        if (PyGILState_Check()) { obj.reset(); return; }
-        if (!Py_IsInitialized()) { obj.release(); return; }
-        nb::gil_scoped_acquire g;
-        obj.reset();
-    }
+    ~PyHolder() { release_py_object_guarded(obj); }
 };
 
 // Atomic `field.add(n)` for int/float fields: get()+set() must both happen on the
@@ -467,6 +477,18 @@ public:
         }
     }
 
+    // Copying (e.g. SenderHub::emit()'s receiver snapshot) plain member-copies
+    // weak_/strong_, which increfs the underlying PyObject* via nb::object's copy
+    // constructor — always safe here because every copy site runs on the logic
+    // thread with the GIL already held (construction from a nanobind-bound method,
+    // or emit()'s snapshot inside a receiver callback). Declared explicitly
+    // (instead of left implicit) only to avoid -Wdeprecated-copy-dtor now that
+    // ~WeakCallback is user-declared; move likewise.
+    WeakCallback(const WeakCallback&) = default;
+    WeakCallback& operator=(const WeakCallback&) = default;
+    WeakCallback(WeakCallback&&) = default;
+    WeakCallback& operator=(WeakCallback&&) = default;
+
     template <typename... Args>
     void operator()(Args&&... args) const {
         if (!Py_IsInitialized()) return;
@@ -474,6 +496,17 @@ public:
         nb::object target = strong_ ? nb::object(strong_) : (*weak_)();
         if (!target || target.is_none()) return;
         try { target(std::forward<Args>(args)...); } catch (...) { report_python_callback_error(); }
+    }
+
+    // A WeakCallback lives inside a SenderHub receiver entry, and a SenderHub (and
+    // therefore this object) can be destroyed when the owning SlotBase's last
+    // shared_ptr drops from a queued closure's `keep` — destroyed by run() with the
+    // GIL released (model_app.hpp:190), same hazard PyHolder/SlotDerived/SlotTree
+    // above guard against. Release weak_/strong_ the same guarded way instead of
+    // decref'ing unconditionally.
+    ~WeakCallback() {
+        if (weak_) release_py_object_guarded(*weak_);
+        release_py_object_guarded(strong_);
     }
 
 private:
@@ -860,16 +893,10 @@ struct SlotTree : SlotBase {
     // this SlotTree to zero — and the mutation queue itself is destroyed with the
     // GIL released (model_app.hpp:190). Releasing py_src_holder's PyObject* must
     // still happen under the GIL when the interpreter is alive; once it's gone,
-    // leak instead of decref'ing into a torn-down interpreter (same idiom as
-    // PyHolder above).
+    // leak instead of decref'ing into a torn-down interpreter — see
+    // release_py_object_guarded above.
     ~SlotTree() override {
-        // Check GIL-held first, not Py_IsInitialized() — see the SlotDerived
-        // destructor's comment for why.
-        if (!py_src_holder) return;
-        if (PyGILState_Check()) { *py_src_holder = nb::object(); return; }
-        if (!Py_IsInitialized()) { py_src_holder->release(); return; }
-        nb::gil_scoped_acquire g;
-        *py_src_holder = nb::object();
+        if (py_src_holder) release_py_object_guarded(*py_src_holder);
     }
 };
 // The posted reader may run on the logic thread after the interpreter is finalized
@@ -1220,33 +1247,13 @@ struct SlotDerived : SlotBase {
     // A `keep` shared_ptr<SlotBase> held by a posted/queued closure can be the
     // reference that drops this SlotDerived to zero, and the mutation queue itself
     // is destroyed with the GIL released (model_app.hpp:190) — same hazard as
-    // SlotTree above. Release py_fn/dep_keepalive_ under the GIL (or leak them,
-    // same idiom as PyHolder, if the interpreter is already gone) before the
-    // member destructors below run; deps_/dep_owners_ need no such guard — they
-    // hold no Python objects.
+    // SlotTree above. Release py_fn/dep_keepalive_ under the GIL (or leak them if
+    // the interpreter is already gone) before the member destructors below run;
+    // deps_/dep_owners_ need no such guard — they hold no Python objects. See
+    // release_py_object_guarded above.
     ~SlotDerived() override {
-        // Check GIL-held first, not Py_IsInitialized(): CPython flips
-        // Py_IsInitialized() to false partway through Py_FinalizeEx(), well
-        // before it finishes clearing module globals and running the final
-        // GC passes — ordinary, still-GIL-holding object teardown (e.g. a
-        // module-level Model dropping to a zero refcount at shutdown) can
-        // run with Py_IsInitialized() already false. Decref'ing is safe
-        // whenever this thread already holds the GIL, regardless of that
-        // flag — only fall back to leaking when there's truly no GIL to
-        // decref under and no interpreter left to acquire one on.
-        if (PyGILState_Check()) {
-            py_fn = nb::object();
-            dep_keepalive_.clear();
-            return;
-        }
-        if (!Py_IsInitialized()) {
-            py_fn.release();
-            for (auto& o : dep_keepalive_) o.release();
-            return;
-        }
-        nb::gil_scoped_acquire g;
-        py_fn = nb::object();
-        dep_keepalive_.clear();
+        release_py_object_guarded(py_fn);
+        for (auto& o : dep_keepalive_) release_py_object_guarded(o);
     }
 };
 
@@ -2250,13 +2257,15 @@ NB_MODULE(_prism_ext, m) {
 
     nb::class_<BoundSliderValue>(m, "BoundSlider", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundSliderValue::get, &validated_set<BoundSliderValue, double>)
-        .def_prop_ro("range", &BoundSliderValue::range)
+        .def_prop_ro("range", &BoundSliderValue::range,
+                     "Any thread; dispatched read. Returns the slider's current (min, max) bounds as a tuple.")
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb), cb);
         }, nb::arg("callback"), kObserveDoc)
         .def("get", &BoundSliderValue::get)
         .def("set", &validated_set<BoundSliderValue, double>)
-        .def("set_range", &BoundSliderValue::set_range, nb::arg("min"), nb::arg("max"));
+        .def("set_range", &BoundSliderValue::set_range, nb::arg("min"), nb::arg("max"),
+             "Any thread; applied on the logic thread. Sets the slider's (min, max) bounds.");
 
     nb::class_<BoundCheckboxValue>(m, "BoundCheckbox", nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>)

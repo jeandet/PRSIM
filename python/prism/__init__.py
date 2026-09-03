@@ -772,7 +772,8 @@ class _ListDescriptor:
 
     # alias generic observe to update
     def observe(self, instance, callback):
-        return self.observe_update(instance, callback)
+        _warn_deprecated_class_observe(self.name, "observe")
+        return self._allocate(instance).observe_update(callback)
 
 
 def list_field(default=None):

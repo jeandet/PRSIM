@@ -1413,6 +1413,66 @@ def test_posted_mutations_keep_target_alive_across_del():
     assert result.returncode == 0
 
 
+def test_observer_weakcallback_survives_undrained_close():
+    """Final fix wave item 1 repro: WeakCallback (used by every observe*()
+    wrapper to hold a Python callback inside a C++ SenderHub receiver, see
+    prism_ext.cpp) used to decref weak_/strong_ unconditionally in its
+    (implicit) destructor. A SenderHub -- and its WeakCallback receivers --
+    is destroyed whenever the owning Field<T>'s last shared_ptr drops.
+    field_set_dispatch() posts a closure holding that shared_ptr (`keep`) as
+    its only owning reference; if that closure is still queued (undrained)
+    when run() returns, the mutation queue itself is destroyed with the GIL
+    released (model_app.hpp:190) -- so the shared_ptr, the Field<T>, its
+    SenderHub, and every WeakCallback inside it are all torn down off-GIL
+    too. Pre-fix this decref'd into a released GIL; ~SlotDerived/~SlotTree
+    already guarded exactly this pattern (see PyGILState_Check()/
+    Py_IsInitialized() in their destructors), WeakCallback did not.
+
+    Fires a burst of standalone FieldInt handles, each observed then
+    immediately set()+deleted, right as a short _run_headless() window is
+    closing -- so several of the posted set() closures are still sitting in
+    the queue, holding the last reference to their Field<T>, when run()
+    tears the queue down. May not crash pre-fix on this allocator (CPython's
+    small-object allocator can paper over a UAF the way it does for the
+    sibling repros above, e.g. test_standalone_handle_self_drop_during_own_drain_survives) --
+    ASan is the discriminator, not this test's own pass/fail on a plain
+    build. Runs in a subprocess since a manifested crash would otherwise
+    take down the whole suite.
+    """
+    code = (
+        "import threading, time\n"
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    x = prism.field(0)\n"
+        "m = M()\n"
+        "t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=30))\n"
+        "t.start()\n"
+        "for _ in range(300):\n"
+        "    if prism._is_running():\n"
+        "        break\n"
+        "    time.sleep(0.01)\n"
+        "assert prism._is_running()\n"
+        "for i in range(200):\n"
+        "    h = prism.FieldInt(i)\n"
+        "    h.observe(lambda v: None)\n"
+        "    h.set(i + 1)\n"
+        "    del h\n"
+        "t.join()\n"
+        "print('OK')\n"
+    )
+    for _ in range(3):
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=os.environ,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "AddressSanitizer" not in result.stderr, result.stderr
+        assert "Fatal Python error" not in result.stderr, result.stderr
+
+
 def test_plot_handle_del_in_flight_during_replace_series():
     """Task 3 item 1: standalone PlotHandle.replace_series() posts a closure that
     must hold `keep` (the PlotModel's owning shared_ptr) so the target survives
@@ -3245,6 +3305,21 @@ def test_class_level_list_observe_update_emits_deprecation_warning():
     m = M()
     with pytest.warns(DeprecationWarning, match=r"model\.items\.observe_update"):
         M.items.observe_update(m, lambda idx, v: None)
+
+
+def test_class_level_list_observe_alias_warning_names_observe_not_observe_update():
+    """Final fix wave item 3: `Class.items.observe(model, cb)` forwards to
+    observe_update internally, but the warning must name the method the
+    caller actually used (`observe`), not the internal forwarding target."""
+    from prism import list_field
+
+    class M(Model):
+        items = list_field([0])
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.items\.observe\b") as record:
+        M.items.observe(m, lambda idx, v: None)
+    assert not any("observe_update" in str(w.message) for w in record)
 
 
 def test_instance_level_list_observe_insert_does_not_warn():
