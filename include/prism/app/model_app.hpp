@@ -76,9 +76,13 @@ public:
         if (logic_wrapper_) *logic_wrapper_ = std::move(w);
         else logic_wrapper_ = std::make_shared<std::function<void(std::function<void()>)>>(std::move(w));
     }
-    void run_wrapped(std::function<void()> fn) const {
-        if (logic_wrapper_ && *logic_wrapper_) (*logic_wrapper_)(std::move(fn));
+    static void apply_wrapper(const std::shared_ptr<std::function<void(std::function<void()>)>>& w,
+                              std::function<void()> fn) {
+        if (w && *w) (*w)(std::move(fn));
         else fn();
+    }
+    void run_wrapped(std::function<void()> fn) const {
+        apply_wrapper(logic_wrapper_, std::move(fn));
     }
 
     struct PostHandle {
@@ -140,8 +144,7 @@ public:
                         if (!sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
                     } while (true);
                 };
-                if (wrapper && *wrapper) (*wrapper)(do_drain);
-                else do_drain();
+                apply_wrapper(wrapper, do_drain);
             }));
         }
     }
@@ -248,8 +251,7 @@ void model_app(Backend& backend, Window& window, Model& model,
                     if (anim_clock.active())
                         schedule_tick();
                 };
-                if (logic_wrapper_holder && *logic_wrapper_holder) (*logic_wrapper_holder)(do_tick);
-                else do_tick();
+                AppContext::apply_wrapper(logic_wrapper_holder, do_tick);
             })
         );
     };
@@ -384,13 +386,10 @@ void model_app(Backend& backend, Window& window, Model& model,
                         entry->tree->drain_shared();
                         if (post_dispatch_hook) post_dispatch_hook();
                         if (needs_publish) publish_entry(wid, *entry);
-                        registry.for_each_dirty([&](WindowId id, WindowRegistry::Entry& e) {
-                            publish_entry(id, e);
-                        });
+                        publish_dirty();
                         schedule_tick();
                     };
-                    if (wrapper_for_dispatch && *wrapper_for_dispatch) (*wrapper_for_dispatch)(do_dispatch);
-                    else do_dispatch();
+                    AppContext::apply_wrapper(wrapper_for_dispatch, do_dispatch);
                 })
             );
         });
