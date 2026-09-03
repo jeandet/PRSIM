@@ -153,9 +153,7 @@ __all__ = [
     "tree_field",
     "TreeSource",
     "TreeNodeId",
-    "TableSource",
     "is_tree_source",
-    "is_table_source",
     "validator_for",
     "BoundPlot",
     "PlotHandle",
@@ -262,7 +260,10 @@ def _clear_model_observers(model):
 
 
 def _atexit_clear():
-    _models_snapshot = list(_all_models)
+    try:
+        _models_snapshot = list(_all_models)
+    except Exception:
+        _models_snapshot = []
     for m in _models_snapshot:
         try:
             _clear_model_observers(m)
@@ -273,7 +274,11 @@ def _atexit_clear():
     except Exception:
         pass
 
-    for h in list(_prism_ext._observed_handles):
+    try:
+        _observed_handles_snapshot = list(_prism_ext._observed_handles)
+    except Exception:
+        _observed_handles_snapshot = []
+    for h in _observed_handles_snapshot:
         try:
             _disconnect_keepalive(h)
         except Exception:
@@ -551,22 +556,19 @@ class _DerivedDescriptor:
         dep_handles = [getattr(instance, n) for n in dep_names]
         # build call_fn from fn's signature; also build a same-shape probe that
         # calls fn directly (no weakref indirection needed — instance is in scope)
-        import inspect
-        import weakref as _wr
-
-        sig = inspect.signature(self.fn)
+        sig = _inspect_mod.signature(self.fn)
         n_params = len(sig.parameters)
         n_deps = len(dep_handles)
 
         if n_params == 1 and n_deps >= 1:
             # self-style: fn(instance) — break Model->slot->py_fn->instance cycle via weakref
-            wref = _wr.ref(instance)
+            wref = _wr_mod.ref(instance)
             orig = self.fn
             call_fn = lambda _w=wref, _f=orig: _f(_w()) if _w() is not None else None  # type: ignore[no-untyped-call]
             probe_fn = lambda: orig(instance)  # type: ignore[no-untyped-call]
         elif n_params == n_deps and n_deps > 0:
             # break cycle: capture weakref + dep names (strings), not handles or instance
-            wref2 = _wr.ref(instance)
+            wref2 = _wr_mod.ref(instance)
             orig2 = self.fn
             call_fn = (
                 lambda _w=wref2, _f=orig2, _ns=dep_names: _f(
@@ -851,7 +853,10 @@ TreeFieldSource = TreeSourceLike | _Callable[[], TreeSourceLike] | None  # type:
 
 
 def tree_field(source: TreeFieldSource = None):  # type: ignore[assignment]
-    """Descriptor for TreeController — ``tree = prism.tree_field(source)``.
+    """Mutations (``refresh()``) may be called from any thread (dispatched to
+    the logic thread).
+
+    Descriptor for TreeController — ``tree = prism.tree_field(source)``.
 
     ``source`` may be a ``TreeSource`` (``Protocol`` — duck-typed), a plain
     dict ``{id: {label, children:[...], attrs:{}}}``, a zero-arg callable
@@ -865,7 +870,10 @@ def tree_field(source: TreeFieldSource = None):  # type: ignore[assignment]
 
 
 def validator_for(type_hint):
-    """Build a pydantic TypeAdapter validator for Annotated types.
+    """No thread affinity — a plain builder function, not a field/handle
+    operation. Call it wherever ``field()``/``shared()`` need a validator.
+
+    Build a pydantic TypeAdapter validator for Annotated types.
 
     Example:
         from typing import Annotated
@@ -883,13 +891,6 @@ def validator_for(type_hint):
 
 
 class Model(_ModelBase):
-    def observe(self, descriptor, callback):
-        """May be called from any thread; the callback itself fires on the logic thread.
-
-        Instance convenience for non-string observe: m.observe(M.volume, cb).
-        """
-        return descriptor.observe(self, callback)
-
     def __init_subclass__(cls, **kwargs):
         """Runs at class definition time, not per-instance; no thread affinity.
 
@@ -992,10 +993,8 @@ class Model(_ModelBase):
             if cls in (Model, _ModelBase, object):
                 continue
             if "view" in cls.__dict__:
-                import weakref
-
                 fn = cls.__dict__["view"]
-                wr = weakref.ref(self)
+                wr = _wr_mod.ref(self)
 
                 def _tramp(vb, _wr=wr, _fn=fn):  # type: ignore[no-untyped-def]
                     inst = _wr()
@@ -1030,9 +1029,7 @@ class Model(_ModelBase):
         each dep handle via fire-and-forget observe() — the keepalive lives
         on the dep handle, which is itself cached on this Model, so it's
         disconnected by run()'s finally like any other observer."""
-        import weakref
-
-        wr = weakref.ref(self)
+        wr = _wr_mod.ref(self)
 
         def _tramp(*_value, _wr=wr, _fn=fn):  # type: ignore[no-untyped-def]
             inst = _wr()
@@ -1071,12 +1068,22 @@ def transaction():
     return _TransactionCtx()
 
 
-def run(model, title="PRISM App"):
+def run(model, title="PRISM App", headless: float | None = None):
     """Blocks the calling thread until the window closes; releases the GIL.
 
     Starts the app event loop for *model* and returns once the window
     closes, so other Python threads can run while it blocks.
+
+    If *headless* is a number, runs *model* headless for that many seconds
+    instead (no display) — equivalent to
+    ``with prism.headless(model, timeout=headless): pass`` — and returns once
+    it ends. The common CLI pattern is
+    ``prism.run(m, title="...", headless=1.0 if "--headless" in sys.argv else None)``.
     """
+    if headless is not None:
+        with _headless_ctx(model, timeout=headless):
+            pass
+        return
     try:
         return _run(model, title)
     finally:
@@ -1111,7 +1118,11 @@ class App:
 
     @property
     def is_running(self):
-        return _is_running()
+        # _is_running() alone is a single global flag — it can be true because
+        # of a *different* app. Require this App's own runner thread to still
+        # be alive too, so a concurrent app elsewhere can't make this handle
+        # falsely report itself as running.
+        return self._thread.is_alive() and _is_running()
 
     def wait_until(self, predicate, timeout=None, poll=0.005):
         """Any thread except the logic thread. Poll *predicate* until it's truthy.
@@ -1154,28 +1165,70 @@ def headless(model, *, timeout: float = 10.0):
     ``app.wait_until(...)``. Exceptions raised inside the block propagate
     after the app is stopped and joined. Raises ``RuntimeError`` if the
     app doesn't start within ``min(timeout, 5.0)`` seconds (the runner
-    thread is signalled to quit and joined before raising).
+    thread is signalled to quit and joined before raising). Also raises
+    whatever the runner thread itself raised instead of silently dropping
+    it (e.g. a second, concurrent ``headless()``/``run()`` call's "already
+    running" error) — from ``__enter__``, or from ``__exit__`` if it
+    happens after a successful start and the ``with`` block itself didn't
+    already raise.
     """
-    thread = _threading_mod.Thread(
-        target=_run_headless, args=(model,), kwargs={"delay_ms": int(timeout * 1000)}, daemon=True
-    )
+    error: list[BaseException] = []
+
+    def _target():
+        try:
+            _run_headless(model, delay_ms=int(timeout * 1000))
+        except BaseException as exc:  # re-raised on the caller's thread below
+            error.append(exc)
+
+    # _is_running() is a single global flag — if it's already true before we
+    # even start, it may belong to a *different* already-running app, so it
+    # can never prove *this* thread started. Only trust it turning true as
+    # our own success signal when nothing else was already running.
+    was_running_before = _is_running()
+    thread = _threading_mod.Thread(target=_target, daemon=True)
     thread.start()
+    # Give a synchronous failure (e.g. the "already running" case above,
+    # which raises before doing any real work) a bounded head start to land
+    # in `error`, so the loop below doesn't trust a stale is_running() first.
+    for _ in range(10):
+        if error or not thread.is_alive():
+            break
+        if not was_running_before and _is_running():
+            break
+        _time_mod.sleep(0.001)
+
     startup_timeout = min(timeout, 5.0)
     deadline = _time_mod.monotonic() + startup_timeout
-    while not _is_running():
+    while not error and not _is_running():
         if _time_mod.monotonic() >= deadline:
             _request_quit()
-            thread.join()
+            thread.join(timeout=5.0)
             raise RuntimeError(
                 f"prism.headless(): app did not start within {startup_timeout} s"
             )
         _time_mod.sleep(0.001)
+    if error:
+        thread.join(timeout=5.0)
+        raise error[0]
+
     app = App(thread)
+    block_raised = False
     try:
         yield app
+    except BaseException:
+        block_raised = True
+        raise
     finally:
         app.quit()
-        thread.join()
+        thread.join(timeout=5.0)
+        if error and not block_raised:
+            raise error[0]
+
+
+# run(headless=...)'s parameter is also named `headless`, shadowing the function
+# name inside run()'s own body — reference it through this module-level alias
+# instead (resolved at call time, so definition order here doesn't matter).
+_headless_ctx = headless
 
 
 # Mirror of the handler installed via _set_error_handler: the C++ side has no
@@ -1262,6 +1315,8 @@ class Worker:
 
     def _run(self):
         try:
+            if self._repeat is not None and self._repeat <= 0:
+                return
             if self._interval is None:
                 if self._repeat is None:
                     self._call()

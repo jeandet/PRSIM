@@ -55,11 +55,7 @@ def main() -> None:
 
     prism.worker(flaky_worker)
 
-    if "--headless" in sys.argv:
-        with prism.headless(m, timeout=0.6) as app:
-            app.wait_until(lambda: ticks >= 10, timeout=0.5)
-    else:
-        prism.run(m, title="Error Handling — Python")
+    prism.run(m, title="Error Handling — Python", headless=1.0 if "--headless" in sys.argv else None)
 
     print(f"status={m.status.value} error_count={len(errors)}")
     prism.on_error(None)

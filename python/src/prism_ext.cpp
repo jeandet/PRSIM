@@ -60,6 +60,32 @@ static std::atomic<bool> g_app_closed{false};
 // reuses the same process sequentially. Proper per-generation tracking
 // would keep Closed for old-gen handles until next gen installs.
 
+// Test-only: makes the next run()/_run_headless() call throw immediately after
+// acquiring g_run_guard, before touching the backend/model_app — a stand-in for
+// model_app() itself throwing (no real path exists to trigger that from Python;
+// every callback model_app calls synchronously is already exception-guarded).
+// Exercises RunGuardReset below: a second run() after the forced failure must work.
+static std::atomic<bool> g_fail_next_run{false};
+
+// run()/_run_headless() must reset g_run_guard/g_has_handle/g_post_handle/g_app_closed
+// on every exit path, including model_app() throwing — otherwise a failed run leaves
+// g_run_guard stuck true and every subsequent run()/_run_headless() call raises
+// "prism.run already running" forever. Constructed right after the CAS that claims
+// g_run_guard, so its destructor always runs exactly once per successful claim,
+// success or exception.
+struct RunGuardReset {
+    ~RunGuardReset() {
+        {
+            std::lock_guard<std::mutex> lk(g_handle_mutex);
+            g_post_handle.reset();
+            g_app_closed.store(true, std::memory_order_release);
+        }
+        g_has_handle.store(false, std::memory_order_release);
+        g_run_guard.store(false, std::memory_order_release);
+        g_app_closed.store(false, std::memory_order_release);
+    }
+};
+
 enum class PostResult { Posted, NoApp, Closed };
 
 static void drain_queue_loop(const std::shared_ptr<mpsc_queue<std::function<void()>>>& q,
@@ -316,6 +342,34 @@ void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v) {
 // forward-declared here so field_add_dispatch below can call it.
 template <typename T> T apply_validator(nb::object self, T v);
 
+// Owns exactly one nb::object for a closure that may sit in the mutation queue and
+// be destroyed with the GIL released (model_app.hpp:190) or after interpreter
+// shutdown. Move-only (copied via shared_ptr<PyHolder> where a closure needs to be
+// copy-constructible for std::function). The destructor re-acquires the GIL before
+// releasing the Python reference if the interpreter is still alive; otherwise it
+// leaks the reference (`.release()`, same idiom as g_observed_handles above) rather
+// than decref'ing into a torn-down interpreter.
+struct PyHolder {
+    nb::object obj;
+    PyHolder() = default;
+    explicit PyHolder(nb::object o) : obj(std::move(o)) {}
+    PyHolder(const PyHolder&) = delete;
+    PyHolder& operator=(const PyHolder&) = delete;
+    PyHolder(PyHolder&&) = default;
+    PyHolder& operator=(PyHolder&&) = default;
+    ~PyHolder() {
+        // Check GIL-held first, not Py_IsInitialized(): see the SlotDerived
+        // destructor's comment below for why Py_IsInitialized() alone is the
+        // wrong signal (it can already read false during ordinary,
+        // still-GIL-holding teardown at interpreter shutdown).
+        if (!obj.ptr()) return;
+        if (PyGILState_Check()) { obj.reset(); return; }
+        if (!Py_IsInitialized()) { obj.release(); return; }
+        nb::gil_scoped_acquire g;
+        obj.reset();
+    }
+};
+
 // Atomic `field.add(n)` for int/float fields: get()+set() must both happen on the
 // logic thread (the only thread allowed to touch Field<T> directly) so concurrent
 // add() calls from many threads never race on a read-modify-write — each becomes
@@ -326,18 +380,33 @@ template <typename T> T apply_validator(nb::object self, T v);
 // reported via prism.on_error() instead of raising back to the calling thread.
 // simplify: does not participate in prism.transaction() buffering (unlike
 // field_set_dispatch) — add() always dispatches its own closure immediately.
+//
+// The posted closure must never capture `self`/an nb::object directly (queued
+// closures are destroyed by run() with the GIL released — model_app.hpp:190). The
+// common case (no validator installed) posts a closure holding only `keep`, the raw
+// field pointer, and `n` — no Python objects at all. Only when a validator is
+// present does the closure capture one, via a PyHolder behind a shared_ptr (so the
+// closure itself stays trivially copyable without touching the GIL).
 template <typename T>
 void field_add_dispatch(nb::object self, std::shared_ptr<void> keep, Field<T>* field, T n) {
-    auto do_add = [self, field, n]() {
-        T new_value = field->get() + n;
-        try {
-            new_value = apply_validator<T>(self, new_value);
-        } catch (...) {
-            report_python_callback_error();
-            return;
-        }
-        field->set(std::move(new_value));
-    };
+    nb::dict d = self.attr("__dict__");
+    bool has_validator = d.contains("_prism_validator");
+    std::function<void()> do_add;
+    if (has_validator) {
+        auto held_self = std::make_shared<PyHolder>(self);
+        do_add = [held_self, field, n]() {
+            T new_value = field->get() + n;
+            try {
+                new_value = apply_validator<T>(held_self->obj, new_value);
+            } catch (...) {
+                report_python_callback_error();
+                return;
+            }
+            field->set(std::move(new_value));
+        };
+    } else {
+        do_add = [field, n]() { field->set(field->get() + n); };
+    }
     if (prism::app::detail_is_logic_thread) {
         do_add();
         return;
@@ -724,6 +793,22 @@ struct SlotTree : SlotBase {
     void clear() override {
         if (py_src_holder) *py_src_holder = nb::none();
     }
+    // A `keep` shared_ptr<SlotBase> captured by a posted/queued closure (see
+    // list_op_dispatch/field_set_dispatch above) can be the reference that drops
+    // this SlotTree to zero — and the mutation queue itself is destroyed with the
+    // GIL released (model_app.hpp:190). Releasing py_src_holder's PyObject* must
+    // still happen under the GIL when the interpreter is alive; once it's gone,
+    // leak instead of decref'ing into a torn-down interpreter (same idiom as
+    // PyHolder above).
+    ~SlotTree() override {
+        // Check GIL-held first, not Py_IsInitialized() — see the SlotDerived
+        // destructor's comment for why.
+        if (!py_src_holder) return;
+        if (PyGILState_Check()) { *py_src_holder = nb::object(); return; }
+        if (!Py_IsInitialized()) { py_src_holder->release(); return; }
+        nb::gil_scoped_acquire g;
+        *py_src_holder = nb::object();
+    }
 };
 // The posted reader may run on the logic thread after the interpreter is finalized
 // (see try_post_via_handle_impl's drain path), so it must not construct any nb::
@@ -799,7 +884,7 @@ struct BoundField {
         if (!field) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Field<T>* f = field;
-        auto wrapper = [cb, f](const T& val) {
+        auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
@@ -932,7 +1017,7 @@ struct BoundShared {
         if (!shared) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Shared<T>* s = shared;
-        auto wrapper = [cb, s](const T& val) {
+        auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
@@ -984,7 +1069,7 @@ struct BoundChannel {
         if (!channel) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         Channel<T>* c = channel;
-        auto wrapper = [cb, c](const T& val) {
+        auto wrapper = [cb](const T& val) {
             if (!Py_IsInitialized()) return;
             nb::gil_scoped_acquire acq;
             try { cb(val); } catch (...) { report_python_callback_error(); }
@@ -1058,6 +1143,37 @@ struct SlotDerived : SlotBase {
         dep_keepalive_.clear();
         py_fn = nb::none();
     }
+    // A `keep` shared_ptr<SlotBase> held by a posted/queued closure can be the
+    // reference that drops this SlotDerived to zero, and the mutation queue itself
+    // is destroyed with the GIL released (model_app.hpp:190) — same hazard as
+    // SlotTree above. Release py_fn/dep_keepalive_ under the GIL (or leak them,
+    // same idiom as PyHolder, if the interpreter is already gone) before the
+    // member destructors below run; deps_/dep_owners_ need no such guard — they
+    // hold no Python objects.
+    ~SlotDerived() override {
+        // Check GIL-held first, not Py_IsInitialized(): CPython flips
+        // Py_IsInitialized() to false partway through Py_FinalizeEx(), well
+        // before it finishes clearing module globals and running the final
+        // GC passes — ordinary, still-GIL-holding object teardown (e.g. a
+        // module-level Model dropping to a zero refcount at shutdown) can
+        // run with Py_IsInitialized() already false. Decref'ing is safe
+        // whenever this thread already holds the GIL, regardless of that
+        // flag — only fall back to leaking when there's truly no GIL to
+        // decref under and no interpreter left to acquire one on.
+        if (PyGILState_Check()) {
+            py_fn = nb::object();
+            dep_keepalive_.clear();
+            return;
+        }
+        if (!Py_IsInitialized()) {
+            py_fn.release();
+            for (auto& o : dep_keepalive_) o.release();
+            return;
+        }
+        nb::gil_scoped_acquire g;
+        py_fn = nb::object();
+        dep_keepalive_.clear();
+    }
 };
 
 template <typename T>
@@ -1074,7 +1190,7 @@ struct BoundDerived {
         if (!derived) throw nb::value_error("observe(): handle is not bound to a Model");
         auto owner_copy = owner;
         auto* d = derived;
-        auto wrapper = [cb, d](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(...){report_python_callback_error();} };
+        auto wrapper = [cb](const T& v){ if (!Py_IsInitialized()) return; nb::gil_scoped_acquire g; try{cb(v);}catch(...){report_python_callback_error();} };
         auto conn = d->on_change().connect(std::move(wrapper));
         if (owner_copy) conn.keep_alive(owner_copy);
         return conn;
@@ -1542,25 +1658,6 @@ struct PyModel {
         slots.push_back(s);
         return {s, s.get()};
     }
-    // kept for tuple-compat if needed
-    template <typename T>
-    std::pair<std::shared_ptr<SlotBase>, SlotDerived<T>*> add_derived_slot(nb::object fn, nb::tuple deps) {
-        std::vector<nb::object> v;
-        v.reserve(deps.size());
-        for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
-        return add_derived_slot_vec<T>(std::move(fn), v);
-    }
-    std::pair<std::shared_ptr<SlotBase>, SlotDerived<int>*> add_derived_int_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<int>(std::move(fn), std::move(deps)); }
-    std::pair<std::shared_ptr<SlotBase>, SlotDerived<double>*> add_derived_double_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<double>(std::move(fn), std::move(deps)); }
-    std::pair<std::shared_ptr<SlotBase>, SlotDerived<std::string>*> add_derived_str_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<std::string>(std::move(fn), std::move(deps)); }
-    std::pair<std::shared_ptr<SlotBase>, SlotDerived<bool>*> add_derived_bool_slot(nb::object fn, nb::tuple deps) { return add_derived_slot<bool>(std::move(fn), std::move(deps)); }
-
-    // Legacy raw-pointer accessors (kept for internal use if needed)
-    Field<int>* add_int(int v) { return add_int_slot(v).second; }
-    Field<double>* add_float(double v) { return add_float_slot(v).second; }
-    Field<std::string>* add_str(std::string v) { return add_str_slot(std::move(v)).second; }
-    Field<bool>* add_bool(bool v) { return add_bool_slot(v).second; }
-
     // Python view callback — set from Model.__init__ if subclass overrides view().
     nb::object py_view_cb = nb::none();
     void set_view_callback(nb::object cb) { py_view_cb = std::move(cb); }
@@ -1622,6 +1719,7 @@ static int pymodel_tp_traverse(PyObject* self, visitproc visit, void* arg) {
 }
 
 static int pymodel_tp_clear(PyObject* self) {
+    if (!nb::inst_ready(self)) return 0; // constructor may not have run yet — see tp_traverse
     PyModel* m = nb::inst_ptr<PyModel>(self);
     m->py_view_cb = nb::none();
     std::vector<std::shared_ptr<SlotBase>> slots_copy;
@@ -1672,8 +1770,11 @@ static nb::handle observed_handles() {
 static nb::object keep_connection(nb::object self, Connection conn) {
     nb::object result = nb::cast(std::move(conn));
     nb::dict d = self.attr("__dict__");
-    if (!d.contains("_prism_keepalive")) d["_prism_keepalive"] = nb::list();
-    nb::list keepalive = d["_prism_keepalive"];
+    // setdefault, not contains()-then-[]= : the two-step check-then-set race
+    // (two threads both seeing "absent" and each installing their own fresh
+    // list, one clobbering the other's) is real on a free-threaded build —
+    // setdefault's own C level get-or-insert is atomic under the dict's lock.
+    nb::list keepalive = nb::cast<nb::list>(d.attr("setdefault")("_prism_keepalive", nb::list()));
     keepalive.append(result);
     observed_handles().attr("add")(self);
     return result;
@@ -2254,6 +2355,7 @@ NB_MODULE(_prism_ext, m) {
         }
         g_headless_cv.notify_all();
     });
+    m.def("_fail_next_run", [](){ g_fail_next_run.store(true, std::memory_order_release); });
     m.def("_run_headless", [](PyModel& model, int delay_ms){
         {
             bool expected = false;
@@ -2262,6 +2364,9 @@ NB_MODULE(_prism_ext, m) {
             g_app_closed.store(false, std::memory_order_release);
             g_headless_quit_requested.store(false, std::memory_order_release);
         }
+        RunGuardReset reset_guard;
+        if (g_fail_next_run.exchange(false, std::memory_order_acq_rel))
+            throw std::runtime_error("_fail_next_run(): forced failure for testing");
         nb::gil_scoped_release release;
         auto backend = Backend{std::make_unique<DelayHeadlessBackend>(delay_ms)};
         auto& window = backend.create_window({});
@@ -2281,14 +2386,6 @@ NB_MODULE(_prism_ext, m) {
             g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
-        {
-            std::lock_guard<std::mutex> lk(g_handle_mutex);
-            g_post_handle.reset();
-            g_app_closed.store(true, std::memory_order_release);
-        }
-        g_has_handle.store(false, std::memory_order_release);
-        g_run_guard.store(false, std::memory_order_release);
-        g_app_closed.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("delay_ms")=100);
 
     m.def("run", [](PyModel& model, std::string title){
@@ -2298,6 +2395,9 @@ NB_MODULE(_prism_ext, m) {
                 throw std::runtime_error("prism.run already running");
             g_app_closed.store(false, std::memory_order_release);
         }
+        RunGuardReset reset_guard;
+        if (g_fail_next_run.exchange(false, std::memory_order_acq_rel))
+            throw std::runtime_error("_fail_next_run(): forced failure for testing");
         // Must be called from main thread on macOS
         nb::gil_scoped_release release;
         auto backend = Backend::software(RenderConfig{});
@@ -2319,13 +2419,5 @@ NB_MODULE(_prism_ext, m) {
             g_app_closed.store(false, std::memory_order_release);
         };
         model_app(backend, window, model, setup);
-        {
-            std::lock_guard<std::mutex> lk(g_handle_mutex);
-            g_post_handle.reset();
-            g_app_closed.store(true, std::memory_order_release);
-        }
-        g_has_handle.store(false, std::memory_order_release);
-        g_run_guard.store(false, std::memory_order_release);
-        g_app_closed.store(false, std::memory_order_release);
     }, nb::arg("model"), nb::arg("title")="PRISM App");
 }

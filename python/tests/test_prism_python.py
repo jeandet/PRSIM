@@ -829,6 +829,28 @@ def test_headless_context_not_running_after_block():
     assert not prism._is_running()
 
 
+def test_run_guard_resets_after_model_app_throws():
+    """2026-09-03 final-review item 2 repro: run()/_run_headless() used to
+    reset g_run_guard/g_has_handle/g_post_handle/g_app_closed only after
+    model_app() returned normally — if it threw, those flags were stuck, and
+    every subsequent run()/_run_headless() call would raise "prism.run
+    already running" forever. `_fail_next_run()` is a test-only hook that
+    forces the next run to throw right after claiming the guard, standing in
+    for model_app() itself throwing (no real Python-triggerable path reaches
+    that — every callback it calls synchronously is already
+    exception-guarded, e.g. view()'s report_python_callback_error())."""
+
+    class M(Model):
+        x = field(0)
+
+    prism._prism_ext._fail_next_run()
+    with pytest.raises(RuntimeError, match="forced failure"):
+        prism._run_headless(M(), delay_ms=100)
+
+    # Guard must be released: a second run must not raise "already running".
+    prism._run_headless(M(), delay_ms=50)
+
+
 def test_headless_context_final_drain_delivers_shared_write_before_quit():
     """A Shared<T> write applies directly (not posted) and is only surfaced to
     observers on the next drain (tick or mutation-queue post) — see
@@ -849,6 +871,53 @@ def test_headless_context_final_drain_delivers_shared_write_before_quit():
 
     assert seen == [7]
     conn.disconnect()
+
+
+def test_headless_nested_call_raises_real_already_running_error():
+    """2026-09-03 final-review item 3 repro: headless()'s runner thread used
+    to swallow whatever exception it raised (default threading excepthook,
+    printed to stderr and forgotten) instead of propagating it to the
+    caller. Starting a second headless() app while one is already running
+    must surface the real "already running" RuntimeError from the inner
+    call's __enter__ — not silently succeed, and not the unrelated "did not
+    start" timeout error (is_running() is already true because of the
+    *outer* app, so a naive is_running()-based startup check can't tell the
+    inner call's own failure apart from that)."""
+
+    class M(Model):
+        x = field(0)
+
+    class M2(Model):
+        y = field(0)
+
+    with prism.headless(M()):
+        with pytest.raises(RuntimeError, match="already running"):
+            with prism.headless(M2()):
+                pass
+
+
+def test_app_is_running_false_after_own_thread_joined_even_if_another_app_runs():
+    """2026-09-03 final-review item 11: App.is_running used to be a bare
+    `_is_running()` — a single global flag, so a finished App's own handle
+    could look "running" again purely because a *different* app started
+    later in the same process. Requiring the App's own thread to still be
+    alive fixes that."""
+
+    class M(Model):
+        x = field(0)
+
+    class M2(Model):
+        y = field(0)
+
+    with prism.headless(M()) as app1:
+        assert app1.is_running
+    assert not app1.is_running
+
+    with prism.headless(M2()) as app2:
+        assert app2.is_running
+        # app1's own thread is long done — it must not look running again
+        # just because *some* app (app2) is now running.
+        assert not app1.is_running
 
 
 def test_headless_startup_bounded_and_cleans_up_thread(monkeypatch):
@@ -1759,6 +1828,38 @@ def test_run_headless_keeps_field_cache_so_post_run_reads_see_last_value():
     assert result.returncode == 0, result.stderr
 
 
+def test_pymodel_tp_clear_guards_uninitialized_instance():
+    """2026-09-03 final-review item 4 repro: pymodel_tp_clear lacked the
+    `if (!nb::inst_ready(self)) return 0;` guard that pymodel_tp_traverse
+    already has (for exactly this reason — "constructor may not have run
+    yet"). `Model.__new__(Model)` allocates and GC-tracks an instance
+    without ever running the C++ constructor (that happens in __init__, not
+    __new__); putting it in a self-cycle via its dynamic __dict__ (which
+    exists independently of the wrapped C++ object) forces the cyclic GC to
+    actually call tp_clear on it during gc.collect() — dereferencing
+    uninitialized memory without the guard. Runs in a subprocess: a
+    manifested crash would otherwise take down the whole suite.
+    """
+    code = (
+        "import gc\n"
+        "import prism\n"
+        "m = prism.Model.__new__(prism.Model)\n"
+        "m.__dict__['self_ref'] = m\n"
+        "del m\n"
+        "gc.collect()\n"
+        "print('OK')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "OK" in result.stdout
+
+
 def test_run_headless_does_not_leak_derived_field_model():
     """Task 16: a Model with a derived() field left in a module global no
     longer trips nanobind's leak check once _run_headless() returns. Was a
@@ -2555,6 +2656,24 @@ def test_worker_repeat_stops_after_exactly_n_calls():
     assert len(calls) == 3
 
 
+def test_worker_repeat_zero_makes_no_calls_either_form():
+    """2026-09-03 final-review item 10 repro: with `interval` set, Worker._run
+    only checked `n >= repeat` *after* calling fn() once, so `repeat=0` still
+    made one call before stopping. Must make zero calls, for both the
+    interval and no-interval forms."""
+    calls_interval = []
+    w1 = prism.worker(lambda: calls_interval.append(1), interval=0.01, repeat=0)
+    _wait_worker_stopped(w1)
+    assert not w1.is_alive
+    assert calls_interval == []
+
+    calls_no_interval = []
+    w2 = prism.worker(lambda: calls_no_interval.append(1), repeat=0)
+    _wait_worker_stopped(w2)
+    assert not w2.is_alive
+    assert calls_no_interval == []
+
+
 def test_worker_zero_arg_fn_works():
     """fn may take zero args instead of (stop,) — detected once via
     inspect.signature at Worker creation."""
@@ -2650,6 +2769,46 @@ def test_field_add_validated_rejection_routes_to_on_error_value_unchanged():
         assert m.count.value == 0
     finally:
         prism.on_error(None)
+
+
+def test_field_add_validator_no_uaf_on_close_burst():
+    """2026-09-03 final-review item 1 repro: field_add_dispatch() used to post a
+    closure capturing `self` (an nb::object) straight into the mutation queue —
+    which model_app.hpp:190 documents is destroyed by run() with the GIL
+    released. A background thread bursting add()/set() calls right up to (and
+    past) a short-lived headless app's close guarantees some closures are still
+    sitting in the queue, undrained, when it's torn down — exactly the
+    ASan-discriminating scenario from task-1's brief. Only ASan reliably
+    catches the resulting UAF/refcount corruption, so this runs in a
+    subprocess (a crash would otherwise take down the whole suite).
+    """
+    code = (
+        "import threading\n"
+        "import prism\n"
+        "def _reject_negative(v):\n"
+        "    if v < 0:\n"
+        "        raise ValueError('no negatives')\n"
+        "    return v\n"
+        "class M(prism.Model):\n"
+        "    counter = prism.field(0, validator=_reject_negative)\n"
+        "    plain = prism.field(0)\n"
+        "m = M()\n"
+        "def burst():\n"
+        "    for i in range(2000):\n"
+        "        m.counter.add(1)\n"
+        "        m.plain.set(i)\n"
+        "t = threading.Thread(target=burst)\n"
+        "t.start()\n"
+        "prism._run_headless(m, delay_ms=50)\n"
+        "t.join(timeout=10)\n"
+        "assert not t.is_alive()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        timeout=45,
+    )
+    assert result.returncode == 0
 
 
 def test_field_str_and_bool_have_no_add():
@@ -2852,6 +3011,20 @@ def test_instance_level_observe_does_not_warn():
         warnings.simplefilter("error", DeprecationWarning)
         conn = m.count.observe(lambda v: None)
     conn.disconnect()
+
+
+def test_model_instance_observe_method_is_gone():
+    """2026-09-03 final-review item 5: `Model.observe(descriptor, cb)` (the
+    instance-level convenience `m.observe(M.volume, cb)`) routed through the
+    deprecated class-level descriptor.observe() path and warned against
+    itself. Ruling: delete it — one spelling only, `m.volume.observe(cb)`."""
+
+    class M(Model):
+        count = field(0)
+
+    m = M()
+    assert not hasattr(m, "observe")
+    assert "observe" not in vars(Model)
 
 
 def _load_example(name: str):
