@@ -311,6 +311,42 @@ void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v) {
     }
 }
 
+// apply_validator is defined near NB_MODULE (needs nb::dict/attr access on `self`);
+// forward-declared here so field_add_dispatch below can call it.
+template <typename T> T apply_validator(nb::object self, T v);
+
+// Atomic `field.add(n)` for int/float fields: get()+set() must both happen on the
+// logic thread (the only thread allowed to touch Field<T> directly) so concurrent
+// add() calls from many threads never race on a read-modify-write — each becomes
+// one closure that runs to completion before the next drains. `self` is the Python
+// handle (BoundField<T>/FieldHandle<T>) so the field's validator, if any, can be
+// applied to the *summed* value — the caller's thread never sees that value, so
+// unlike set()/`.value =` it cannot validate before dispatch; a rejection here is
+// reported via prism.on_error() instead of raising back to the calling thread.
+// simplify: does not participate in prism.transaction() buffering (unlike
+// field_set_dispatch) — add() always dispatches its own closure immediately.
+template <typename T>
+void field_add_dispatch(nb::object self, std::shared_ptr<void> keep, Field<T>* field, T n) {
+    auto do_add = [self, field, n]() {
+        T new_value = field->get() + n;
+        try {
+            new_value = apply_validator<T>(self, new_value);
+        } catch (...) {
+            report_python_callback_error();
+            return;
+        }
+        field->set(std::move(new_value));
+    };
+    if (prism::app::detail_is_logic_thread) {
+        do_add();
+        return;
+    }
+    auto res = try_post_via_handle_impl([keep, do_add]() mutable { do_add(); }, false);
+    if (res == PostResult::Posted) return;
+    if (res == PostResult::Closed) return; // post-close: no-op per spec (no direct fallback)
+    do_add(); // NoApp: pre-run, single-threaded
+}
+
 // Standalone-handle state (Field<T>/List<T> here, Shared<T>/Channel<T> below) is
 // heap-allocated and tracked by a live count, exposed to Python as
 // _standalone_state_alive_count() — a regression probe for the self-owning-hub leak
@@ -1590,15 +1626,27 @@ void bind_scalar(nb::module_& m, const char* suffix) {
     field_cls.def("observe", [](nb::object self, nb::callable cb) {
         return keep_connection(self, nb::cast<FieldHandle<T>&>(self).observe(cb));
     }, nb::arg("callback"));
+    if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) {
+        field_cls.def("add", [](nb::object self, T n) {
+            auto& h = nb::cast<FieldHandle<T>&>(self);
+            field_add_dispatch<T>(self, h.field, h.field.get(), n);
+        }, nb::arg("n"), "Any thread; atomic increment applied on the logic thread.");
+    }
 
     std::string bound_field_name = std::string("Bound") + suffix;
-    nb::class_<BoundField<T>>(m, bound_field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
+    auto bound_field_cls = nb::class_<BoundField<T>>(m, bound_field_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())
         .def_prop_rw("value", &BoundField<T>::get, &validated_set<BoundField<T>, T>)
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundField<T>&>(self).observe(cb));
         }, nb::arg("callback"))
         .def("get", &BoundField<T>::get)
         .def("set", &validated_set<BoundField<T>, T>);
+    if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) {
+        bound_field_cls.def("add", [](nb::object self, T n) {
+            auto& h = nb::cast<BoundField<T>&>(self);
+            if (h.field) field_add_dispatch<T>(self, h.owner, h.field, n);
+        }, nb::arg("n"), "Any thread; atomic increment applied on the logic thread.");
+    }
 
     std::string shared_name = std::string("Shared") + suffix;
     auto shared_cls = nb::class_<SharedHandle<T>>(m, shared_name.c_str(), nb::dynamic_attr(), nb::is_weak_referenceable())

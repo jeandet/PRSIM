@@ -61,19 +61,13 @@ class LivePlot(prism.Model):
 m = LivePlot()
 
 # background: simulate live sensor jitter via Shared-like periodic update
-# (30 ticks at 0.5s, same as the original range(30) loop). prism.worker()
-# is stopped by run() on exit, so 'm' is captured directly, no weakref.
-ticks_left = [30]
-
-
-def jitter(stop):
-    if ticks_left[0] <= 0:
-        stop.set()
-        return
-    ticks_left[0] -= 1
+# (30 ticks at 0.5s). prism.worker() is stopped by run() on exit, so 'm' is
+# captured directly, no weakref; repeat=30 stops the worker itself after
+# the 30th tick, so jitter() needs neither the stop event nor a counter.
+def jitter():
     m.frequency.value = 2.0 + 0.5 * math.sin(time.time())
 
 
-prism.worker(jitter, interval=0.5)
+prism.worker(jitter, interval=0.5, repeat=30)
 
 prism.run(m, title="Live Plot — Python")

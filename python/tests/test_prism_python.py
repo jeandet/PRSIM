@@ -2387,6 +2387,139 @@ def test_worker_context_manager_starts_and_stops():
     assert not w.is_alive
 
 
+def _wait_worker_stopped(w, timeout=2.0):
+    import time
+
+    deadline = time.monotonic() + timeout
+    while w.is_alive and time.monotonic() < deadline:
+        time.sleep(0.005)
+
+
+def test_worker_repeat_stops_after_exactly_n_calls():
+    """2026-09-03 followups task 11: repeat=N stops the worker on its own
+    after exactly N calls — no manual stop.set() needed."""
+    calls = []
+
+    def tick(stop):
+        calls.append(1)
+
+    w = prism.worker(tick, interval=0.01, repeat=3)
+    _wait_worker_stopped(w)
+    assert not w.is_alive
+    assert len(calls) == 3
+
+
+def test_worker_zero_arg_fn_works():
+    """fn may take zero args instead of (stop,) — detected once via
+    inspect.signature at Worker creation."""
+    calls = []
+
+    def once():
+        calls.append(1)
+
+    w = prism.worker(once)
+    _wait_worker_stopped(w)
+    assert calls == [1]
+
+
+def test_worker_zero_arg_fn_with_repeat():
+    calls = []
+
+    def tick():
+        calls.append(1)
+
+    w = prism.worker(tick, interval=0.01, repeat=2)
+    _wait_worker_stopped(w)
+    assert not w.is_alive
+    assert len(calls) == 2
+
+
+def test_standalone_field_add_pre_run():
+    h = prism.FieldInt(5)
+    h.add(3)
+    assert h.get() == 8
+
+    h2 = prism.FieldFloat(1.5)
+    h2.add(0.5)
+    assert h2.get() == 2.0
+
+
+def test_bound_field_add_updates_value():
+    class M(Model):
+        counter = field(0)
+
+    m = M()
+    m.counter.add(5)
+    assert m.counter.value == 5
+    m.counter.add(-2)
+    assert m.counter.value == 3
+
+
+def test_field_add_atomic_across_threads_headless():
+    """2026-09-03 followups task 11: field.add(n) posts one dispatched
+    closure per call that runs entirely on the logic thread, so concurrent
+    add()s from many threads never race the way `field.value += n` would.
+    8 threads x 1000 add(1) calls must land exactly 8000, every time."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    class M(Model):
+        counter = field(0)
+
+    m = M()
+    n_workers = 8
+    n_per_worker = 1000
+
+    def bump():
+        for _ in range(n_per_worker):
+            m.counter.add(1)
+
+    with prism.headless(m, timeout=10.0) as app:
+        with ThreadPoolExecutor(max_workers=n_workers) as pool:
+            futures = [pool.submit(bump) for _ in range(n_workers)]
+            for f in futures:
+                f.result()
+        app.wait_until(
+            lambda: m.counter.value == n_workers * n_per_worker, timeout=5.0
+        )
+
+    assert m.counter.value == n_workers * n_per_worker
+
+
+def test_field_add_validated_rejection_routes_to_on_error_value_unchanged():
+    """add()'s validator runs on the logic thread against the *summed*
+    value, which the calling thread never sees — so a rejection can't raise
+    back to the caller like set()/`.value =` do. It goes to on_error()
+    instead, and the field is left unchanged."""
+
+    class M(Model):
+        count = field(0, validator=_reject_negative)
+
+    m = M()
+    caught = []
+    try:
+        prism.on_error(lambda exc: caught.append(exc))
+        m.count.add(-5)
+        assert len(caught) == 1
+        assert isinstance(caught[0], ValueError)
+        assert m.count.value == 0
+    finally:
+        prism.on_error(None)
+
+
+def test_field_str_and_bool_have_no_add():
+    """add() is int/float only — str/bool have no meaningful `+`."""
+
+    class M(Model):
+        s = field("x")
+        b = field(False)
+
+    m = M()
+    assert not hasattr(m.s, "add")
+    assert not hasattr(m.b, "add")
+    assert not hasattr(prism.FieldStr(""), "add")
+    assert not hasattr(prism.FieldBool(False), "add")
+
+
 def test_on_change_fires_on_dep_change_with_descriptor_deps():
     """2026-09-03 followups task 10: @on_change(dep, ...) subscribes the
     decorated method to each dep at Model.__init__ — no manual

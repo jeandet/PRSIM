@@ -46,15 +46,14 @@ def main() -> None:
 
     m.value.observe(on_value_change)
 
-    ticks = [0]
+    ticks = 0
 
-    def ticker(stop: threading.Event) -> None:
-        ticks[0] += 1
-        m.value.value = ticks[0]
-        if ticks[0] >= 10:
-            stop.set()
+    def ticker() -> None:
+        nonlocal ticks
+        ticks += 1
+        m.value.value = ticks
 
-    prism.worker(ticker, interval=0.03)
+    prism.worker(ticker, interval=0.03, repeat=10)
 
     def flaky_worker(stop: threading.Event) -> None:
         raise RuntimeError("worker failed once")
@@ -63,7 +62,7 @@ def main() -> None:
 
     if "--headless" in sys.argv:
         with prism.headless(m, timeout=0.6) as app:
-            app.wait_until(lambda: ticks[0] >= 10, timeout=0.5)
+            app.wait_until(lambda: ticks >= 10, timeout=0.5)
     else:
         prism.run(m, title="Error Handling — Python")
 

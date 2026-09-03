@@ -84,11 +84,12 @@ def main() -> None:
 
     AsyncioBridge.results.observe(m, on_result)
 
-    ticks = [0]
+    ticks = 0
 
     def ticker(stop: threading.Event) -> None:
-        ticks[0] += 1
-        m.trigger.value = ticks[0]
+        nonlocal ticks
+        ticks += 1
+        m.trigger.value = ticks
 
     prism.worker(ticker, interval=0.05)
 

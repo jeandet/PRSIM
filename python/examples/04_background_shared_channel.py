@@ -10,9 +10,8 @@ Run:
   PYTHONPATH=build/python python python/examples/04_background_shared_channel.py
 """
 
+import itertools
 import random
-import threading
-import time
 
 import prism
 
@@ -29,18 +28,16 @@ class SensorBoard(prism.Model):
         vb.list(self.log)
 
 
-def sensor_thread(model: SensorBoard, stop: threading.Event):
-    n = 0
-    while not stop.is_set():
-        time.sleep(0.3)
-        # Shared: latest value wins, intermediate writes coalesced
-        model.temperature.value = 20.0 + random.uniform(-2, 8)
-        # Channel: every send ordered and delivered
-        model.events.send(n)
-        n += 1
-
-
 m = SensorBoard()
+_event_ids = itertools.count()
+
+
+def sensor_tick():
+    # Shared: latest value wins, intermediate writes coalesced
+    m.temperature.value = 20.0 + random.uniform(-2, 8)
+    # Channel: every send ordered and delivered
+    m.events.send(next(_event_ids))
+
 
 # observe Shared (fires on drain) and Channel (fires per send)
 m.temperature.observe(lambda v: print(f"[shared] temp={v:.2f}"))
@@ -54,13 +51,9 @@ def on_temp(v):
 
 m.temperature.observe(on_temp)
 
-stop = threading.Event()
-t = threading.Thread(target=sensor_thread, args=(m, stop), daemon=True)
-# start before run to prove pre-run vs in-run paths (spec §2 pre-run direct)
-t.start()
+# prism.worker() starts immediately, before run(), to prove pre-run vs
+# in-run dispatch paths (spec §2 pre-run direct) — and is stopped by
+# run()'s exit, so no manual stop event / join is needed here.
+prism.worker(sensor_tick, interval=0.3)
 
-try:
-    prism.run(m, title="Shared + Channel — Python")
-finally:
-    stop.set()
-    t.join(timeout=1)
+prism.run(m, title="Shared + Channel — Python")

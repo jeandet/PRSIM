@@ -185,6 +185,7 @@ __all__ = [
 import weakref as _wr_mod
 import atexit as _atexit_mod
 import contextlib as _contextlib_mod
+import inspect as _inspect_mod
 import threading as _threading_mod
 import time as _time_mod
 import traceback as _traceback_mod
@@ -1216,24 +1217,51 @@ def _stop_all_workers():
 _atexit_mod.register(_stop_all_workers)
 
 
+def _worker_takes_stop(fn):
+    """Detect fn's arity once at Worker creation: zero params -> fn() each
+    call, one (or more) -> fn(stop). Signature inspection failures (some
+    builtins/C callables) default to the stop-taking form, the pre-existing
+    calling convention."""
+    try:
+        sig = _inspect_mod.signature(fn)
+    except (TypeError, ValueError):
+        return True
+    return len(sig.parameters) >= 1
+
+
 class Worker:
     """Any thread. Runs fn on a background thread; exceptions go to prism.on_error()."""
 
-    def __init__(self, fn, *, interval=None, daemon=True, name=None):
+    def __init__(self, fn, *, interval=None, repeat=None, daemon=True, name=None):
         self._fn = fn
         self._interval = interval
+        self._repeat = repeat
+        self._takes_stop = _worker_takes_stop(fn)
         self._stop = _threading_mod.Event()
         self._thread = _threading_mod.Thread(target=self._run, daemon=daemon, name=name)
+
+    def _call(self):
+        self._fn(self._stop) if self._takes_stop else self._fn()
 
     def _run(self):
         try:
             if self._interval is None:
-                self._fn(self._stop)
+                if self._repeat is None:
+                    self._call()
+                else:
+                    for _ in range(self._repeat):
+                        if self._stop.is_set():
+                            return
+                        self._call()
             else:
                 # wait first: first call lands after one interval, and a
                 # stop() during the wait exits immediately without a call.
+                n = 0
                 while not self._stop.wait(self._interval):
-                    self._fn(self._stop)
+                    self._call()
+                    n += 1
+                    if self._repeat is not None and n >= self._repeat:
+                        return
         except Exception as exc:
             _report_worker_error(exc)
 
@@ -1262,17 +1290,22 @@ class Worker:
         return False
 
 
-def worker(fn, *, interval=None, daemon=True, name=None):
+def worker(fn, *, interval=None, repeat=None, daemon=True, name=None):
     """Any thread. Runs fn on a background thread; exceptions go to prism.on_error().
 
-    Calls ``fn(stop: threading.Event)`` once if *interval* is None. With an
+    *fn* may take zero arguments or one (``stop: threading.Event``) —
+    detected once via ``inspect.signature`` when the worker is created.
+
+    Calls ``fn`` once if *interval* is None and *repeat* is None. With an
     *interval*, waits *interval* seconds (via ``stop.wait``) before each
     call — so the first call happens after one interval — and exits
-    immediately once ``.stop()`` sets the event. Starts immediately and
-    returns the :class:`Worker`; still-running workers are stopped when
-    ``run()`` / ``_run_headless()`` return.
+    immediately once ``.stop()`` sets the event. With *repeat* set, the
+    worker stops itself after exactly *repeat* calls (no ``.stop()`` needed);
+    combined with *interval* it stops at whichever comes first. Starts
+    immediately and returns the :class:`Worker`; still-running workers are
+    stopped when ``run()`` / ``_run_headless()`` return.
     """
-    w = Worker(fn, interval=interval, daemon=daemon, name=name)
+    w = Worker(fn, interval=interval, repeat=repeat, daemon=daemon, name=name)
     w.start()
     _register_worker(w)
     return w
