@@ -26,32 +26,28 @@ class Mixer(prism.Model):
         vb.widget(self.count)
 
 
-def _main():
-    m = Mixer()
+m = Mixer()
 
-    # observe field
-    c1 = Mixer.count.observe(m, lambda v: print(f"[observe] count={v}"))
+# observe field
+c1 = Mixer.count.observe(m, lambda v: print(f"[observe] count={v}"))
 
-    # background thread mutates from any thread (posted to logic thread).
-    # prism.worker() is stopped by run() on exit, so 'm' can be captured
-    # directly — no weakref needed (see prism/__init__.py: function-scoped
-    # Model + a stopped worker avoids the nanobind leak-check false positive).
-    values = iter(range(50, 55))
-
-    def bump(stop):
-        v = next(values, None)
-        if v is None:
-            stop.set()
-            return
-        print(
-            f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})"
-        )
-        m.count.value = v
-
-    prism.worker(bump, interval=1.0)
-
-    prism.run(m, title="Mixer — Python")
+# background thread mutates from any thread (posted to logic thread).
+# prism.worker() is stopped by run() on exit, so 'm' can be captured
+# directly — no weakref needed.
+values = iter(range(50, 55))
 
 
-if __name__ == "__main__":
-    _main()
+def bump(stop):
+    v = next(values, None)
+    if v is None:
+        stop.set()
+        return
+    print(
+        f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})"
+    )
+    m.count.value = v
+
+
+prism.worker(bump, interval=1.0)
+
+prism.run(m, title="Mixer — Python")

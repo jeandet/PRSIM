@@ -288,28 +288,12 @@ def _atexit_clear():
     except Exception:
         pass
     # run()/_run_headless() already disconnect the model they were given
-    # (see _disconnect_model_observers there) before returning, so a plain
-    # field/shared/channel/list/plot/tree Model with no `derived()` field and
-    # no `view()` override, left in a module global, no longer trips
-    # nanobind's leak check once the app closes — that shape of example
-    # doesn't need `def _main(): m = ...` (function scope) any more.
-    #
-    # Two known exceptions remain, both C++-side and out of reach from here:
-    # a `derived()` field (SlotDerived's py_fn/dep_keepalive_ members) and a
-    # `view(self, vb)` override (the trampoline passed to
-    # `self._set_view_callback(...)`) each independently keep the *Model
-    # itself* reachable past nanobind's leak check whenever the Model
-    # outlives run() in a module global — proven for `view()` too: even a
-    # callback that captures nothing at all (`m._set_view_callback(lambda
-    # vb: None)`) triggers it, so it's simply about PyModel holding *any*
-    # nb::object member, not about what that object references. No
-    # Python-side cleanup moves this (verified: disconnecting observers,
-    # clearing `_prism_fields`, clearing the model's whole `__dict__`,
-    # explicit `gc.collect()` — none of it helps; only dropping the Model's
-    # own last Python reference does, which `_main()`/function-scope
-    # achieves and a module global cannot). Fixing either needs a C++-side
-    # change to PyModel/SlotDerived's teardown, so examples using
-    # `derived()` and/or overriding `view()` still use `_main()`.
+    # (see _disconnect_model_observers there) before returning, so a Model
+    # left in a module global no longer trips nanobind's leak check once the
+    # app closes — PyModel's tp_traverse/tp_clear (task 16) let the cyclic GC
+    # find and break the Model -> slot -> callback -> Model cycle a
+    # `derived()` field or a `view(self, vb)` override forms, so plain
+    # top-level scripts no longer need `def _main(): m = ...`.
 
 
 _atexit_mod.register(_atexit_clear)

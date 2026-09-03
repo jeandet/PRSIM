@@ -34,13 +34,8 @@ class Browser(prism.Model):
         vb.widget(self.status)
 
 
-def _main():
-    m = Browser()
-    # detail/selected are accessible via controller's detail Field internally;
-    # for demo we just show row count after refresh
-    print("initial rows:", len(m.tree.rows()))  # type: ignore[attr-defined]
-    prism.run(m, title="Tree Browser — Python")
-
-
-if __name__ == "__main__":
-    _main()
+m = Browser()
+# detail/selected are accessible via controller's detail Field internally;
+# for demo we just show row count after refresh
+print("initial rows:", len(m.tree.rows()))  # type: ignore[attr-defined]
+prism.run(m, title="Tree Browser — Python")

@@ -403,10 +403,18 @@ static void drain_standalone() {
 }
 
 // Type-erased slot for PyModel view — defined before Bound* so they can hold shared_ptr to it.
+//
+// traverse()/clear() let PyModel's tp_traverse/tp_clear (see NB_MODULE below) participate
+// in Python's cyclic GC: a slot that holds an nb::object reaching back into its owning
+// Model (SlotDerived's py_fn/dep_keepalive_, SlotTree's py_src_holder) is otherwise a
+// GC-invisible edge in the Model -> slots -> callback -> Model cycle. Plain Slot/SlotShared/
+// SlotChannel/SlotList/SlotPlot hold no nb::object, so the no-op default is correct for them.
 struct SlotBase {
     virtual ~SlotBase() = default;
     virtual void build(ViewBuilder& vb) = 0;
     virtual void drain() {}
+    virtual void traverse(visitproc /*visit*/, void* /*arg*/) {}
+    virtual void clear() {}
 };
 template <typename T>
 struct Slot : SlotBase {
@@ -654,6 +662,16 @@ struct SlotTree : SlotBase {
     explicit SlotTree(prism::ui::TreeSource src) : ctrl(std::move(src)) {}
     explicit SlotTree(nb::object py_obj) : py_src_holder(std::make_shared<nb::object>(py_obj)), ctrl(PythonTreeSource::make(py_obj)) {}
     void build(ViewBuilder& vb) override { vb.tree(ctrl); }
+    void traverse(visitproc visit, void* arg) override {
+        if (py_src_holder) if (PyObject* o = py_src_holder->ptr()) visit(o, arg);
+    }
+    // Reset to None rather than an empty object: PythonTreeSource's callbacks
+    // (captured shared_ptr<nb::object>) dereference *py_src_holder via
+    // nb::hasattr on every call — None is a safe no-op source, a null
+    // PyObject* is not.
+    void clear() override {
+        if (py_src_holder) *py_src_holder = nb::none();
+    }
 };
 // The posted reader may run on the logic thread after the interpreter is finalized
 // (see try_post_via_handle_impl's drain path), so it must not construct any nb::
@@ -868,10 +886,15 @@ struct SlotDerived : SlotBase {
     T value_{};
     nb::object py_fn = nb::none();
     SenderHub<const T&> changed_;
-    std::vector<Connection> deps_;
     std::vector<std::shared_ptr<SlotBase>> dep_owners_;
     std::vector<nb::object> dep_keepalive_; // keeps standalone handles alive
     std::vector<Connection> observers_;
+    // Declared last so it's destroyed FIRST (C++ destroys members in reverse
+    // declaration order): deps_'s Connections must disconnect from each
+    // dependency's SenderHub before dep_owners_ (above) releases the
+    // shared_ptr that keeps that dependency's Slot alive — the other order
+    // frees the Slot first and deps_'s disconnect() then UAFs into it.
+    std::vector<Connection> deps_;
     SlotDerived() = default;
     SlotDerived(nb::object fn, T init) : py_fn(std::move(fn)), value_(std::move(init)) {}
     T get() const {
@@ -904,6 +927,22 @@ struct SlotDerived : SlotBase {
         emit_or_defer(static_cast<void*>(&changed_), [this]{ changed_.emit(value_); });
     }
     void build(ViewBuilder& vb) override { vb.widget_generic<T>(*this); }
+    void traverse(visitproc visit, void* arg) override {
+        if (PyObject* o = py_fn.ptr()) visit(o, arg);
+        for (auto& o : dep_keepalive_) if (PyObject* p = o.ptr()) visit(p, arg);
+    }
+    // Only release py_fn/dep_keepalive_ (the nb::objects that can form a cycle back
+    // to the owning Model) — NOT deps_/dep_owners_. Those are a live cross-reference
+    // into another slot's SenderHub (dep_owners_ is what keeps that slot's Field
+    // alive at all past this Model's own teardown); breaking it here from
+    // tp_clear, ahead of this SlotDerived's own destruction, races the owning
+    // Model's slots vector destructor and can UAF into an already-freed SenderHub.
+    // A recompute that still fires after py_fn is cleared is safe either way:
+    // py_fn() on nb::none() raises a plain (caught, reported) TypeError.
+    void clear() override {
+        dep_keepalive_.clear();
+        py_fn = nb::none();
+    }
 };
 
 template <typename T>
@@ -1416,6 +1455,44 @@ struct PyModel {
     }
 };
 
+// tp_traverse/tp_clear — makes PyModel (and every Python subclass, including
+// prism.Model) participate in the cyclic GC. Without this, py_view_cb and
+// each slot's Python callables (SlotDerived::py_fn/dep_keepalive_,
+// SlotTree::py_src_holder) are strong references held entirely on the C++
+// side: a cycle through them (Model -> slot -> callback -> Model) is
+// invisible to and unbreakable by the GC. See nanobind's refleaks.rst
+// "Reference cycles" section for the pattern.
+static int pymodel_tp_traverse(PyObject* self, visitproc visit, void* arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self)) return 0; // constructor may not have run yet
+    PyModel* m = nb::inst_ptr<PyModel>(self);
+    if (PyObject* o = m->py_view_cb.ptr()) {
+        int vret = visit(o, arg);
+        if (vret) return vret;
+    }
+    std::lock_guard<std::mutex> lk(m->slots_mutex);
+    for (auto& s : m->slots) s->traverse(visit, arg);
+    return 0;
+}
+
+static int pymodel_tp_clear(PyObject* self) {
+    PyModel* m = nb::inst_ptr<PyModel>(self);
+    m->py_view_cb = nb::none();
+    std::vector<std::shared_ptr<SlotBase>> slots_copy;
+    {
+        std::lock_guard<std::mutex> lk(m->slots_mutex);
+        slots_copy = m->slots;
+    }
+    for (auto& s : slots_copy) s->clear();
+    return 0;
+}
+
+static PyType_Slot pymodel_type_slots[] = {
+    {Py_tp_traverse, (void*)pymodel_tp_traverse},
+    {Py_tp_clear, (void*)pymodel_tp_clear},
+    {0, nullptr},
+};
+
 // simplify: leaked by design. A weakref.WeakSet tracking every observed handle needs one
 // long-lived Python object shared across all observe() calls. A `static nb::object` local
 // would run its Py_DECREF destructor during C++ static teardown, which happens after
@@ -1793,7 +1870,7 @@ NB_MODULE(_prism_ext, m) {
             });
         });
 
-    nb::class_<PyModel>(m, "Model")
+    nb::class_<PyModel>(m, "Model", nb::type_slots(pymodel_type_slots))
         .def(nb::init<>())
         .def("_set_view_callback", &PyModel::set_view_callback, nb::arg("callback"))
         // Single internal allocator set — deduped (public add_* was duplicate dead code)

@@ -53,28 +53,25 @@ class Dashboard(prism.Model):
         self.status.value = f"tick={self.tick.value} f={f:.2f} a={a:.2f}"
 
 
-def _main():
-    m = Dashboard()
-    m.rebuild_plot()
+m = Dashboard()
+m.rebuild_plot()
 
-    # Behavior wiring
-    m.frequency.observe(lambda v: m.rebuild_plot())
-    m.amplitude.observe(lambda v: m.rebuild_plot())
-    m.tick.observe(lambda v: m.rebuild_plot() if m.auto_sweep.value else None)
-
-    # Auto-sweep worker: stopped by run() on exit, so 'm' is captured
-    # directly, no weakref needed.
-    def sweeper(stop):
-        if m.auto_sweep.value:
-            # Shared: latest value wins, coalesced
-            m.tick.value = (m.tick.value + 1) % 1000
-            # nudge frequency slightly
-            m.frequency.value = 2.0 + 1.5 * math.sin(m.tick.value * 0.02)
-
-    prism.worker(sweeper, interval=0.05)
-
-    prism.run(m, title="Fancy Dashboard — Plot + Tree — Python")
+# Behavior wiring
+m.frequency.observe(lambda v: m.rebuild_plot())
+m.amplitude.observe(lambda v: m.rebuild_plot())
+m.tick.observe(lambda v: m.rebuild_plot() if m.auto_sweep.value else None)
 
 
-if __name__ == "__main__":
-    _main()
+# Auto-sweep worker: stopped by run() on exit, so 'm' is captured
+# directly, no weakref needed.
+def sweeper(stop):
+    if m.auto_sweep.value:
+        # Shared: latest value wins, coalesced
+        m.tick.value = (m.tick.value + 1) % 1000
+        # nudge frequency slightly
+        m.frequency.value = 2.0 + 1.5 * math.sin(m.tick.value * 0.02)
+
+
+prism.worker(sweeper, interval=0.05)
+
+prism.run(m, title="Fancy Dashboard — Plot + Tree — Python")

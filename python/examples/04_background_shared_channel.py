@@ -40,32 +40,27 @@ def sensor_thread(model: SensorBoard, stop: threading.Event):
         n += 1
 
 
-def _main():
-    m = SensorBoard()
+m = SensorBoard()
 
-    # observe Shared (fires on drain) and Channel (fires per send)
-    conn_s = SensorBoard.temperature.observe(
-        m, lambda v: print(f"[shared] temp={v:.2f}")
-    )
-    conn_c = SensorBoard.events.observe(m, lambda v: m.log.push(f"event {v}"))
-
-    # also periodic UI update from observer
-    def on_temp(v):
-        m.label.value = f"Temp {v:.1f} °C — {m.log.size()} events"
-
-    conn_label = SensorBoard.temperature.observe(m, on_temp)
-
-    stop = threading.Event()
-    t = threading.Thread(target=sensor_thread, args=(m, stop), daemon=True)
-    # start before run to prove pre-run vs in-run paths (spec §2 pre-run direct)
-    t.start()
-
-    try:
-        prism.run(m, title="Shared + Channel — Python")
-    finally:
-        stop.set()
-        t.join(timeout=1)
+# observe Shared (fires on drain) and Channel (fires per send)
+conn_s = SensorBoard.temperature.observe(m, lambda v: print(f"[shared] temp={v:.2f}"))
+conn_c = SensorBoard.events.observe(m, lambda v: m.log.push(f"event {v}"))
 
 
-if __name__ == "__main__":
-    _main()
+# also periodic UI update from observer
+def on_temp(v):
+    m.label.value = f"Temp {v:.1f} °C — {m.log.size()} events"
+
+
+conn_label = SensorBoard.temperature.observe(m, on_temp)
+
+stop = threading.Event()
+t = threading.Thread(target=sensor_thread, args=(m, stop), daemon=True)
+# start before run to prove pre-run vs in-run paths (spec §2 pre-run direct)
+t.start()
+
+try:
+    prism.run(m, title="Shared + Channel — Python")
+finally:
+    stop.set()
+    t.join(timeout=1)

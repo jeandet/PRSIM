@@ -32,38 +32,33 @@ class Settings(prism.Model):
         vb.vstack(self.volume, self.brightness, self.username)
 
 
-def _main():
-    m = Settings()
-    print(f"initial volume={m.volume.value} brightness={m.brightness.value}")
+m = Settings()
+print(f"initial volume={m.volume.value} brightness={m.brightness.value}")
 
-    # validation: raises pydantic ValidationError
-    try:
-        m.volume.value = 1.5
-    except Exception as e:
-        print(f"validation rejected volume=1.5: {e}")
+# validation: raises pydantic ValidationError
+try:
+    m.volume.value = 1.5
+except Exception as e:
+    print(f"validation rejected volume=1.5: {e}")
 
-    m.volume.value = 0.9
-    print(f"volume now {m.volume.value}")
+m.volume.value = 0.9
+print(f"volume now {m.volume.value}")
 
-    # transaction: two sets coalesced into one publish / one observer fire
-    seen = []
-    conn = Settings.volume.observe(m, lambda v: seen.append(v))
-    conn2 = Settings.brightness.observe(m, lambda v: seen.append(v))
+# transaction: two sets coalesced into one publish / one observer fire
+seen = []
+conn = Settings.volume.observe(m, lambda v: seen.append(v))
+conn2 = Settings.brightness.observe(m, lambda v: seen.append(v))
 
-    with prism.transaction():
-        m.volume.value = 0.2
-        m.brightness.value = 80
-        # buffered: still old values inside
-        assert m.volume.value == 0.9
-        assert m.brightness.value == 60
-        print("inside transaction (buffered)")
+with prism.transaction():
+    m.volume.value = 0.2
+    m.brightness.value = 80
+    # buffered: still old values inside
+    assert m.volume.value == 0.9
+    assert m.brightness.value == 60
+    print("inside transaction (buffered)")
 
-    print(
-        f"after transaction volume={m.volume.value} brightness={m.brightness.value} observed={seen}"
-    )
+print(
+    f"after transaction volume={m.volume.value} brightness={m.brightness.value} observed={seen}"
+)
 
-    prism.run(m, title="Validation + Transaction — Python")
-
-
-if __name__ == "__main__":
-    _main()
+prism.run(m, title="Validation + Transaction — Python")

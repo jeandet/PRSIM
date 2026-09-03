@@ -1453,21 +1453,17 @@ def test_run_headless_keeps_field_cache_so_post_run_reads_see_last_value():
     assert result.returncode == 0, result.stderr
 
 
-def test_run_headless_does_not_fix_derived_field_model_leak():
-    """Task 8 known limitation, pinned so a future fix notices: a Model with
-    a derived() field still trips nanobind's leak check when left in a
-    module global, even after run()/_run_headless() disconnect its
-    observers. Root-caused (see task-8-report.md) to SlotDerived's C++-side
-    py_fn/dep_keepalive_ members — real, GIL-protected strong references to
-    Python objects held entirely on the C++ side, invisible to and
-    unreachable from any Python-level cleanup (disconnecting observers,
-    clearing _prism_fields, clearing the model's whole __dict__, explicit
-    gc.collect() — none of it moves the leak; only dropping the Model's own
-    last Python reference does, which `_main()`/function-scope achieves and
-    a module global cannot). Fixing this needs a C++-side change to
-    SlotDerived's teardown — out of scope for a Python-only task, so
-    examples using derived() still wrap their body in `_main()`. This test
-    exists to catch the day that stops being true, not to enforce it."""
+def test_run_headless_does_not_leak_derived_field_model():
+    """Task 16: a Model with a derived() field left in a module global no
+    longer trips nanobind's leak check once _run_headless() returns. Was a
+    pinned known-limitation (test_run_headless_does_not_fix_derived_field_model_leak,
+    see task-8-report.md): SlotDerived's C++-side py_fn/dep_keepalive_ members
+    are real, GIL-protected strong references to Python objects invisible to
+    the cyclic GC — Model -> slots -> SlotDerived -> py_fn -> (closure) ->
+    Model, a cycle only Python-level cleanup couldn't reach. Fixed by giving
+    PyModel a tp_traverse/tp_clear pair (task-16) so the GC can find and break
+    it, and SlotDerived's own traverse()/clear() expose py_fn/dep_keepalive_
+    to it."""
     code = (
         "import prism\n"
         "class M(prism.Model):\n"
@@ -1484,30 +1480,17 @@ def test_run_headless_does_not_fix_derived_field_model_leak():
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "leaked" in result.stderr, (
-        "derived-field leak appears to be fixed now — if so, drop this test's "
-        "assertion (and _main() from 05_lists_and_derived.py, 06_live_plot.py, "
-        "08_dashboard.py; see task-8-report.md)"
-    )
+    assert "leaked" not in result.stderr, result.stderr
 
 
-def test_run_headless_does_not_fix_view_override_model_leak():
-    """Task 8 second known limitation, found while verifying which examples
-    could safely drop `_main()`: a Model that overrides `view(self, vb)` also
-    still trips nanobind's leak check when left in a module global, even with
-    NO derived() field at all and even after run()/_run_headless() disconnect
-    its observers. Root-caused to the same shape of bug as the derived-field
-    one (see task-8-report.md and test_run_headless_does_not_fix_derived_field_model_leak):
-    `Model.__init__` passes the view trampoline to `self._set_view_callback(...)`,
-    a C++ binding that stores it as an nb::object member — and simply storing
-    ANY nb::object that way (proven with a callback that captures nothing at
-    all — `m._set_view_callback(lambda vb: None)`) is enough to make nanobind
-    misreport the whole Model as leaked at shutdown, regardless of what the
-    callback itself references. So `view()`-overriding examples (02, 03, 04,
-    06, 07, 08) all still need `_main()`, not just the derived-field ones —
-    only 01_counter.py (no view() override, no derived field) was safe to
-    convert to a straight script. This test exists to catch the day that
-    stops being true, not to enforce it."""
+def test_run_headless_does_not_leak_view_override_model():
+    """Task 16: a Model that overrides view(self, vb) left in a module global
+    no longer trips nanobind's leak check either — was the second pinned
+    known-limitation (test_run_headless_does_not_fix_view_override_model_leak,
+    see task-8-report.md): `Model.__init__` passes the view trampoline to
+    `self._set_view_callback(...)`, a C++ binding that stores it as an
+    nb::object member (py_view_cb) invisible to the cyclic GC. Fixed by
+    task-16's PyModel tp_traverse/tp_clear, which now visits py_view_cb too."""
     code = (
         "import prism\n"
         "class M(prism.Model):\n"
@@ -1525,10 +1508,57 @@ def test_run_headless_does_not_fix_view_override_model_leak():
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "leaked" in result.stderr, (
-        "view()-override leak appears to be fixed now — if so, this changes "
-        "which examples can drop _main(); see task-8-report.md"
+    assert "leaked" not in result.stderr, result.stderr
+
+
+def test_run_headless_does_not_leak_tree_field_model():
+    """Task 16: a Model with a tree_field(source) left in a module global no
+    longer trips nanobind's leak check — same shape of cycle as the derived()
+    and view() cases, this time via SlotTree::py_src_holder (the Python tree
+    source object handed to PythonTreeSource's callbacks), now covered by
+    SlotTree's own traverse()/clear()."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    tree = prism.tree_field({0: {'label': 'root', 'children': []}})\n"
+        "m = M()\n"
+        "prism._run_headless(m, delay_ms=50)\n"
     )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" not in result.stderr, result.stderr
+
+
+def test_gc_collect_reclaims_model_with_self_referencing_observer():
+    """Task 16 honest GC test — no subprocess, no _run_headless(): a genuine,
+    in-process reference cycle through PyModel's py_view_cb member (Model ->
+    py_view_cb -> closure -> Model), built via _set_view_callback() directly
+    so the closure captures `m` for real (Model.__init__'s own view()
+    trampoline deliberately avoids this via weakref, which would make the
+    test pass trivially through plain refcounting — no GC involved). Before
+    this task, PyModel had no tp_traverse/tp_clear, so the cyclic GC could
+    not see py_view_cb at all and this cycle survived `gc.collect()` forever
+    (verified: `m` was still alive after an explicit collect). Proves the
+    fix is genuine cyclic-GC support: a plain `gc.collect()` with no
+    _run_headless() involved at all must reclaim `m`."""
+
+    def make():
+        class M(Model):
+            count = field(0)
+
+        m = M()
+        m._set_view_callback(lambda vb: setattr(m, "_x", 1))
+        return weakref.ref(m)
+
+    wr = make()
+    gc.collect()
+    assert wr() is None, "self-referencing view callback survived gc.collect()"
 
 
 def test_view_and_derived_together_survive_run_headless_teardown():
