@@ -185,6 +185,15 @@ static void ensure_idle_wake() {
 
 #include <future>
 
+// Serializes every direct (non-posted) dispatch fallback below. Those paths carry
+// a "pre-run single-threaded" assumption that only ever held because the GIL
+// serialized callers; on free-threaded builds several threads can run model
+// mutations concurrently here (e.g. a worker pool storming plot ops before the
+// app starts — the 3.14t segfault in test_worker_pool_plot_example). Recursive:
+// a direct mutation can fire on_change into Python code that re-enters another
+// direct dispatch on the same thread.
+static std::recursive_mutex g_direct_dispatch_mutex;
+
 template <typename T>
 T dispatch_sync_read(std::function<T()> reader) {
     if (prism::app::detail_is_logic_thread) return reader();
@@ -207,7 +216,10 @@ T dispatch_sync_read(std::function<T()> reader) {
         bool do_direct = false;
         {
             std::lock_guard<std::mutex> lk(g_handle_mutex);
-            if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) return reader();
+            if (!g_has_handle.load(std::memory_order_acquire) || !g_post_handle) {
+                std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
+                return reader();
+            }
             if (g_app_closed.load(std::memory_order_acquire)) {
                 qcopy = g_post_handle->queue.lock();
                 do_direct = true;
@@ -224,6 +236,7 @@ T dispatch_sync_read(std::function<T()> reader) {
                 for (int i = 0; i < 50 && !qcopy->empty(); ++i)
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
+            std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
             return reader();
         }
     }
@@ -233,7 +246,11 @@ T dispatch_sync_read(std::function<T()> reader) {
         try { prom->set_value(reader()); }
         catch (...) { try { prom->set_exception(std::current_exception()); } catch (...) {} }
     }, false);
-    if (pr != PostResult::Posted) return reader(); // fallback: NoApp/Closed handled above, but safety
+    if (pr != PostResult::Posted) {
+        // fallback: NoApp/Closed handled above, but safety
+        std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
+        return reader();
+    }
     // Block caller (off logic thread) until logic thread runs reader — release GIL while
     // waiting, same guard as the spins above (this thread may not hold the GIL here either).
     {
@@ -294,6 +311,7 @@ inline void txn_flush_batch() {
         else pr = PostResult::Posted; // will attempt post below
     }
     if (pr == PostResult::NoApp) {
+        std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
         prism::TransactionGuard g;
         for (auto& fn : batch) fn();
         return;
@@ -334,6 +352,7 @@ void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v) {
         nb::gil_scoped_acquire gil;
         field->set(std::move(v));
     } else {
+        std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
         field->set(std::move(v));
     }
 }
@@ -429,7 +448,10 @@ void field_add_dispatch(nb::object self, std::shared_ptr<void> keep, Field<T>* f
     auto res = try_post_via_handle_impl([keep, do_add]() mutable { do_add(); }, false);
     if (res == PostResult::Posted) return;
     if (res == PostResult::Closed) return; // post-close: no-op per spec (no direct fallback)
-    do_add(); // NoApp: pre-run, single-threaded
+    {   // NoApp: pre-run, serialized with the other direct fallbacks
+        std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
+        do_add();
+    }
 }
 
 // Standalone-handle state (Field<T>/List<T> here, Shared<T>/Channel<T> below) is
@@ -957,7 +979,10 @@ inline void list_op_dispatch(std::shared_ptr<void> keep, std::function<void()> f
     }
     if (prism::app::detail_is_logic_thread && Py_IsInitialized()) {
         nb::gil_scoped_acquire g; fn();
-    } else fn();
+    } else {
+        std::lock_guard<std::recursive_mutex> direct_lk(g_direct_dispatch_mutex);
+        fn();
+    }
 }
 
 // Bound handle — references Field owned by PyModel via shared_ptr<SlotBase> (no Model cycle).
