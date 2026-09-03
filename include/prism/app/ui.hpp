@@ -158,11 +158,11 @@ void app(Backend& backend, Window& window, State initial,
     // thread on macOS (AppKit requirement -- Cocoa_CreateDevice() silently fails
     // off-main-thread), so backend.run() stays on whichever thread calls app() here,
     // and the stdexec run_loop that drives view rebuilding moves to a worker thread.
+    bool closed = false; // logic-thread only
     std::thread logic_thread([&] {
         backend.wait_ready();
         publish();
         loop.run();
-        backend.quit();
     });
 
     backend.run([&](const WindowEvent& we) {
@@ -170,8 +170,10 @@ void app(Backend& backend, Window& window, State initial,
         exec::start_detached(
             stdexec::schedule(sched)
             | stdexec::then([&, ev] {
+                if (closed) return;
                 if (std::holds_alternative<WindowClose>(ev)) {
-                    loop.finish();
+                    closed = true;
+                    backend.quit();
                     return;
                 }
                 if (auto* resize = std::get_if<WindowResize>(&ev)) {
@@ -184,6 +186,9 @@ void app(Backend& backend, Window& window, State initial,
         );
     });
 
+    // Finish only after the pump returned: it keeps dispatching already-queued OS events
+    // after quit(), and each one schedules onto this loop (see app.hpp).
+    loop.finish();
     logic_thread.join();
 }
 

@@ -18,15 +18,6 @@ using namespace ui; using namespace app; using namespace plot;
 
 namespace {
 
-bool wait_for_cursor(prism::backends::SdlWindow& win, prism::CursorShape expected) {
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (win.cursor() == expected) return true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
-    return false;
-}
-
 void push_motion(SDL_WindowID window_id, float x, float y) {
     SDL_Event ev{};
     ev.type = SDL_EVENT_MOUSE_MOTION;
@@ -34,6 +25,20 @@ void push_motion(SDL_WindowID window_id, float x, float y) {
     ev.motion.x = x;
     ev.motion.y = y;
     SDL_PushEvent(&ev);
+}
+
+// Re-pushes the motion while polling: under a real X server (Xvfb on CI) the pointer's
+// own enter/motion events race the synthetic one and can overwrite or coalesce away a
+// single push, so one push is not a reliable stimulus.
+bool hover_until(prism::backends::SdlWindow& win, SDL_WindowID window_id, float x, float y,
+                 prism::CursorShape expected) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+    while (std::chrono::steady_clock::now() < deadline) {
+        push_motion(window_id, x, y);
+        if (win.cursor() == expected) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return false;
 }
 
 struct SimpleModel {
@@ -60,11 +65,11 @@ TEST_CASE("model_app's cursor reclaims client content after a chrome-edge excurs
         REQUIRE(sdl_win.sdl_window() != nullptr);
         auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
 
-        push_motion(window_id, 2.f, 150.f); // left edge -- chrome sets ResizeEW
-        REQUIRE(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
+        // left edge -- chrome sets ResizeEW
+        REQUIRE(hover_until(sdl_win, window_id, 2.f, 150.f, prism::CursorShape::ResizeEW));
 
-        push_motion(window_id, 150.f, 150.f); // client content -- must reclaim Default
-        CHECK(wait_for_cursor(sdl_win, prism::CursorShape::Default));
+        // client content -- must reclaim Default
+        CHECK(hover_until(sdl_win, window_id, 150.f, 150.f, prism::CursorShape::Default));
 
         SDL_Event close_ev{};
         close_ev.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;

@@ -325,7 +325,6 @@ void model_app(Backend& backend, Window& window, Model& model,
         }
 
         loop.run();
-        backend.quit();
     });
 
     backend.run([&](const WindowEvent& we) {
@@ -337,11 +336,12 @@ void model_app(Backend& backend, Window& window, Model& model,
                 stdexec::schedule(sched)
                 | stdexec::then([&, ev, wid, closed_copy, wrapper_for_dispatch] {
                     auto do_dispatch = [&]{
+                        if (closed_copy->load(std::memory_order_acquire)) return;
                         if (std::holds_alternative<WindowClose>(ev)) {
                             if (wid == primary_id) {
                                 anim_clock.clear();
                                 closed_copy->store(true, std::memory_order_release);
-                                loop.finish();
+                                backend.quit();
                             } else {
                                 registry.remove(wid);
                                 backend.close_window(wid);
@@ -395,6 +395,10 @@ void model_app(Backend& backend, Window& window, Model& model,
             );
         });
 
+    // Finish only after the pump returned: it keeps dispatching already-queued OS events
+    // after quit(), and each one schedules onto this loop (see app.hpp). Cross-thread
+    // post() still races this by design; its closed-flag check is best effort.
+    loop.finish();
     logic_thread.join();
 }
 

@@ -6,6 +6,7 @@
 #include <prism/input/input_event.hpp>
 #include <prism/render/scene_snapshot.hpp>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -81,13 +82,12 @@ public:
     App& operator=(const App&) = delete;
 
     void quit() {
-        quit_requested_ = true;
-        if (loop_) loop_->finish();
+        quit_requested_.store(true, std::memory_order_release);
+        backend_->quit();
     }
 
     void run(std::function<void(Frame&)> on_frame) {
         stdexec::run_loop loop;
-        loop_ = &loop;
         auto sched = loop.get_scheduler();
 
         Frame frame;
@@ -110,7 +110,6 @@ public:
             backend_->wait_ready();
             publish();
             loop.run();
-            backend_->quit();
         });
 
         backend_->run([&](const WindowEvent& we) {
@@ -118,8 +117,9 @@ public:
             exec::start_detached(
                 stdexec::schedule(sched)
                 | stdexec::then([&, ev] {
+                    if (quit_requested_.load(std::memory_order_acquire)) return;
                     if (std::holds_alternative<WindowClose>(ev)) {
-                        loop.finish();
+                        quit();
                         return;
                     }
                     if (auto* resize = std::get_if<WindowResize>(&ev)) {
@@ -131,7 +131,10 @@ public:
             );
         });
 
-        loop_ = nullptr;
+        // The pump is the loop's only producer and keeps dispatching already-queued OS
+        // events after quit(); finishing only once run() has returned means no task can
+        // be scheduled onto a loop that has already stopped draining.
+        loop.finish();
         logic_thread.join();
     }
 
@@ -139,8 +142,7 @@ private:
     std::optional<Backend> owned_backend_;
     Backend* backend_ = nullptr;
     Window* window_ = nullptr;
-    stdexec::run_loop* loop_ = nullptr;
-    bool quit_requested_ = false;
+    std::atomic<bool> quit_requested_{false};
 };
 
 } // namespace prism::app

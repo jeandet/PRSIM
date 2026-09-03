@@ -1262,3 +1262,15 @@ TEST_CASE("closing the debug window via a generic secondary WindowClose lets the
     CHECK(raw->close_calls_ == 1);
 }
 #endif
+
+#include "late_event_backend.hpp"
+
+TEST_CASE("model_app survives events the pump delivers after WindowClose") {
+    TestModel model;
+    auto backend = prism::Backend{std::make_unique<LateEventBackend>()};
+    auto& window = backend.create_window({});
+
+    prism::model_app(backend, window, model);
+
+    CHECK(true); // reaching here without the run_loop destructor asserting is the test
+}

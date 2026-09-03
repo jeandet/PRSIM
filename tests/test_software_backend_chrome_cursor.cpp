@@ -18,15 +18,6 @@ using namespace ui; using namespace app; using namespace plot;
 
 namespace {
 
-bool wait_for_cursor(prism::backends::SdlWindow& win, prism::CursorShape expected) {
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (win.cursor() == expected) return true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
-    return false;
-}
-
 void push_motion(SDL_WindowID window_id, float x, float y) {
     SDL_Event ev{};
     ev.type = SDL_EVENT_MOUSE_MOTION;
@@ -34,6 +25,20 @@ void push_motion(SDL_WindowID window_id, float x, float y) {
     ev.motion.x = x;
     ev.motion.y = y;
     SDL_PushEvent(&ev);
+}
+
+// Re-pushes the motion while polling: under a real X server (Xvfb on CI) the pointer's
+// own enter/motion events race the synthetic one and can overwrite or coalesce away a
+// single push, so one push is not a reliable stimulus.
+bool hover_until(prism::backends::SdlWindow& win, SDL_WindowID window_id, float x, float y,
+                 prism::CursorShape expected) {
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);
+    while (std::chrono::steady_clock::now() < deadline) {
+        push_motion(window_id, x, y);
+        if (win.cursor() == expected) return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    return false;
 }
 
 } // namespace
@@ -51,8 +56,8 @@ TEST_CASE("SoftwareBackend sets a resize cursor when the mouse hovers a custom-c
         backend.wait_ready();
         auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
 
-        push_motion(window_id, 2.f, 150.f); // left edge, well below the title bar
-        CHECK(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
+        // left edge, well below the title bar
+        CHECK(hover_until(sdl_win, window_id, 2.f, 150.f, prism::CursorShape::ResizeEW));
 
         backend.quit();
     });
@@ -71,8 +76,8 @@ TEST_CASE("SoftwareBackend sets a diagonal resize cursor when the mouse hovers a
         backend.wait_ready();
         auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
 
-        push_motion(window_id, 2.f, 2.f); // top-left corner
-        CHECK(wait_for_cursor(sdl_win, prism::CursorShape::ResizeNWSE));
+        // top-left corner
+        CHECK(hover_until(sdl_win, window_id, 2.f, 2.f, prism::CursorShape::ResizeNWSE));
 
         backend.quit();
     });
@@ -92,8 +97,8 @@ TEST_CASE("SoftwareBackend forwards MouseMove and leaves the cursor alone when t
         backend.wait_ready();
         auto window_id = SDL_GetWindowID(sdl_win.sdl_window());
 
-        push_motion(window_id, 2.f, 150.f); // left edge — chrome-owned, not forwarded
-        CHECK(wait_for_cursor(sdl_win, prism::CursorShape::ResizeEW));
+        // left edge — chrome-owned, not forwarded
+        CHECK(hover_until(sdl_win, window_id, 2.f, 150.f, prism::CursorShape::ResizeEW));
 
         push_motion(window_id, 150.f, 150.f); // client area — forwarded, cursor untouched by chrome
         auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(1000);

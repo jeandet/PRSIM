@@ -44,3 +44,16 @@ TEST_CASE("Frame records draw commands into snapshot") {
     });
     CHECK(true);
 }
+
+#include "late_event_backend.hpp"
+
+TEST_CASE("App survives events the pump delivers after WindowClose") {
+    int frame_count = 0;
+    auto backend = prism::Backend{std::make_unique<LateEventBackend>()};
+    auto& window = backend.create_window({.width = 100, .height = 100});
+
+    prism::App app(backend, window);
+    app.run([&](prism::Frame&) { ++frame_count; });
+
+    CHECK(frame_count == 1);
+}

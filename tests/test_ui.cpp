@@ -354,3 +354,16 @@ TEST_CASE("ui.frame() without layout works as before (backward compat)") {
     CHECK(captured_snap->geometry[0].second.extent.w.raw() == 800);
     CHECK(captured_snap->geometry[0].second.extent.h.raw() == 600);
 }
+
+#include "late_event_backend.hpp"
+
+TEST_CASE("app<State> survives events the pump delivers after WindowClose") {
+    int call_count = 0;
+    auto backend = prism::Backend{std::make_unique<LateEventBackend>()};
+    auto& window = backend.create_window({});
+
+    prism::app::app<TestState>(backend, window, TestState{},
+                               [&](prism::Ui<TestState>&) { ++call_count; });
+
+    CHECK(call_count == 1);
+}
