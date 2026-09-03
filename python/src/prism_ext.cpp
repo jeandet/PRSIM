@@ -1310,6 +1310,13 @@ void derived_attach_dep(std::shared_ptr<SlotDerived<T>> slot, nb::object dep) {
     if (connect_field((BoundField<double>*)nullptr)) return;
     if (connect_field((BoundField<std::string>*)nullptr)) return;
     if (connect_field((BoundField<bool>*)nullptr)) return;
+    // Slider/Checkbox: connect_field only needs h.field (a Field<Slider<double>>*/
+    // Field<Checkbox>*) and h.owner — it never touches the field's value type, so the
+    // same generic lambda used for scalar Bound* handles works unchanged here. The
+    // derived compute fn reads the dep's actual value itself (self.v.value /
+    // self.c.value); this connection only triggers recompute() on change.
+    if (connect_field((BoundSliderValue*)nullptr)) return;
+    if (connect_field((BoundCheckboxValue*)nullptr)) return;
     if (connect_shared((BoundShared<int>*)nullptr)) return;
     if (connect_shared((BoundShared<double>*)nullptr)) return;
     if (connect_shared((BoundShared<std::string>*)nullptr)) return;

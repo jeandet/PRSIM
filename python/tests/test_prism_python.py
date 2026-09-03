@@ -658,6 +658,59 @@ def test_headless_render_of_slider_and_checkbox():
     assert m.mute.value is False
 
 
+def test_derived_depends_on_slider_and_checkbox():
+    """derived() must accept slider()/checkbox() descriptors as deps — they
+    are BoundSliderValue/BoundCheckboxValue handles, not BoundField<T>, but
+    derived_attach_dep (prism_ext.cpp) must still recognize them."""
+
+    class M(Model):
+        v = prism.slider(0.5, min=0.0, max=1.0)
+        c = prism.checkbox(True)
+        d = prism.derived(
+            lambda self: self.v.value * 2 if self.c.value else 0.0, v, c
+        )
+
+    m = M()
+    assert m.d.value == 1.0
+
+    seen = []
+    m.d.observe(lambda val: seen.append(val))
+
+    def mutate():
+        m.v.value = 0.25
+        m.c.value = False
+
+    import time
+
+    t = threading.Thread(target=lambda: prism._run_headless(m, delay_ms=200))
+    t.start()
+    for _ in range(200):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
+    mutate()
+    t.join()
+
+    assert seen  # recompute fired at least once from the slider/checkbox change
+    assert m.d.value == 0.0  # c.value is False -> 0.0, per the compute fn
+
+
+def test_derived_on_slider_smoke_constructs_06_live_plot(monkeypatch):
+    """06_live_plot.py's title = derived(..., frequency, amplitude) crashed
+    Model construction before derived_attach_dep recognized slider deps.
+    Smoke-construct the example with prism.run monkeypatched to a no-op."""
+    import runpy
+
+    monkeypatch.setattr(prism, "run", lambda *a, **k: None)
+    examples_dir = os.path.join(os.path.dirname(__file__), "..", "examples")
+    try:
+        runpy.run_path(os.path.join(examples_dir, "06_live_plot.py"), run_name="__not_main__")
+    finally:
+        # prism.run() is monkeypatched to a no-op, so its usual worker teardown
+        # never runs — stop the example's background jitter worker ourselves.
+        prism._stop_all_workers()
+
+
 def test_headless_app_concurrent_post():
     """App-based storm: run headless app and mutate from workers via queue (not direct fallback)."""
     import time
