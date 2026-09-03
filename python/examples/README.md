@@ -61,11 +61,11 @@ PYTHONPATH=build/python python python/examples/12_asyncio_bridge.py --headless
 | `03_validation_and_transaction.py` | `Annotated` + `validator_for` (pydantic), `transaction()` coalescing | `Field` + `transaction.hpp` |
 | `04_background_shared_channel.py` | `Shared<T>` latest-value + `Channel<T>` lossless stream + `list_field`, any-thread set/post | `model_system_monitor` (Shared/Channel) |
 | `05_lists_and_derived.py` | `list_field` `push/erase/observe_*`, `derived` over scalars | `List<T>` + `Derived<T>` |
-| `06_live_plot.py` | `plot_field()` + `canvas(plot)`, live `add_series`/`notify`, sliders + thread jitter | `model_plot` / `showcase_plot` (`widgets/plot.hpp:282`) |
+| `06_live_plot.py` | `plot_field()` + `canvas(plot)`, single-post `replace_series`/`set_labels`, sliders + thread jitter | `model_plot` / `showcase_plot` (`widgets/plot.hpp:282`) |
 | `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, `TreeStorage` Python object, lazy expansion, detail panel | `model_tree_browser` / `showcase_tree` (`ui/tree.hpp:182`) |
 | `08_dashboard.py` | Plot + Tree + Shared ticker in one `vstack`/`hstack` | `model_dashboard` / `model_system_monitor` |
 | `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`/`derived`, no display; also the `3.14t` free-threaded CI check | — |
-| `10_worker_pool_plot.py` | `ThreadPoolExecutor(max_workers=4)` computing a pure-Python (`cmath`) FFT spectrum per window inside a `prism.worker`, results crossing to the plot via a JSON `channel(str)`, windows/sec status, `--headless` mode | — |
+| `10_worker_pool_plot.py` | `ThreadPoolExecutor(max_workers=4)` computing a pure-Python (`cmath`) FFT spectrum per window inside a `prism.worker`, each window posted straight to the plot via `plot.replace_series()`, windows/sec status via a `channel(int)` tick, `--headless` mode | — |
 | `11_error_handling.py` | `prism.on_error(handler)`, an observer + a worker that raise, `--headless` mode | — |
 | `12_asyncio_bridge.py` | asyncio event loop inside a `prism.worker`, `asyncio.run_coroutine_threadsafe` from an observer, a coroutine feeding a `channel` back to the logic thread, `--headless` mode | — |
 

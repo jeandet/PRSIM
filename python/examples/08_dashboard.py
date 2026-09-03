@@ -48,11 +48,8 @@ class Dashboard(prism.Model):
         N = 300
         xs = [i / (N - 1) * 8 * math.pi for i in range(N)]
         ys = [a * math.sin(f * t) + 0.3 * math.sin(3 * f * t) for t in xs]
-        self.plot.clear_series()
-        self.plot.add_series(xs, ys, color="#7aa2f7", thickness=2.0, fill=False)
-        self.plot.notify()
-        self.plot.x_label = "t"
-        self.plot.y_label = "y"
+        self.plot.replace_series(xs, ys, color="#7aa2f7", thickness=2.0, fill=False)
+        self.plot.set_labels(x="t", y="y")
         self.status.value = f"tick={self.tick.value} f={f:.2f} a={a:.2f}"
 
 

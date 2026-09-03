@@ -1,7 +1,8 @@
 """06_live_plot.py — Fancy Plot example with live data.
 
 Demonstrates:
-  - prism.plot_field() + BoundPlot.add_series/clear_series/notify
+  - prism.plot_field() + BoundPlot.replace_series/set_labels — one dispatched
+    post each, instead of separate clear_series/add_series/notify calls
   - vb.canvas(plot) via ViewBuilder trampoline (C++ canvas escape hatch)
   - Live updates from sliders + background thread (any-thread set)
   - Derived stats + transaction
@@ -44,16 +45,12 @@ class LivePlot(prism.Model):
         N = 400
         xs = [i / (N - 1) * 4 * math.pi for i in range(N)]
         ys_sin = [a * math.sin(f * t) for t in xs]
-        # clear and add — must notify afterwards
-        self.plot.clear_series()
-        self.plot.add_series(xs, ys_sin, color="#0088cc", thickness=2.0)
+        series = [(xs, ys_sin, "#0088cc")]
         if show_cos:
             ys_cos = [a * math.cos(f * t) for t in xs]
-            self.plot.add_series(xs, ys_cos, color="#ff6b35", thickness=2.0)
-        self.plot.notify()
-        # viewport labels
-        self.plot.x_label = "Time (rad)"
-        self.plot.y_label = "Amplitude"
+            series.append((xs, ys_cos, "#ff6b35"))
+        self.plot.replace_series(series, thickness=2.0)
+        self.plot.set_labels(x="Time (rad)", y="Amplitude")
         self.status.value = (
             f"plotted {N} pts f={f:.2f} a={a:.2f} cos={'on' if show_cos else 'off'}"
         )

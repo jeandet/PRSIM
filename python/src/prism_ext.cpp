@@ -413,6 +413,63 @@ inline void list_op_dispatch(std::function<void()> fn);
 template <typename T> T dispatch_sync_read(std::function<T()> reader);
 template <typename T> void field_set_dispatch(Field<T>* field, T v);
 
+// replace_series() shared parsing/dispatch — one series (xs, ys, color) worth of C++ data,
+// converted from Python objects on the calling thread before crossing to the logic thread.
+struct ReplaceSeriesSpec {
+    std::vector<double> vx, vy;
+    std::string color_str;
+};
+
+// Accepts either (xs, ys) for one series (ys != None) or a single list of (xs, ys, color)
+// tuples for many series (ys == None) — see BoundPlot/PlotHandle::replace_series binding.
+inline std::vector<ReplaceSeriesSpec> parse_replace_series_args(nb::object xs_or_series, nb::object ys, nb::object color) {
+    auto to_doubles = [](nb::object seq) {
+        nb::list l = nb::cast<nb::list>(seq);
+        std::vector<double> v; v.reserve(nb::len(l));
+        for (auto h : l) v.push_back(nb::cast<double>(h));
+        return v;
+    };
+    std::vector<ReplaceSeriesSpec> specs;
+    if (ys.is_none()) {
+        for (auto item : nb::cast<nb::list>(xs_or_series)) {
+            nb::tuple t = nb::cast<nb::tuple>(item);
+            ReplaceSeriesSpec spec;
+            spec.vx = to_doubles(t[0]);
+            spec.vy = to_doubles(t[1]);
+            if (nb::len(t) > 2 && !t[2].is_none()) spec.color_str = nb::cast<std::string>(t[2]);
+            specs.push_back(std::move(spec));
+        }
+    } else {
+        ReplaceSeriesSpec spec;
+        spec.vx = to_doubles(xs_or_series);
+        spec.vy = to_doubles(ys);
+        if (!color.is_none()) spec.color_str = nb::cast<std::string>(color);
+        specs.push_back(std::move(spec));
+    }
+    return specs;
+}
+
+inline void replace_series_dispatch(prism::plot::PlotModel* p, std::vector<ReplaceSeriesSpec> specs, float thickness, bool fill) {
+    auto fn = [p, specs = std::move(specs), thickness, fill]() mutable {
+        p->clear_series();
+        for (auto& s : specs) {
+            prism::plot::XYData data{std::move(s.vx), std::move(s.vy)};
+            prism::plot::SeriesStyle style;
+            style.thickness = thickness;
+            style.fill = fill;
+            if (s.color_str.size() == 7 && s.color_str[0] == '#') {
+                int r = std::stoi(s.color_str.substr(1, 2), nullptr, 16);
+                int g = std::stoi(s.color_str.substr(3, 2), nullptr, 16);
+                int b = std::stoi(s.color_str.substr(5, 2), nullptr, 16);
+                style.color = Color::rgba((uint8_t)r, (uint8_t)g, (uint8_t)b);
+            }
+            p->add_series(std::move(data), style);
+        }
+        p->notify();
+    };
+    list_op_dispatch(std::move(fn));
+}
+
 // Plot support — Slot only (Bound* defined after list_op_dispatch)
 struct SlotPlot : SlotBase {
     prism::plot::PlotModel plot;
@@ -446,10 +503,27 @@ struct PlotHandle {
     }
     void clear_series(){ auto* p=&plot; list_op_dispatch([p](){ p->clear_series(); }); }
     void notify(){ auto* p=&plot; list_op_dispatch([p](){ p->notify(); }); }
+    // Single-post clear+add(+add...)+notify — see parse_replace_series_args for the two call forms.
+    void replace_series(nb::object xs_or_series, nb::object ys = nb::none(), nb::object color = nb::none(),
+                         float thickness = 2.f, bool fill = false) {
+        replace_series_dispatch(&plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
+    }
+    void set_labels(nb::object x = nb::none(), nb::object y = nb::none()) {
+        auto* p = &plot;
+        bool has_x = !x.is_none(), has_y = !y.is_none();
+        std::string xs = has_x ? nb::cast<std::string>(x) : std::string();
+        std::string ys = has_y ? nb::cast<std::string>(y) : std::string();
+        list_op_dispatch([p, has_x, has_y, xs, ys](){
+            if (has_x) p->x_label.set(xs);
+            if (has_y) p->y_label.set(ys);
+        });
+    }
     void set_x_label(std::string s){ field_set_dispatch(&plot.x_label, std::move(s)); }
     void set_y_label(std::string s){ field_set_dispatch(&plot.y_label, std::move(s)); }
     std::string get_x_label() const { auto* p=&plot; return dispatch_sync_read<std::string>([p](){ return p->x_label.get(); }); }
     std::string get_y_label() const { auto* p=&plot; return dispatch_sync_read<std::string>([p](){ return p->y_label.get(); }); }
+    size_t series_count() const { auto* p=&plot; return dispatch_sync_read<size_t>([p](){ return p->series_count(); }); }
+    size_t series_len(size_t i) const { auto* p=&plot; return dispatch_sync_read<size_t>([p,i](){ return p->series_len(i); }); }
     void reset_view(){ auto* p=&plot; list_op_dispatch([p](){ p->reset_view(); }); }
 };
 
@@ -950,10 +1024,29 @@ struct BoundPlot {
         auto* p = plot;
         list_op_dispatch([p](){ p->notify(); });
     }
+    // Single-post clear+add(+add...)+notify — see parse_replace_series_args for the two call forms.
+    void replace_series(nb::object xs_or_series, nb::object ys = nb::none(), nb::object color = nb::none(),
+                         float thickness = 2.f, bool fill = false) {
+        if (!plot) return;
+        replace_series_dispatch(plot, parse_replace_series_args(xs_or_series, ys, color), thickness, fill);
+    }
+    void set_labels(nb::object x = nb::none(), nb::object y = nb::none()) {
+        if (!plot) return;
+        auto* p = plot;
+        bool has_x = !x.is_none(), has_y = !y.is_none();
+        std::string xs = has_x ? nb::cast<std::string>(x) : std::string();
+        std::string ys = has_y ? nb::cast<std::string>(y) : std::string();
+        list_op_dispatch([p, has_x, has_y, xs, ys](){
+            if (has_x) p->x_label.set(xs);
+            if (has_y) p->y_label.set(ys);
+        });
+    }
     void set_x_label(std::string s) { if(plot) field_set_dispatch(&plot->x_label, std::move(s)); }
     void set_y_label(std::string s) { if(plot) field_set_dispatch(&plot->y_label, std::move(s)); }
     std::string get_x_label() const { if(!plot) return ""; return dispatch_sync_read<std::string>([p=plot](){ return p->x_label.get(); }); }
     std::string get_y_label() const { if(!plot) return ""; return dispatch_sync_read<std::string>([p=plot](){ return p->y_label.get(); }); }
+    size_t series_count() const { if(!plot) return 0; return dispatch_sync_read<size_t>([p=plot](){ return p->series_count(); }); }
+    size_t series_len(size_t i) const { if(!plot) return 0; return dispatch_sync_read<size_t>([p=plot,i](){ return p->series_len(i); }); }
     void reset_view() { if(plot){ auto* p=plot; list_op_dispatch([p](){ p->reset_view(); }); } }
 };
 
@@ -1587,6 +1680,11 @@ NB_MODULE(_prism_ext, m) {
         .def("add_series", &BoundPlot::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
         .def("clear_series", &BoundPlot::clear_series)
         .def("notify", &BoundPlot::notify)
+        .def("replace_series", &BoundPlot::replace_series, nb::arg("xs"), nb::arg("ys") = nb::none(), nb::kw_only(),
+             nb::arg("color") = nb::none(), nb::arg("thickness") = 2.f, nb::arg("fill") = false)
+        .def("set_labels", &BoundPlot::set_labels, nb::kw_only(), nb::arg("x") = nb::none(), nb::arg("y") = nb::none())
+        .def("series_count", &BoundPlot::series_count)
+        .def("series_len", &BoundPlot::series_len, nb::arg("i"))
         .def("reset_view", &BoundPlot::reset_view)
         .def_prop_rw("x_label", &BoundPlot::get_x_label, &BoundPlot::set_x_label)
         .def_prop_rw("y_label", &BoundPlot::get_y_label, &BoundPlot::set_y_label);
@@ -1595,6 +1693,11 @@ NB_MODULE(_prism_ext, m) {
         .def("add_series", &PlotHandle::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
         .def("clear_series", &PlotHandle::clear_series)
         .def("notify", &PlotHandle::notify)
+        .def("replace_series", &PlotHandle::replace_series, nb::arg("xs"), nb::arg("ys") = nb::none(), nb::kw_only(),
+             nb::arg("color") = nb::none(), nb::arg("thickness") = 2.f, nb::arg("fill") = false)
+        .def("set_labels", &PlotHandle::set_labels, nb::kw_only(), nb::arg("x") = nb::none(), nb::arg("y") = nb::none())
+        .def("series_count", &PlotHandle::series_count)
+        .def("series_len", &PlotHandle::series_len, nb::arg("i"))
         .def("reset_view", &PlotHandle::reset_view)
         .def_prop_rw("x_label", &PlotHandle::get_x_label, &PlotHandle::set_x_label)
         .def_prop_rw("y_label", &PlotHandle::get_y_label, &PlotHandle::set_y_label);

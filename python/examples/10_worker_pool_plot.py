@@ -8,17 +8,14 @@ Demonstrates:
     less, but the demo runs the same way either way.
   - A pure-Python radix-2 FFT (cmath, no numpy) computing a magnitude
     spectrum per window on the pool threads.
-  - Each spectrum crossing back to the logic thread through a
-    prism.channel(str) as a JSON string. Two reasons: channels only carry
-    scalars (int/float/str/bool), not a list; and plot.clear_series/
-    add_series/notify are each a separate thread-dispatched post, so
-    calling them straight from 4 pool threads would interleave between
-    windows — routing through the channel's single logic-thread observer
-    applies all three atomically per window.
-  - The channel observer (logic thread, single-threaded) redraws the plot
-    and updates a "N windows, R windows/sec" status field. A
-    `replace_series(xs, ys)` primitive that did clear+add+notify in one
-    post would make the JSON hop unnecessary — not adding it here.
+  - Each pool thread posting its spectrum straight to the plot via
+    `plot.replace_series(xs, ys)` — one dispatched call that does
+    clear+add+notify atomically on the logic thread, so 4 pool threads
+    calling it concurrently never leaves the plot showing a mix of two
+    windows.
+  - Windows/sec status tracked separately via a `channel(int)` tick: each
+    pool thread also sends a tick, and the logic-thread observer (single-
+    threaded) updates the "N windows, R windows/sec" status field.
   - prism._run_headless() for --headless / CI: runs for 1s then asserts
     at least one window was plotted.
 
@@ -28,7 +25,6 @@ Run:
 """
 
 import cmath
-import json
 import math
 import sys
 import threading
@@ -73,33 +69,32 @@ class WorkerPoolPlot(prism.Model):
     plot = prism.plot_field()
     status = prism.field("starting")
     windows_done = prism.field(0)
-    spectra = prism.channel("")
+    tick = prism.channel(0)
 
     def view(self, vb):
         vb.canvas(self.plot)
         vb.widget(self.status)
 
 
-def _compute_and_send(model: WorkerPoolPlot, window: list[float]) -> None:
-    model.spectra.send(json.dumps(compute_spectrum(window)))
+def _compute_and_plot(model: WorkerPoolPlot, window: list[float], bins: list[int]) -> None:
+    ys = compute_spectrum(window)
+    model.plot.replace_series(bins, ys, color="#0088cc", thickness=2.0)
+    model.tick.send(1)
 
 
 def main(headless: bool = False) -> None:
     m = WorkerPoolPlot()
     start = time.monotonic()
     bins = list(range(WINDOW_SIZE // 2))
+    m.plot.set_labels(x="Frequency bin", y="Magnitude")
 
-    def on_spectrum(payload: str) -> None:
-        ys = json.loads(payload)
+    def on_tick(_: int) -> None:
         m.windows_done.value += 1
         elapsed = time.monotonic() - start
         rate = m.windows_done.value / elapsed if elapsed > 0 else 0.0
-        m.plot.clear_series()
-        m.plot.add_series(bins, ys, color="#0088cc", thickness=2.0)
-        m.plot.notify()
         m.status.value = f"{m.windows_done.value} windows, {rate:.1f} windows/sec"
 
-    WorkerPoolPlot.spectra.observe(m, on_spectrum)
+    WorkerPoolPlot.tick.observe(m, on_tick)
 
     def producer(stop: threading.Event) -> None:
         phase = 0.0
@@ -110,7 +105,7 @@ def main(headless: bool = False) -> None:
                 if len(pending) >= MAX_PENDING:
                     time.sleep(0.001)
                     continue
-                pending.append(pool.submit(_compute_and_send, m, _make_window(phase)))
+                pending.append(pool.submit(_compute_and_plot, m, _make_window(phase), bins))
                 phase += 0.37
 
     prism.worker(producer)

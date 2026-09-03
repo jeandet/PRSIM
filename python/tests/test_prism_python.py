@@ -962,6 +962,94 @@ def test_plot_and_tree_thread_dispatch():
     assert isinstance(rows, list)
 
 
+def test_replace_series_converges_to_last_call_from_background_thread():
+    """replace_series() is one dispatched post — unlike clear/add/notify, a background
+    thread hammering it can never leave the plot mid-update (handover Task 4)."""
+    import time
+
+    class PlotModel(Model):
+        pass
+
+    pm = PlotModel()
+    bp = pm._add_plot_internal()
+    errors = []
+    last_len = [0]
+
+    def worker():
+        try:
+            for i in range(100):
+                length = (i % 5) + 1
+                xs = list(range(length))
+                ys = [float(v) for v in xs]
+                last_len[0] = length
+                bp.replace_series(xs, ys, color="#0088cc", thickness=2.0)
+        except Exception as e:
+            errors.append(e)
+
+    class Dummy(Model):
+        x = field(0)
+
+    dm = Dummy()
+    t = threading.Thread(target=lambda: prism._run_headless(dm, delay_ms=300))
+    t.start()
+    for _ in range(100):
+        if prism._is_running():
+            break
+        time.sleep(0.01)
+
+    th = threading.Thread(target=worker)
+    th.start()
+    th.join()
+    t.join()
+
+    assert not errors, f"errors: {errors}"
+    assert bp.series_count() == 1
+    assert bp.series_len(0) == last_len[0]
+
+
+def test_replace_series_list_form_posts_n_series_atomically():
+    """replace_series([(xs, ys, color), ...]) is one post that clears then adds each series."""
+
+    class PlotModel(Model):
+        pass
+
+    pm = PlotModel()
+    bp = pm._add_plot_internal()
+    bp.replace_series(
+        [
+            ([0.0, 1.0], [1.0, 2.0], "#0088cc"),
+            ([0.0, 1.0, 2.0], [3.0, 4.0, 5.0], None),
+        ],
+        thickness=1.5,
+    )
+    assert bp.series_count() == 2
+    assert bp.series_len(0) == 2
+    assert bp.series_len(1) == 3
+
+    # A second call replaces, it does not accumulate.
+    bp.replace_series([([0.0], [1.0], None)])
+    assert bp.series_count() == 1
+    assert bp.series_len(0) == 1
+
+
+def test_set_labels_visible_via_label_properties():
+    """set_labels() is a single-post convenience over the x_label/y_label properties."""
+
+    class PlotModel(Model):
+        pass
+
+    pm = PlotModel()
+    bp = pm._add_plot_internal()
+    bp.set_labels(x="Time", y="Amplitude")
+    assert bp.x_label == "Time"
+    assert bp.y_label == "Amplitude"
+
+    # Omitted side is left untouched.
+    bp.set_labels(y="Volts")
+    assert bp.x_label == "Time"
+    assert bp.y_label == "Volts"
+
+
 def test_list_bool_no_int_coercion():
     """List<bool> must not accept int 0/1 via implicit coercion (handover L10)."""
     from prism import list_field

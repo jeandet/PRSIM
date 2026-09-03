@@ -315,6 +315,7 @@ struct PlotModel {
 
     void clear_series() { series_.clear(); }
     size_t series_count() const { return series_.size(); }
+    size_t series_len(size_t index) const { return index < series_.size() ? series_[index].size() : 0; }
 
     void reset_view()
     {
