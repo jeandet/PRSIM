@@ -528,7 +528,7 @@ class _DerivedDescriptor:
                 ) from exc
             kind = _kind_of(probe, "derived")
 
-        h = getattr(instance, f"_add_derived_{kind}_internal")(call_fn, *dep_handles)  # type: ignore[attr-defined]
+        h = getattr(instance, f"_add_derived_{kind}_internal")(call_fn, self.name, *dep_handles)  # type: ignore[attr-defined]
         cache[self.name] = h
         return h
 

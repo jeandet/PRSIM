@@ -1199,11 +1199,23 @@ struct PyModel {
 
     // Derived slots — vector-based deps (avoid immutable tuple assignment)
     template <typename T>
-    std::pair<std::shared_ptr<SlotBase>, SlotDerived<T>*> add_derived_slot_vec(nb::object fn, const std::vector<nb::object>& deps) {
+    std::pair<std::shared_ptr<SlotBase>, SlotDerived<T>*> add_derived_slot_vec(nb::object fn, const std::vector<nb::object>& deps, const std::string& name = "<derived>") {
         T init{};
         {
             nb::gil_scoped_acquire g;
-            try { init = nb::cast<T>(fn()); } catch (...) {}
+            // fn() runs synchronously under the GIL inside this direct Python call
+            // (Model() construction) — let a genuine exception from the user's
+            // function (nb::python_error, e.g. ZeroDivisionError) propagate
+            // unchanged, so Model() raises it as-is instead of silently defaulting
+            // to T{}. Only a type mismatch on the *result* is ours to translate.
+            nb::object result = fn();
+            try {
+                init = nb::cast<T>(result);
+            } catch (const std::bad_cast&) {
+                std::string msg = "derived '" + name + "': function returned " +
+                                   nb::cast<std::string>(nb::repr(result)) + ", expected " + py_type_name<T>();
+                throw nb::type_error(msg.c_str());
+            }
         }
         auto s = std::make_shared<SlotDerived<T>>(std::move(fn), std::move(init));
         for (auto& dep : deps) derived_attach_dep(s, dep);
@@ -1679,28 +1691,28 @@ NB_MODULE(_prism_ext, m) {
                 auto [owner, p] = self.add_channel_bool_slot();
                 BoundChannel<bool> h; h.owner = std::move(owner); h.channel = p; return h;
             })
-        .def("_add_derived_int_internal", [](PyModel& self, nb::object fn, nb::args deps){
+        .def("_add_derived_int_internal", [](PyModel& self, nb::object fn, std::string name, nb::args deps){
                 std::vector<nb::object> v; v.reserve(deps.size());
                 for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
-                auto [owner, p] = self.add_derived_slot_vec<int>(fn, v);
+                auto [owner, p] = self.add_derived_slot_vec<int>(fn, v, name);
                 BoundDerived<int> h; h.owner = std::move(owner); h.derived = p; return h;
             })
-        .def("_add_derived_float_internal", [](PyModel& self, nb::object fn, nb::args deps){
+        .def("_add_derived_float_internal", [](PyModel& self, nb::object fn, std::string name, nb::args deps){
                 std::vector<nb::object> v; v.reserve(deps.size());
                 for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
-                auto [owner, p] = self.add_derived_slot_vec<double>(fn, v);
+                auto [owner, p] = self.add_derived_slot_vec<double>(fn, v, name);
                 BoundDerived<double> h; h.owner = std::move(owner); h.derived = p; return h;
             })
-        .def("_add_derived_str_internal", [](PyModel& self, nb::object fn, nb::args deps){
+        .def("_add_derived_str_internal", [](PyModel& self, nb::object fn, std::string name, nb::args deps){
                 std::vector<nb::object> v; v.reserve(deps.size());
                 for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
-                auto [owner, p] = self.add_derived_slot_vec<std::string>(fn, v);
+                auto [owner, p] = self.add_derived_slot_vec<std::string>(fn, v, name);
                 BoundDerived<std::string> h; h.owner = std::move(owner); h.derived = p; return h;
             })
-        .def("_add_derived_bool_internal", [](PyModel& self, nb::object fn, nb::args deps){
+        .def("_add_derived_bool_internal", [](PyModel& self, nb::object fn, std::string name, nb::args deps){
                 std::vector<nb::object> v; v.reserve(deps.size());
                 for (size_t i=0;i<deps.size();++i) v.push_back(nb::cast<nb::object>(deps[i]));
-                auto [owner, p] = self.add_derived_slot_vec<bool>(fn, v);
+                auto [owner, p] = self.add_derived_slot_vec<bool>(fn, v, name);
                 BoundDerived<bool> h; h.owner = std::move(owner); h.derived = p; return h;
             })
         .def("_add_list_int_internal", [](PyModel& self, nb::list py){
@@ -1784,6 +1796,7 @@ NB_MODULE(_prism_ext, m) {
             ctx.set_logic_wrapper([](std::function<void()> fn){
                 // Once the interpreter is finalized, nothing that might drain Python
                 // callbacks (mouse/tick logic-thread work) may run — drop it.
+                // Safe: g_post_handle is reset before run()/_run_headless() returns, so no post can reach this drain anyway.
                 if (!Py_IsInitialized()) return;
                 nb::gil_scoped_acquire g;
                 fn();
@@ -1821,6 +1834,7 @@ NB_MODULE(_prism_ext, m) {
             ctx.set_logic_wrapper([](std::function<void()> fn){
                 // Once the interpreter is finalized, nothing that might drain Python
                 // callbacks (mouse/tick logic-thread work) may run — drop it.
+                // Safe: g_post_handle is reset before run()/_run_headless() returns, so no post can reach this drain anyway.
                 if (!Py_IsInitialized()) return;
                 nb::gil_scoped_acquire g;
                 fn();

@@ -3,6 +3,7 @@
 import gc
 import inspect
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -1020,15 +1021,61 @@ def test_derived_probe_raises_gives_actionable_type_error():
 
 
 def test_derived_type_hint_skips_probing():
-    """type_hint given -> probe (which would raise) is never called (task 4)."""
+    """type_hint given -> probe is never called (task 4): the compute fn runs
+    exactly once (the real eager compute), not twice (probe + eager compute).
+
+    Was written with a raising lambda (`1 / 0`) and asserted `M()` succeeds —
+    that relied on the eager-compute cast's `catch (...) {}` swallowing the
+    exception too, which task 2 fix round 1 removed (add_derived_slot_vec no
+    longer swallows the user's own exception). Switched to a call-counter so
+    this test still isolates "probe skipped" from that unrelated behavior.
+    """
+    from prism import derived
+
+    calls = []
+
+    def compute(self):
+        calls.append(1)
+        return 5.0
+
+    class M(Model):
+        a = field(2)
+        ok = derived(compute, "a", type_hint=float)
+
+    m = M()
+    assert isinstance(m.ok, prism.BoundDerivedFloat)
+    assert calls == [1]
+
+
+def test_derived_construction_raises_user_exception_unchanged():
+    """Task 2 fix round 1: PyModel::add_derived_slot_vec's eager compute (runs
+    at Model() construction, distinct from recompute()) used to swallow ANY
+    exception from the user's function with a bare `catch (...) {}`, silently
+    defaulting the derived's initial value to 0/0.0/""/False. Model()
+    construction must instead let the user's own exception propagate
+    unchanged."""
     from prism import derived
 
     class M(Model):
         a = field(2)
-        ok = derived(lambda self: 1 / 0, "a", type_hint=float)
+        bad = derived(lambda self: 1 / 0, "a", type_hint=int)
 
-    m = M()
-    assert isinstance(m.ok, prism.BoundDerivedFloat)
+    with pytest.raises(ZeroDivisionError):
+        M()
+
+
+def test_derived_construction_wrong_type_raises_type_error_with_name():
+    """Task 2 fix round 1: a derived function whose first (eager) result
+    doesn't match its type_hint must raise a clear TypeError naming the
+    derived field, not silently store 0."""
+    from prism import derived
+
+    class M(Model):
+        a = field(2)
+        bad = derived(lambda self: "oops", "a", type_hint=int)
+
+    with pytest.raises(TypeError, match=re.escape("derived 'bad':")):
+        M()
 
 
 def test_derived_recompute_wrong_type_routes_type_error_via_on_error():
@@ -1507,7 +1554,8 @@ def test_field_validator_wrong_return_type_raises_clear_type_error():
         count = field(0, validator=_return_wrong_type)
 
     m = M()
-    with pytest.raises(TypeError, match="count"):
+    prefix = re.escape("validator for 'count' must return a int (or raise); got ")
+    with pytest.raises(TypeError, match=prefix):
         m.count.value = 5
     assert m.count.value == 0
 
@@ -1520,7 +1568,8 @@ def test_field_validator_returns_none_raises_clear_type_error():
         count = field(0, validator=_return_none)
 
     m = M()
-    with pytest.raises(TypeError, match="count"):
+    prefix = re.escape("validator for 'count' must return a int (or raise); got ")
+    with pytest.raises(TypeError, match=prefix):
         m.count.value = 5
     assert m.count.value == 0
 
