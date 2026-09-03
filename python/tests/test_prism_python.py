@@ -3412,3 +3412,53 @@ def test_run_headless_kwarg_rejects_bool():
 
     with pytest.raises(TypeError, match="headless must be a duration"):
         prism.run(M(), headless=True)
+
+
+def test_plot_color_malformed_raises_value_error_at_call_site():
+    """A malformed plot color must raise ValueError synchronously at the call
+    site. Previously a non-'#rrggbb' string was silently dropped to the default
+    color, and '#zzzzzz' threw std::stoi inside the posted closure on the logic
+    thread, where only on_error ever saw it."""
+    ph = prism.PlotHandle()
+    for bad in ("blue", "#fff", "#zzzzzz", "#0088c"):
+        with pytest.raises(ValueError):
+            ph.add_series([0.0], [1.0], color=bad)
+        with pytest.raises(ValueError):
+            ph.replace_series([0.0], [1.0], color=bad)
+    # Valid forms keep working.
+    ph.add_series([0.0], [1.0], color="#0088cc")
+    ph.replace_series([0.0], [1.0], color="#0088cc")
+    ph.replace_series([([0.0], [1.0], "#0088cc")])
+
+
+def test_worker_raw_class_context_manager_starts_and_stops():
+    """prism.Worker used directly as a context manager must start the worker on
+    __enter__. Previously only the worker() factory called start(), so
+    `with prism.Worker(fn):` was a silent no-op."""
+    import threading
+
+    ticked = threading.Event()
+
+    def tick(stop):
+        ticked.set()
+
+    with prism.Worker(tick, interval=0.01) as w:
+        assert ticked.wait(timeout=5.0), "worker never ticked"
+        assert w.is_alive
+    assert not w.is_alive
+
+
+def test_list_get_out_of_range_raises_index_error():
+    """list.get(i) is a synchronous read — an out-of-range index must raise
+    IndexError, not silently return the value type's default."""
+    from prism import list_field
+
+    class M(Model):
+        items = list_field([10, 20, 30])
+
+    m = M()
+    assert m.items.get(2) == 30
+    with pytest.raises(IndexError):
+        m.items.get(3)
+    with pytest.raises(IndexError):
+        m.items.get(999)

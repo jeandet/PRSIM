@@ -664,11 +664,25 @@ inline void list_op_dispatch(std::shared_ptr<void> keep, std::function<void()> f
 template <typename T> T dispatch_sync_read(std::function<T()> reader);
 template <typename T> void field_set_dispatch(std::shared_ptr<void> keep, Field<T>* field, T v);
 
+// Empty string = keep the theme default. Anything else must be exactly '#rrggbb' --
+// validated here, on the calling thread, so a typo raises at the call site instead of
+// being silently dropped (or throwing std::stoi inside the posted logic-thread closure,
+// where only on_error would ever see it).
+inline std::optional<Color> parse_series_color(const std::string& s) {
+    if (s.empty()) return std::nullopt;
+    bool ok = s.size() == 7 && s[0] == '#'
+        && s.find_first_not_of("0123456789abcdefABCDEF", 1) == std::string::npos;
+    if (!ok)
+        throw nb::value_error(("plot color must be '#rrggbb', got '" + s + "'").c_str());
+    auto hex = [&s](size_t at) { return std::stoi(s.substr(at, 2), nullptr, 16); };
+    return Color::rgba((uint8_t)hex(1), (uint8_t)hex(3), (uint8_t)hex(5));
+}
+
 // replace_series() shared parsing/dispatch — one series (xs, ys, color) worth of C++ data,
 // converted from Python objects on the calling thread before crossing to the logic thread.
 struct ReplaceSeriesSpec {
     std::vector<double> vx, vy;
-    std::string color_str;
+    std::optional<Color> color;
 };
 
 // Accepts either (xs, ys) for one series (ys != None) or a single list of (xs, ys, color)
@@ -694,14 +708,14 @@ inline std::vector<ReplaceSeriesSpec> parse_replace_series_args(nb::object xs_or
             ReplaceSeriesSpec spec;
             spec.vx = to_doubles(t[0]);
             spec.vy = to_doubles(t[1]);
-            if (n > 2 && !t[2].is_none()) spec.color_str = nb::cast<std::string>(t[2]);
+            if (n > 2 && !t[2].is_none()) spec.color = parse_series_color(nb::cast<std::string>(t[2]));
             specs.push_back(std::move(spec));
         }
     } else {
         ReplaceSeriesSpec spec;
         spec.vx = to_doubles(xs_or_series);
         spec.vy = to_doubles(ys);
-        if (!color.is_none()) spec.color_str = nb::cast<std::string>(color);
+        if (!color.is_none()) spec.color = parse_series_color(nb::cast<std::string>(color));
         specs.push_back(std::move(spec));
     }
     return specs;
@@ -722,12 +736,7 @@ inline void replace_series_dispatch(std::shared_ptr<void> keep, prism::plot::Plo
             prism::plot::SeriesStyle style;
             style.thickness = thickness;
             style.fill = fill;
-            if (s.color_str.size() == 7 && s.color_str[0] == '#') {
-                int r = std::stoi(s.color_str.substr(1, 2), nullptr, 16);
-                int g = std::stoi(s.color_str.substr(3, 2), nullptr, 16);
-                int b = std::stoi(s.color_str.substr(5, 2), nullptr, 16);
-                style.color = Color::rgba((uint8_t)r, (uint8_t)g, (uint8_t)b);
-            }
+            if (s.color) style.color = *s.color;
             p->add_series(std::move(data), style);
         }
         p->notify();
@@ -751,20 +760,16 @@ struct SlotPlot : SlotBase {
 struct PlotHandle {
     std::shared_ptr<prism::plot::PlotModel> plot = std::make_shared<prism::plot::PlotModel>();
     void add_series(nb::list xs, nb::list ys, std::string color_str = "", float thickness = 2.f, bool fill = false) {
+        auto color = parse_series_color(color_str);
         std::vector<double> vx, vy;
         vx.reserve(nb::len(xs)); vy.reserve(nb::len(ys));
         for (auto h : xs) vx.push_back(nb::cast<double>(h));
         for (auto h : ys) vy.push_back(nb::cast<double>(h));
         auto* p = plot.get();
-        auto fn = [p, vx = std::move(vx), vy = std::move(vy), color_str, thickness, fill]() mutable {
+        auto fn = [p, vx = std::move(vx), vy = std::move(vy), color, thickness, fill]() mutable {
             prism::plot::XYData data{std::move(vx), std::move(vy)};
             prism::plot::SeriesStyle style; style.thickness=thickness; style.fill=fill;
-            if (!color_str.empty() && color_str.size()==7 && color_str[0]=='#') {
-                int r = std::stoi(color_str.substr(1,2), nullptr, 16);
-                int g = std::stoi(color_str.substr(3,2), nullptr, 16);
-                int b = std::stoi(color_str.substr(5,2), nullptr, 16);
-                style.color = Color::rgba((uint8_t)r,(uint8_t)g,(uint8_t)b);
-            }
+            if (color) style.color = *color;
             p->add_series(std::move(data), style);
         };
         list_op_dispatch(plot, std::move(fn));
@@ -1311,7 +1316,11 @@ struct ListHandle {
     }
     T get(size_t i) const {
         List<T>* p = list.get();
-        return dispatch_sync_read<T>([p,i](){ return i < p->size() ? (*p)[i] : T{}; });
+        // nanobind translates std::out_of_range to Python IndexError at the boundary.
+        return dispatch_sync_read<T>([p,i](){
+            if (i >= p->size()) throw std::out_of_range("list index out of range");
+            return (*p)[i];
+        });
     }
     nb::list to_list() const {
         List<T>* p = list.get();
@@ -1357,7 +1366,10 @@ struct BoundList {
     T get(size_t i) const {
         if (!list) return T{};
         List<T>* p = list;
-        return dispatch_sync_read<T>([p,i](){ return i < p->size() ? (*p)[i] : T{}; });
+        return dispatch_sync_read<T>([p,i](){
+            if (i >= p->size()) throw std::out_of_range("list index out of range");
+            return (*p)[i];
+        });
     }
     nb::list to_list() const {
         if (!list) return nb::list();
@@ -1385,23 +1397,19 @@ struct BoundPlot {
     std::shared_ptr<SlotBase> owner;
     prism::plot::PlotModel* plot = nullptr;
     void add_series(nb::list xs, nb::list ys, std::string color_str = "", float thickness = 2.f, bool fill = false) {
+        auto color = parse_series_color(color_str);
         if (!plot) return;
         std::vector<double> vx, vy;
         vx.reserve(nb::len(xs)); vy.reserve(nb::len(ys));
         for (auto h : xs) vx.push_back(nb::cast<double>(h));
         for (auto h : ys) vy.push_back(nb::cast<double>(h));
         auto* p = plot;
-        auto fn = [p, vx = std::move(vx), vy = std::move(vy), color_str, thickness, fill]() mutable {
+        auto fn = [p, vx = std::move(vx), vy = std::move(vy), color, thickness, fill]() mutable {
             prism::plot::XYData data{std::move(vx), std::move(vy)};
             prism::plot::SeriesStyle style;
             style.thickness = thickness;
             style.fill = fill;
-            if (!color_str.empty() && color_str.size()==7 && color_str[0]=='#') {
-                int r = std::stoi(color_str.substr(1,2), nullptr, 16);
-                int g = std::stoi(color_str.substr(3,2), nullptr, 16);
-                int b = std::stoi(color_str.substr(5,2), nullptr, 16);
-                style.color = Color::rgba((uint8_t)r,(uint8_t)g,(uint8_t)b);
-            }
+            if (color) style.color = *color;
             p->add_series(std::move(data), style);
         };
         list_op_dispatch(owner, std::move(fn));

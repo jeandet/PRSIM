@@ -1367,6 +1367,7 @@ class Worker:
         self._takes_stop = _worker_takes_stop(fn)
         self._stop = _threading_mod.Event()
         self._thread = _threading_mod.Thread(target=self._run, daemon=daemon, name=name)
+        self._started = False
 
     def _call(self):
         self._fn(self._stop) if self._takes_stop else self._fn()
@@ -1400,7 +1401,11 @@ class Worker:
         return self._thread.is_alive()
 
     def start(self):
-        self._thread.start()
+        # Idempotent: worker() starts at creation, __enter__ starts on use —
+        # a Thread can only be started once.
+        if not self._started:
+            self._started = True
+            self._thread.start()
         return self
 
     def stop(self):
@@ -1413,7 +1418,7 @@ class Worker:
             self._thread.join(timeout=1.0)
 
     def __enter__(self):
-        return self
+        return self.start()
 
     def __exit__(self, exc_type, exc, tb):
         self.stop()
