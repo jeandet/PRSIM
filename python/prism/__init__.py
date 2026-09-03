@@ -985,13 +985,26 @@ class App:
         return _is_running()
 
     def wait_until(self, predicate, timeout=None, poll=0.005):
-        """Any thread. Poll *predicate* until it's truthy.
+        """Any thread except the logic thread. Poll *predicate* until it's truthy.
 
         Raises ``TimeoutError`` if *timeout* seconds pass first. With
-        *timeout* ``None`` (the default), waits indefinitely.
+        *timeout* ``None`` (the default), waits indefinitely — but still
+        raises ``RuntimeError`` if the app quits before *predicate* becomes
+        true, so a ``None`` timeout can't spin forever past shutdown.
+        Raises ``RuntimeError`` immediately if called from the logic thread
+        (inside an observer/derived callback): that thread is the one that
+        would need to keep running for *predicate* or ``quit()`` to ever
+        take effect, so blocking it here is a guaranteed deadlock.
         """
+        if is_logic_thread():
+            raise RuntimeError(
+                "wait_until() must not be called from the logic thread "
+                "(inside an observer/derived callback)"
+            )
         deadline = None if timeout is None else _time_mod.monotonic() + timeout
         while not predicate():
+            if not self.is_running:
+                raise RuntimeError("app quit before condition was met")
             if deadline is not None and _time_mod.monotonic() >= deadline:
                 raise TimeoutError(f"condition not met within {timeout} s")
             _time_mod.sleep(poll)
@@ -1010,13 +1023,23 @@ def headless(model, *, timeout: float = 10.0):
     app's outer safety ceiling (seconds) — normally the block ends the app
     sooner via ``app.quit()`` (called automatically on exit) or
     ``app.wait_until(...)``. Exceptions raised inside the block propagate
-    after the app is stopped and joined.
+    after the app is stopped and joined. Raises ``RuntimeError`` if the
+    app doesn't start within ``min(timeout, 5.0)`` seconds (the runner
+    thread is signalled to quit and joined before raising).
     """
     thread = _threading_mod.Thread(
         target=_run_headless, args=(model,), kwargs={"delay_ms": int(timeout * 1000)}, daemon=True
     )
     thread.start()
+    startup_timeout = min(timeout, 5.0)
+    deadline = _time_mod.monotonic() + startup_timeout
     while not _is_running():
+        if _time_mod.monotonic() >= deadline:
+            _request_quit()
+            thread.join()
+            raise RuntimeError(
+                f"prism.headless(): app did not start within {startup_timeout} s"
+            )
         _time_mod.sleep(0.001)
     app = App(thread)
     try:

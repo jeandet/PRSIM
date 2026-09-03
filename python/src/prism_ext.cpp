@@ -2070,7 +2070,15 @@ NB_MODULE(_prism_ext, m) {
 
     m.def("_is_running", [](){ return g_has_handle.load(std::memory_order_acquire) || g_run_guard.load(std::memory_order_acquire); });
     m.def("_request_quit", [](){
-        g_headless_quit_requested.store(true, std::memory_order_release);
+        // Must set the flag under the same mutex wait_for() locks — otherwise a
+        // notify landing between the waiter's predicate check and its actual
+        // wait (inside wait_for's own lock) is a lost wakeup: the flag flip and
+        // the notify are invisible to a waiter that hasn't started waiting yet
+        // and has no lock held to serialize against.
+        {
+            std::lock_guard<std::mutex> lk(g_headless_cv_mutex);
+            g_headless_quit_requested.store(true, std::memory_order_release);
+        }
         g_headless_cv.notify_all();
     });
     m.def("_run_headless", [](PyModel& model, int delay_ms){

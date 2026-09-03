@@ -705,6 +705,75 @@ def test_headless_context_final_drain_delivers_shared_write_before_quit():
     conn.disconnect()
 
 
+def test_headless_startup_bounded_and_cleans_up_thread(monkeypatch):
+    """Task 9 review finding 2: the startup handshake must not spin forever.
+
+    Stub out ``_is_running`` so headless() never sees the app as up, forcing
+    it down the timeout path. The real app underneath still starts and
+    still gets a real _request_quit() + join() — this proves the runner
+    thread is actually signalled and joined (not abandoned) before the
+    RuntimeError is raised.
+    """
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    monkeypatch.setattr(prism, "_is_running", lambda: False)
+    with pytest.raises(RuntimeError, match="did not start"):
+        with prism.headless(m, timeout=0.05):
+            pass
+    monkeypatch.undo()
+    assert not prism._is_running()
+
+
+def test_headless_wait_until_from_logic_thread_raises():
+    """Task 9 review finding 3: calling wait_until() from an observer
+    (the logic thread) must raise immediately, not deadlock — that thread
+    is the one that would need to keep running for the predicate or
+    quit() to ever take effect."""
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    caught = []
+
+    with prism.headless(m) as app:
+        def on_change(v):
+            try:
+                app.wait_until(lambda: True)
+            except RuntimeError as e:
+                caught.append(e)
+
+        m.x.observe(on_change)
+        m.x.value = 1
+        app.wait_until(lambda: caught, timeout=2.0)
+
+    assert len(caught) == 1
+    assert "logic thread" in str(caught[0])
+
+
+def test_headless_wait_until_none_timeout_raises_when_app_quits():
+    """Task 9 review finding 4: with timeout=None, wait_until() must still
+    notice the app quitting from another thread — otherwise a predicate
+    that never becomes true spins forever past shutdown."""
+    import time
+
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    with prism.headless(m) as app:
+        def quitter():
+            time.sleep(0.05)
+            app.quit()
+
+        t = threading.Thread(target=quitter)
+        t.start()
+        with pytest.raises(RuntimeError, match="app quit"):
+            app.wait_until(lambda: False)
+        t.join()
+
+
 def test_standalone_shared_drained_by_app_tick():
     """Standalone SharedInt (not owned by a Model) must still be drained each app tick."""
     import time
