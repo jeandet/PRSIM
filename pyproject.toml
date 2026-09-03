@@ -27,3 +27,26 @@ setup = [
   '--vsenv',
 ]
 install = ['--tags=runtime,python-runtime']
+
+[tool.cibuildwheel]
+build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*", "cp314-*", "cp314t-*"]
+enable = ["cpython-freethreading"]
+# MSVC has no usable C++26 for this codebase yet; musl/i686/PyPy are out of scope.
+skip = ["*-win*", "*-musllinux*", "*_i686", "pp*"]
+build-verbosity = 1
+test-command = "python {project}/python/tests/wheel_smoke.py"
+
+[tool.cibuildwheel.linux]
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+# C++26 needs GCC >= 14; SDL3's meson port hard-requires udev/dbus/pipewire/wayland/xkbcommon.
+before-all = """
+dnf install -y gcc-toolset-14 systemd-devel dbus-devel pipewire-devel wayland-devel libxkbcommon-devel \
+  mesa-libEGL-devel mesa-libGL-devel libdrm-devel libX11-devel libXext-devel libXrandr-devel libXcursor-devel \
+  libXi-devel libXfixes-devel libXScrnSaver-devel alsa-lib-devel pulseaudio-libs-devel freetype-devel harfbuzz-devel
+"""
+environment = { PATH = "/opt/rh/gcc-toolset-14/root/usr/bin:$PATH", CC = "gcc", CXX = "g++" }
+
+[tool.cibuildwheel.macos]
+# Homebrew GCC (the maintainer's setup); the exact gcc-N is exported by the workflow step.
+before-all = "brew install gcc pkg-config freetype harfbuzz"

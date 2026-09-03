@@ -107,41 +107,46 @@ jobs:
       - name: Run tests (C++ + Python via meson test, free-threaded)
         run: meson test -C builddir-ft --print-errorlogs
 
-  wheel:
+  wheels:
+    name: wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Homebrew GCC for cibuildwheel (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install gcc
+          GXX=$(ls $(brew --prefix)/bin/g++-1[0-9] | sort -V | tail -1)
+          echo "CIBW_ENVIRONMENT=CC=${GXX/g++/gcc} CXX=$GXX MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v3.1.3
+        env:
+          # full matrix on tags, one interpreter otherwise (every wheel rebuilds SDL3 from source)
+          CIBW_BUILD: ${{ github.ref_type == 'tag' && '*' || 'cp313-*' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  sdist:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
-            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
-            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
-            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
-      - name: Build wheel (meson-python, vendored deps static, tests/examples off)
-        run: pip wheel . --no-deps -w dist
-      - name: Install wheel in a clean venv and smoke-test headless
-        run: |
-          python -m venv /tmp/wheel-venv
-          /tmp/wheel-venv/bin/pip install dist/prism-*.whl
-          cd /tmp && /tmp/wheel-venv/bin/python - <<'PY'
-          import prism
-          class M(prism.Model):
-              x = prism.field(1)
-          m = M(); seen = []
-          m.x.observe(seen.append)
-          with prism.headless(m, timeout=5.0) as app:
-              m.x.value = 5
-              app.wait_until(lambda: seen == [5])
-          print("wheel OK", seen)
-          PY
+      - run: pip install build && python -m build --sdist
       - uses: actions/upload-artifact@v4
         with:
-          name: prism-wheel-linux-x86_64
-          path: dist/*.whl
+          name: sdist
+          path: dist/*.tar.gz
 
   # Mirrors the maintainer's macOS setup (Homebrew GCC + shared libstdc++); would have
   # caught the "pointer being freed was not allocated" import crash of dc757b3.
