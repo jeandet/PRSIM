@@ -39,9 +39,15 @@ def _shutdown(loop: asyncio.AbstractEventLoop) -> None:
     pending = asyncio.all_tasks(loop)
     for task in pending:
         task.cancel()
-    if pending:
-        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
-    loop.close()
+    try:
+        if pending:
+            loop.run_until_complete(
+                asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=2.0)
+            )
+    except asyncio.TimeoutError:
+        print("12_asyncio_bridge: timed out waiting for task cancellation", file=sys.stderr)
+    finally:
+        loop.close()
 
 
 def main() -> None:

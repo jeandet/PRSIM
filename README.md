@@ -329,6 +329,10 @@ with prism.transaction():
 | `prism.validator_for(Annotated)` | — | Pydantic validation |
 | `prism.run(model)` | `model_app(title, model)` | `vb` trampoline via `ViewBuilder` |
 
+Also: `prism.headless()` (display-less run for tests/CI), any-thread `field.add(n)` (atomic
+increment, avoids read-modify-write), `plot.replace_series()`/`set_labels()` (canvas plot
+updates), and the `@prism.on_change(*deps)` method decorator — see [Threading guarantees](python/examples/README.md#threading-guarantees) in the examples README for the full picture.
+
 Install (editable, requires Meson ≥1.5):
 
 ```bash
@@ -370,7 +374,7 @@ Two more observable types round out the reactive core, both usable outside any w
   ```cpp
   prism::Derived<double> total{[&]{ return price.get() * quantity.get(); }, price, quantity};
   ```
-- **`Shared<T>`** — atomic cross-thread cell (readers never block writers; implementation is `std::atomic<std::shared_ptr>`, not guaranteed lock-free) (`get()`/`set()` from any thread); the owning thread calls `drain_notifications()` to fire `on_change()` on its own turn. This is what backs the `Shared<DeviceState>` in the live inspector example above — devices/background workers publish into it from another thread.
+- **`Shared<T>`** — atomic cross-thread cell (readers and writers take a brief internal lock (`std::atomic<std::shared_ptr>`); no lock is held while user code runs) (`get()`/`set()` from any thread); the owning thread calls `drain_notifications()` to fire `on_change()` on its own turn. This is what backs the `Shared<DeviceState>` in the live inspector example above — devices/background workers publish into it from another thread.
 
 Wrap a batch of `field.set()` calls in `prism::transaction([&]{ ... })` to coalesce their notifications into one flush at the end of the block instead of firing per-call (see [Transaction API](docs/superpowers/specs/2026-04-04-transaction-api-design.md)).
 

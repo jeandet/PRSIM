@@ -185,12 +185,10 @@ from . import _prism_ext
 # Fire-and-forget keepalive: each observe*() binding in prism_ext.cpp appends the returned
 # Connection to handle.__dict__["_prism_keepalive"] (handles are nanobind objects with
 # dynamic_attr + weakref) and registers the handle in _prism_ext._observed_handles, so a
-# `handle.observe(cb)` call with no assignment still keeps firing. That keepalive list forms
-# a real reference cycle — handle -> Connection -> (nanobind keep_alive<0,1>, invisible to
-# the cyclic GC) -> handle — that Python's GC can never break on its own; atexit must
-# explicitly disconnect it before interpreter teardown. _all_models covers Model-owned
-# handles, _observed_handles additionally covers standalone ones (FieldInt etc. not
-# attached to any Model). A handle can appear in both; _disconnect_keepalive is idempotent.
+# `handle.observe(cb)` call with no assignment still keeps firing. Since 0b844d3 this list
+# forms no GC-invisible cycle: observed handles (Model-owned or standalone) are plain refcounted
+# and self-collect once unreferenced; `_all_models`/`_observed_handles` plus the idempotent
+# `_disconnect_keepalive` below just cover whatever handles are still alive at interpreter exit.
 _all_models: _wr_mod.WeakSet = _wr_mod.WeakSet()
 
 
@@ -893,6 +891,13 @@ class Model(_ModelBase):
         return descriptor.observe(self, callback)
 
     def __init_subclass__(cls, **kwargs):
+        """Runs at class definition time, not per-instance; no thread affinity.
+
+        Auto-creates a `field()` for a bare `Annotated[int|float|str|bool, ...]` class
+        annotation with no assigned default — the field gets the type's zero value
+        (`0`/`0.0`/`""`/`False`). Give an explicit default or use `prism.field(...)`
+        to avoid relying on this.
+        """
         super().__init_subclass__(**kwargs)
         ann = getattr(cls, "__annotations__", {})
         for name, hint in list(ann.items()):

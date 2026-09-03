@@ -55,7 +55,7 @@ PYTHONPATH=builddir/python python3 python/examples/12_asyncio_bridge.py --headle
 | `03_validation_and_transaction.py` | `Annotated` + `validator_for` (pydantic), `transaction()` coalescing |
 | `04_background_shared_channel.py` | `shared()` latest-value + `channel()` lossless stream + `list_field()`, any-thread writes |
 | `05_lists_and_derived.py` | `list_field()` `push`/`erase`/`observe_*`, `derived()` over scalars |
-| `06_live_plot.py` | `plot_field()` + `canvas(plot)`, `replace_series()`/`set_labels()`, sliders + a jittering worker (blocked on the pending `derived_attach_dep` fix for slider deps — see docstring) |
+| `06_live_plot.py` | `plot_field()` + `canvas(plot)`, `replace_series()`/`set_labels()`, `@prism.on_change` rebuilding from slider deps, sliders + a jittering worker |
 | `07_file_tree.py` | `tree_field(source)` + `tree(ctrl)`, a `TreeSource` Python object, lazy expansion |
 | `08_dashboard.py` | Plot + Tree + slider controls composed via one custom `view()` |
 | `09_headless_multithread_stress.py` | 8-thread `ThreadPoolExecutor` storm over `shared`/`channel`/`field`/`derived`, no display; also the `3.14t` free-threaded CI check |
@@ -68,7 +68,8 @@ PYTHONPATH=builddir/python python3 python/examples/12_asyncio_bridge.py --headle
 - `ViewBuilder` exposes `widget`, `list`, `canvas` (`BoundPlot`), `tree` (`BoundTree`), `hstack`, `vstack`. Plot uses the canvas escape hatch `vb.canvas(plot)`; Tree uses `vb.tree(ctrl)`. See `python/prism/__init__.py:plot_field`/`tree_field`.
 - Tree source is any Python object implementing `root_count/root_at/child_count/child_at/label/has_children` (and optional `attributes`/`icon`) — see `tree_sources.py:DictTreeSource`/`FsTreeSource` (shared by `07_file_tree.py` and `08_dashboard.py`; the script directory is on `sys.path` when either runs directly, so `import tree_sources` just works).
 - `m.field.value` get/set goes through the binding cache and posted queue. `shared()`/`channel()` are the cross-thread latest-value/ordered primitives.
-- `prism.transaction()` buffers writes per Python thread and flushes as one closure on the logic thread.
+- `prism.transaction()` buffers writes per Python thread and flushes as one closure on the logic thread. `prism.is_logic_thread()` reports whether the calling thread is the logic thread (no example calls it directly).
+- `@prism.on_change(*deps, immediate=False)` decorates a `Model` method to run on the logic thread whenever any dep field changes (see `06_live_plot.py`, `08_dashboard.py`).
 - `prism.on_error(handler)` installs a single process-wide hook for exceptions raised inside an `observe`/`derived` callback or a `prism.worker()` fn — `handler(exc)` receives the original exception. Observer/derived exceptions route through the logic thread; a `worker()` exception is caught and reported on that worker's own thread (see `11_error_handling.py`). `prism.on_error(None)` restores the default (traceback to stderr). A failing callback never stops the drain.
 
 ## Threading guarantees
