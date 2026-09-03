@@ -29,10 +29,6 @@ class Browser(prism.Model):
     # tree = prism.tree_field(FsTreeSource(pathlib.Path(".")))
     status = prism.field("Click rows, use arrows ←→ to expand/collapse, ↑↓ to navigate")
 
-    def view(self, vb):
-        vb.tree(self.tree)
-        vb.widget(self.status)
-
 
 m = Browser()
 # detail/selected are accessible via controller's detail Field internally;

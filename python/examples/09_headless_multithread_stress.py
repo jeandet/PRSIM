@@ -37,7 +37,7 @@ class StressModel(prism.Model):
     events = prism.channel(0)
     incr = prism.channel(0)
     counter = prism.field(0)
-    doubled_counter = prism.derived(lambda self: self.counter.value * 2, "counter")
+    doubled_counter = prism.derived(lambda self: self.counter.value * 2, counter)
 
 
 def stress_worker(model: StressModel, n: int) -> None:
@@ -52,8 +52,8 @@ def stress_worker(model: StressModel, n: int) -> None:
 def main() -> None:
     m = StressModel()
     event_count = [0]
-    StressModel.events.observe(m, lambda v: event_count.__setitem__(0, event_count[0] + 1))
-    StressModel.incr.observe(m, lambda v: setattr(m.counter, "value", m.counter.value + 1))
+    m.events.observe(lambda v: event_count.__setitem__(0, event_count[0] + 1))
+    m.incr.observe(lambda v: setattr(m.counter, "value", m.counter.value + 1))
 
     target_events = N_WORKERS * N_CHANNEL_SENDS
     target_counter = N_WORKERS * N_INCREMENTS

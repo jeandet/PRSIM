@@ -29,7 +29,7 @@ class Mixer(prism.Model):
 m = Mixer()
 
 # observe field
-c1 = Mixer.count.observe(m, lambda v: print(f"[observe] count={v}"))
+m.count.observe(lambda v: print(f"[observe] count={v}"))
 
 # background thread mutates from any thread (posted to logic thread).
 # prism.worker() is stopped by run() on exit, so 'm' can be captured
@@ -42,9 +42,7 @@ def bump(stop):
     if v is None:
         stop.set()
         return
-    print(
-        f"[worker] setting count={v} (is_logic_thread={prism._prism_ext.is_logic_thread()})"
-    )
+    print(f"[worker] setting count={v} (is_logic_thread={prism.is_logic_thread()})")
     m.count.value = v
 
 

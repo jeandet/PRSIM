@@ -5,7 +5,8 @@ Demonstrates:
     post each, instead of separate clear_series/add_series/notify calls
   - vb.canvas(plot) via ViewBuilder trampoline (C++ canvas escape hatch)
   - Live updates from sliders + background thread (any-thread set)
-  - Derived stats + transaction
+  - @prism.on_change(..., immediate=True) driving the plot rebuild
+  - Derived stats
 
 Run:
   PYTHONPATH=build/python python python/examples/06_live_plot.py
@@ -27,8 +28,8 @@ class LivePlot(prism.Model):
     # derived: samples count
     title = prism.derived(
         lambda self: f"freq={self.frequency.value:.1f} amp={self.amplitude.value:.1f}",
-        "frequency",
-        "amplitude",
+        frequency,
+        amplitude,
     )
 
     def view(self, vb):
@@ -38,6 +39,7 @@ class LivePlot(prism.Model):
         vb.widget(self.status)
         vb.widget(self.title)
 
+    @prism.on_change(frequency, amplitude, show_cos, immediate=True)
     def rebuild(self):
         f = self.frequency.value
         a = self.amplitude.value
@@ -57,12 +59,6 @@ class LivePlot(prism.Model):
 
 
 m = LivePlot()
-m.rebuild()
-
-# Behavior: recompute on slider/checkbox change (on_change → logic thread)
-m.frequency.observe(lambda v: m.rebuild())
-m.amplitude.observe(lambda v: m.rebuild())
-m.show_cos.observe(lambda v: m.rebuild())
 
 # background: simulate live sensor jitter via Shared-like periodic update
 # (30 ticks at 0.5s, same as the original range(30) loop). prism.worker()
@@ -75,8 +71,7 @@ def jitter(stop):
         stop.set()
         return
     ticks_left[0] -= 1
-    with prism.transaction():
-        m.frequency.value = 2.0 + 0.5 * math.sin(time.time())
+    m.frequency.value = 2.0 + 0.5 * math.sin(time.time())
 
 
 prism.worker(jitter, interval=0.5)

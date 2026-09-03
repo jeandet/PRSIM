@@ -1387,6 +1387,42 @@ def test_derived_basic_and_gc():
     gc.collect()
 
 
+def test_derived_descriptor_deps():
+    """2026-09-03 followups task 10: derived() accepts class-level field
+    descriptors as deps (not just string names) — `a`/`b` below are the
+    class-body-local names bound by the `field(...)` lines above, resolved
+    to their attribute names via `.name` (set by __set_name__) at
+    Model.__init__ time."""
+    from prism import derived
+
+    class M(Model):
+        a = field(2)
+        b = field(3)
+        total = derived(lambda self: self.a.value + self.b.value, a, b)
+
+    m = M()
+    assert m.total.value == 5
+    m.a.value = 10
+    assert m.total.value == 13
+    m.b.value = 7
+    assert m.total.value == 17
+
+
+def test_derived_descriptor_dep_mixed_with_string_dep():
+    """Descriptor and string deps may be mixed in the same derived() call."""
+    from prism import derived
+
+    class M(Model):
+        a = field(2)
+        b = field(3)
+        total = derived(lambda self: self.a.value + self.b.value, a, "b")
+
+    m = M()
+    assert m.total.value == 5
+    m.b.value = 100
+    assert m.total.value == 102
+
+
 def test_derived_probe_raises_gives_actionable_type_error():
     """No type_hint + a probe that raises -> loud TypeError naming the fix (task 4)."""
     from prism import derived
@@ -2349,6 +2385,194 @@ def test_worker_context_manager_starts_and_stops():
         assert counts["n"] > 0
 
     assert not w.is_alive
+
+
+def test_on_change_fires_on_dep_change_with_descriptor_deps():
+    """2026-09-03 followups task 10: @on_change(dep, ...) subscribes the
+    decorated method to each dep at Model.__init__ — no manual
+    `m.freq.observe(lambda v: m.redraw())` wiring needed. Callback takes no
+    value arg (reads self.<field>.value); deps here are descriptors, not
+    strings."""
+    seen = []
+
+    class M(Model):
+        freq = field(1.0)
+        amp = field(1.0)
+
+        @prism.on_change(freq, amp)
+        def redraw(self):
+            seen.append((self.freq.value, self.amp.value))
+
+    m = M()
+    assert seen == []  # not immediate: no fire at construction
+    m.freq.value = 2.0
+    assert seen == [(2.0, 1.0)]
+    m.amp.value = 3.0
+    assert seen == [(2.0, 1.0), (2.0, 3.0)]
+
+
+def test_on_change_string_deps_also_work():
+    seen = []
+
+    class M(Model):
+        count = field(0)
+
+        @prism.on_change("count")
+        def on_count(self):
+            seen.append(self.count.value)
+
+    m = M()
+    m.count.value = 5
+    assert seen == [5]
+
+
+def test_on_change_method_still_callable_directly():
+    """The decorator must not replace the method with something unusable as
+    an ordinary bound method — `m.redraw()` still works standalone."""
+    calls = []
+
+    class M(Model):
+        freq = field(1.0)
+
+        @prism.on_change(freq)
+        def redraw(self):
+            calls.append(self.freq.value)
+
+    m = M()
+    m.redraw()
+    assert calls == [1.0]
+
+
+def test_on_change_immediate_runs_once_after_construction():
+    calls = []
+
+    class M(Model):
+        freq = field(1.0)
+
+        @prism.on_change(freq, immediate=True)
+        def redraw(self):
+            calls.append(self.freq.value)
+
+    m = M()
+    assert calls == [1.0]  # immediate fire, replaces manual m.redraw() priming
+    m.freq.value = 2.0
+    assert calls == [1.0, 2.0]
+
+
+def test_on_change_immediate_fires_on_logic_thread_when_constructed_during_app_run():
+    """immediate=True runs synchronously inside Model.__init__, on whichever
+    thread constructs the Model — so a Model created from an observer
+    callback while a headless app is running has its immediate on_change
+    fire ON the logic thread, same as any other dep-triggered fire."""
+    from_logic_thread = []
+
+    class Child(Model):
+        x = field(1)
+
+        @prism.on_change(x, immediate=True)
+        def on_x(self):
+            from_logic_thread.append(prism.is_logic_thread())
+
+    class Parent(Model):
+        trigger = field(0)
+
+    created = []
+    p = Parent()
+    p.trigger.observe(lambda v: created.append(Child()))
+
+    with prism.headless(p) as app:
+        p.trigger.value = 1
+        app.wait_until(lambda: created)
+
+    assert from_logic_thread == [True]
+
+
+def test_on_change_subscription_disconnected_by_run_headless_teardown():
+    """The dep-handle Connection an @on_change subscription creates must be
+    torn down by _run_headless()'s finally like any other observer — a
+    stale post-teardown fire would be a UAF/crash risk (same class of bug
+    task 16 fixed for derived()/view())."""
+    code = (
+        "import prism\n"
+        "class M(prism.Model):\n"
+        "    freq = prism.field(1.0)\n"
+        "    @prism.on_change(freq)\n"
+        "    def redraw(self):\n"
+        "        pass\n"
+        "m = M()\n"
+        "prism._run_headless(m, delay_ms=50)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" not in result.stderr, result.stderr
+
+
+def test_class_level_field_observe_emits_deprecation_warning_and_still_works():
+    """2026-09-03 followups task 10: `Class.field.observe(model, cb)` keeps
+    working but must now warn, pointing at the preferred
+    `model.field.observe(cb)` spelling."""
+
+    class M(Model):
+        count = field(0)
+
+    m = M()
+    seen = []
+    with pytest.warns(DeprecationWarning, match=r"model\.count\.observe"):
+        conn = M.count.observe(m, lambda v: seen.append(v))
+    m.count.value = 5
+    assert seen == [5]
+    conn.disconnect()
+
+
+def test_class_level_shared_observe_emits_deprecation_warning():
+    class M(Model):
+        level = shared(0)
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.level\.observe"):
+        M.level.observe(m, lambda v: None)
+
+
+def test_class_level_channel_observe_emits_deprecation_warning():
+    class M(Model):
+        ch = channel(0)
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.ch\.observe"):
+        M.ch.observe(m, lambda v: None)
+
+
+def test_class_level_derived_observe_emits_deprecation_warning():
+    from prism import derived
+
+    class M(Model):
+        a = field(1)
+        total = derived(lambda self: self.a.value, a)
+
+    m = M()
+    with pytest.warns(DeprecationWarning, match=r"model\.total\.observe"):
+        M.total.observe(m, lambda v: None)
+
+
+def test_instance_level_observe_does_not_warn():
+    """The preferred spelling must not itself trigger the deprecation
+    warning."""
+    import warnings
+
+    class M(Model):
+        count = field(0)
+
+    m = M()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        conn = m.count.observe(lambda v: None)
+    conn.disconnect()
 
 
 def _load_example(name: str):

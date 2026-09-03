@@ -20,9 +20,10 @@ class TodoApp(prism.Model):
 
     # list fields — type inferred from first element
     items = prism.list_field(["buy milk", "write docs"])
-    # derived over scalar deps (List<T> not yet supported as Derived dep)
-    summary = prism.derived(lambda self: f"{self.counter.value} items", "counter")
-    filter_len = prism.derived(lambda self: len(self.filter_text.value), "filter_text")
+    # derived over scalar deps (List<T> not yet supported as Derived dep);
+    # deps are the descriptors themselves, not string names
+    summary = prism.derived(lambda self: f"{self.counter.value} items", counter)
+    filter_len = prism.derived(lambda self: len(self.filter_text.value), filter_text)
 
     def view(self, vb):
         vb.vstack(self.new_item, self.filter_text, self.counter)

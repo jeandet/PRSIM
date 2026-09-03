@@ -19,8 +19,8 @@ class Counter(prism.Model):
 
 m = Counter()
 
-# observe: type-safe via descriptor, no string name
-conn = Counter.count.observe(m, lambda v: print(f"count -> {v}"))
+# observe: fire-and-forget, no local reference needed
+m.count.observe(lambda v: print(f"count -> {v}"))
 
 # any thread may mutate; here main thread before run
 m.count.value = 43

@@ -28,9 +28,6 @@ class Settings(prism.Model):
     brightness: Pct = 60
     username = prism.field("jeandet")
 
-    def view(self, vb):
-        vb.vstack(self.volume, self.brightness, self.username)
-
 
 m = Settings()
 print(f"initial volume={m.volume.value} brightness={m.brightness.value}")
@@ -46,8 +43,8 @@ print(f"volume now {m.volume.value}")
 
 # transaction: two sets coalesced into one publish / one observer fire
 seen = []
-conn = Settings.volume.observe(m, lambda v: seen.append(v))
-conn2 = Settings.brightness.observe(m, lambda v: seen.append(v))
+m.volume.observe(lambda v: seen.append(v))
+m.brightness.observe(lambda v: seen.append(v))
 
 with prism.transaction():
     m.volume.value = 0.2

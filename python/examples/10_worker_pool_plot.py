@@ -71,10 +71,6 @@ class WorkerPoolPlot(prism.Model):
     windows_done = prism.field(0)
     tick = prism.channel(0)
 
-    def view(self, vb):
-        vb.canvas(self.plot)
-        vb.widget(self.status)
-
 
 def _compute_and_plot(model: WorkerPoolPlot, window: list[float], bins: list[int]) -> None:
     ys = compute_spectrum(window)
@@ -94,7 +90,7 @@ def main() -> None:
         rate = m.windows_done.value / elapsed if elapsed > 0 else 0.0
         m.status.value = f"{m.windows_done.value} windows, {rate:.1f} windows/sec"
 
-    WorkerPoolPlot.tick.observe(m, on_tick)
+    m.tick.observe(on_tick)
 
     def producer(stop: threading.Event) -> None:
         phase = 0.0

@@ -43,8 +43,8 @@ def sensor_thread(model: SensorBoard, stop: threading.Event):
 m = SensorBoard()
 
 # observe Shared (fires on drain) and Channel (fires per send)
-conn_s = SensorBoard.temperature.observe(m, lambda v: print(f"[shared] temp={v:.2f}"))
-conn_c = SensorBoard.events.observe(m, lambda v: m.log.push(f"event {v}"))
+m.temperature.observe(lambda v: print(f"[shared] temp={v:.2f}"))
+m.events.observe(lambda v: m.log.push(f"event {v}"))
 
 
 # also periodic UI update from observer
@@ -52,7 +52,7 @@ def on_temp(v):
     m.label.value = f"Temp {v:.1f} °C — {m.log.size()} events"
 
 
-conn_label = SensorBoard.temperature.observe(m, on_temp)
+m.temperature.observe(on_temp)
 
 stop = threading.Event()
 t = threading.Thread(target=sensor_thread, args=(m, stop), daemon=True)

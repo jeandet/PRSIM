@@ -42,6 +42,7 @@ class Dashboard(prism.Model):
         vb.canvas(self.plot)
         vb.tree(self.tree)
 
+    @prism.on_change(frequency, amplitude, tick, immediate=True)
     def rebuild_plot(self):
         f = self.frequency.value
         a = self.amplitude.value
@@ -54,12 +55,6 @@ class Dashboard(prism.Model):
 
 
 m = Dashboard()
-m.rebuild_plot()
-
-# Behavior wiring
-m.frequency.observe(lambda v: m.rebuild_plot())
-m.amplitude.observe(lambda v: m.rebuild_plot())
-m.tick.observe(lambda v: m.rebuild_plot() if m.auto_sweep.value else None)
 
 
 # Auto-sweep worker: stopped by run() on exit, so 'm' is captured

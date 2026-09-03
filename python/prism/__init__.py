@@ -134,6 +134,7 @@ __all__ = [
     "shared",
     "channel",
     "derived",
+    "on_change",
     "transaction",
     "list_field",
     "plot_field",
@@ -332,6 +333,37 @@ def _kind_of(value, who="field"):
     )
 
 
+def _dep_attr_name(dep):
+    """Resolve a ``derived``/``on_change`` dependency to its attribute name.
+
+    *dep* is either a string (the field's name) or a class-level field/derived
+    descriptor object itself (``M.volume``-style, ``.name`` set by
+    ``__set_name__``) — the descriptor form is preferred: a typo in the name
+    is a ``NameError`` at class-body time instead of a silent no-op dep.
+    """
+    if isinstance(dep, str):
+        return dep
+    name = getattr(dep, "name", None)
+    if name is None:
+        raise TypeError(
+            f"dependency {dep!r} is not a string name and has no descriptor "
+            "'.name' — pass a field/derived descriptor or its attribute "
+            "name as a string"
+        )
+    return name
+
+
+def _warn_deprecated_class_observe(name):
+    import warnings
+
+    warnings.warn(
+        f"Class.{name}.observe(model, cb) is deprecated; use "
+        f"model.{name}.observe(cb) instead",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
 class _FieldDescriptor:
     def __init__(self, default, validator=None):
         self.default = default
@@ -366,7 +398,9 @@ class _FieldDescriptor:
         self._allocate(instance).value = value
 
     # non-string, type-safe observe: M.volume.observe(m, cb) instead of m.observe('volume', cb)
+    # deprecated (2026-09-03 followups): prefer m.volume.observe(cb)
     def observe(self, instance, callback):
+        _warn_deprecated_class_observe(self.name)
         return self._allocate(instance).observe(callback)
 
     def get(self, instance):
@@ -430,7 +464,9 @@ class _SharedDescriptor:
     def __set__(self, instance, value):
         self._allocate(instance).value = value
 
+    # deprecated (2026-09-03 followups): prefer m.<name>.observe(cb)
     def observe(self, instance, callback):
+        _warn_deprecated_class_observe(self.name)
         return self._allocate(instance).observe(callback)
 
     def get(self, instance):
@@ -463,7 +499,9 @@ class _ChannelDescriptor:
             return self
         return self._allocate(instance)
 
+    # deprecated (2026-09-03 followups): prefer m.<name>.observe(cb)
     def observe(self, instance, callback):
+        _warn_deprecated_class_observe(self.name)
         return self._allocate(instance).observe(callback)
 
 
@@ -497,10 +535,9 @@ class _DerivedDescriptor:
         cache = instance.__dict__.setdefault("_prism_fields", {})
         if self.name in cache:
             return cache[self.name]
-        # resolve deps: str -> getattr(instance, name)
-        dep_handles = [
-            getattr(instance, d) if isinstance(d, str) else d for d in self.deps
-        ]
+        # resolve deps (string name or descriptor -> attribute name -> handle)
+        dep_names = tuple(_dep_attr_name(d) for d in self.deps)
+        dep_handles = [getattr(instance, n) for n in dep_names]
         # build call_fn from fn's signature; also build a same-shape probe that
         # calls fn directly (no weakref indirection needed — instance is in scope)
         import inspect
@@ -517,21 +554,16 @@ class _DerivedDescriptor:
             call_fn = lambda _w=wref, _f=orig: _f(_w()) if _w() is not None else None  # type: ignore[no-untyped-call]
             probe_fn = lambda: orig(instance)  # type: ignore[no-untyped-call]
         elif n_params == n_deps and n_deps > 0:
-            # break cycle: capture weakref + dep names (strings) not handles
+            # break cycle: capture weakref + dep names (strings), not handles or instance
             wref2 = _wr.ref(instance)
-            dep_names = tuple(d if isinstance(d, str) else None for d in self.deps)
-            if all(n is not None for n in dep_names):
-                orig2 = self.fn
-                call_fn = (
-                    lambda _w=wref2, _f=orig2, _ns=dep_names: _f(
-                        *[getattr(_w(), n).value for n in _ns]
-                    )
-                    if _w() is not None
-                    else None
-                )  # type: ignore[no-untyped-call]
-            else:
-                # fallback: captures handles strongly (rare)
-                call_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
+            orig2 = self.fn
+            call_fn = (
+                lambda _w=wref2, _f=orig2, _ns=dep_names: _f(
+                    *[getattr(_w(), n).value for n in _ns]
+                )
+                if _w() is not None
+                else None
+            )  # type: ignore[no-untyped-call]
             probe_fn = lambda: self.fn(*[h.value for h in dep_handles])  # type: ignore[no-untyped-call]
         else:
             call_fn = self.fn
@@ -558,7 +590,9 @@ class _DerivedDescriptor:
             return self
         return self._allocate(instance)
 
+    # deprecated (2026-09-03 followups): prefer m.<name>.observe(cb)
     def observe(self, instance, callback):
+        _warn_deprecated_class_observe(self.name)
         return self._allocate(instance).observe(callback)
 
     def get(self, instance):
@@ -568,9 +602,16 @@ class _DerivedDescriptor:
 def derived(fn=None, *deps, type_hint=None):
     """Read-only; computed on the logic thread.
 
-    Descriptor factory: @derived('a','b') or derived(lambda self: ..., 'a').
+    Descriptor factory: derived(lambda self: ..., a, b) with descriptor deps
+    (preferred — a typo is a NameError at class-body time, not silent), or
+    derived(lambda self: ..., 'a', 'b') with string names.
 
     Usage:
+      class M(Model):
+        a = field(1)
+        b = field(2)
+        total = derived(lambda self: self.a.value + self.b.value, a, b)
+      # string names also work:
       class M(Model):
         a = field(1)
         b = field(2)
@@ -595,6 +636,37 @@ def derived(fn=None, *deps, type_hint=None):
 
     def decorator(func):
         return _DerivedDescriptor(func, *all_deps, type_hint=type_hint)
+
+    return decorator
+
+
+def on_change(*deps, immediate=False):
+    """Logic thread.
+
+    Method decorator: subscribes the method to fire whenever any of *deps*
+    changes. *deps* are field/derived descriptors (preferred) or string
+    names, resolved the same way as ``derived()``'s deps. Subscription
+    happens in ``Model.__init__`` (weakref trampoline, same as ``view()``);
+    the method still works as an ordinary bound method too. The callback
+    takes no value argument — read the new value via ``self.<field>.value``.
+
+    With ``immediate=True`` the method also runs once right after
+    construction, on whichever thread constructs the ``Model`` — replaces
+    the common manual priming call (``m = M(); m.redraw()``).
+
+    Usage:
+        class M(Model):
+            frequency = field(2.0)
+            amplitude = field(1.0)
+
+            @on_change(frequency, amplitude, immediate=True)
+            def redraw(self):
+                self.plot.replace_series(...)
+    """
+
+    def decorator(fn):
+        fn._prism_on_change = (deps, immediate)
+        return fn
 
     return decorator
 
@@ -915,6 +987,45 @@ class Model(_ModelBase):
 
                 self._set_view_callback(_tramp)  # type: ignore[attr-defined]
                 break
+        # @on_change methods: subscribe to each dep (fire-and-forget, same
+        # keepalive path as any other handle.observe()) and fire once if
+        # immediate=True. One name per MRO walk (most-derived class wins,
+        # like normal attribute lookup) so an override without @on_change
+        # correctly opts a subclass out of its base class's subscription.
+        seen_on_change: set = set()
+        for cls in type(self).__mro__:
+            if cls in (Model, _ModelBase, object):
+                continue
+            for name, attr in cls.__dict__.items():
+                if name in seen_on_change:
+                    continue
+                seen_on_change.add(name)
+                meta = getattr(attr, "_prism_on_change", None)
+                if meta is None:
+                    continue
+                deps, immediate = meta
+                self._subscribe_on_change(attr, deps, immediate)
+
+    def _subscribe_on_change(self, fn, deps, immediate):
+        """Wire one @on_change method: weakref trampoline (no strong Model
+        capture, same shape as the view() trampoline above), subscribed to
+        each dep handle via fire-and-forget observe() — the keepalive lives
+        on the dep handle, which is itself cached on this Model, so it's
+        disconnected by run()'s finally like any other observer."""
+        import weakref
+
+        wr = weakref.ref(self)
+
+        def _tramp(*_value, _wr=wr, _fn=fn):  # type: ignore[no-untyped-def]
+            inst = _wr()
+            if inst is None:
+                return
+            return _fn(inst)
+
+        for dep in deps:
+            getattr(self, _dep_attr_name(dep)).observe(_tramp)
+        if immediate:
+            fn(self)
 
 
 class _TransactionCtx:
