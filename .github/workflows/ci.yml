@@ -142,6 +142,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Install deps (meson-python configures the tree to run `meson dist`)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev \
+            libudev-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxfixes-dev \
+            libxss-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev libgl-dev libdrm-dev libgbm-dev \
+            libdbus-1-dev libasound2-dev libpulse-dev libibus-1.0-dev libpipewire-0.3-dev libwayland-bin
       - run: pip install build && python -m build --sdist
       - uses: actions/upload-artifact@v4
         with:
