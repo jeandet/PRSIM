@@ -4,16 +4,29 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Ubuntu's apt meson (1.3) is too old for meson_version >= 1.5 and its default GCC (13)
+# predates -std=c++26, so meson/ninja come from pip and the compiler from g++-14.
+env:
+  CC: gcc-14
+  CXX: g++-14
+
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
-          pip install meson-python nanobind pytest
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup builddir
         run: meson setup builddir
       - name: Build
@@ -22,14 +35,17 @@ jobs:
         run: meson test -C builddir --print-errorlogs
 
   tsan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
-          pip install meson-python nanobind pytest
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup TSan builddir
         run: meson setup builddir-tsan -Db_sanitize=thread -Dbuildtype=debugoptimized
       - name: Build TSan
@@ -38,14 +54,17 @@ jobs:
         run: meson test -C builddir-tsan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
 
   asan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
-          pip install meson-python nanobind pytest
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup ASan+UBSan builddir
         run: meson setup builddir-asan -Db_sanitize=address,undefined -Dbuildtype=debugoptimized
       - name: Build ASan+UBSan
@@ -57,19 +76,18 @@ jobs:
         run: meson test -C builddir-asan --print-errorlogs --exclude sdl_window --exclude model_app --exclude model_app_chrome_cursor --exclude software_backend_chrome_cursor --exclude app --exclude software_backend_request_window
 
   free-threaded:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y meson ninja-build pkg-config libfreetype-dev libharfbuzz-dev
-          pip install meson-python nanobind pytest
-      - name: Setup free-threaded Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.14t'
           allow-prereleases: true
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-14 pkg-config libfreetype-dev libharfbuzz-dev
+          pip install 'meson>=1.5' ninja meson-python nanobind pytest
       - name: Setup builddir
         run: meson setup builddir-ft
       - name: Build
