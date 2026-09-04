@@ -4,10 +4,15 @@ Read-only audit, four parallel scopes (C++ core/app, C++ UI/render, Python API, 
 examples), judged against the owner's global clean-code rules (KISS, functional over
 imperative, uniform abstraction levels, no comment-decorated blocks, pragmatic
 factorization, `simplify:` markers) plus project conventions in AGENTS.md.
-Nothing here is implemented yet — findings only, each verified against the current code.
 
 Rank legend: HIGH = clear win, low risk, small diff / MEDIUM = worth doing, more
 invasive / LOW = taste.
+
+Status: fully implemented across 2026-09-03/04 (batches ending in b95f06e), except
+finding texts kept verbatim below for the record. Two deliberate deviations: the
+`headless=` rename landed as `headless_seconds` with a new `until=` predicate
+(examples #3 folded in), and core #12's second half was already done by the time the
+batch reached it.
 
 ---
 
