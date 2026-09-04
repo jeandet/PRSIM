@@ -150,6 +150,7 @@ int main(int argc, char* argv[]) {
         auto& window = backend.create_window({.title = "perf_lab", .width = 1280, .height = 800});
 
         std::jthread producer;
+        const auto started = std::chrono::steady_clock::now();
         prism::model_app(backend, window, app, [&](prism::AppContext& ctx) {
             app.telemetry.observe([&app](const double& v) { app.ingest(v); });
             // Perpetual tick: keeps Shared<T> draining with zero input events (same
@@ -162,11 +163,14 @@ int main(int argc, char* argv[]) {
 
         const auto summary = perf_lab::summarize_build_times(stats_source->build_times());
         const auto last = stats_source->last_stats();
-        const double seconds = static_cast<double>(cfg->headless_seconds);
+        // Rate against measured wall time: the cv deadline overshoots and startup/teardown
+        // adds time, so nominal headless_seconds would flatter the printed /s.
+        const double seconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         fmt::print("perf_lab headless report ({} s, {} rows, {} points, {:.0f} Hz target)\n",
                    cfg->headless_seconds, cfg->rows, cfg->points, cfg->rate_hz);
-        fmt::print("publishes: {} ({:.1f}/s)\n", stats_source->publish_count(),
-                   perf_lab::rate_per_second(stats_source->publish_count(), seconds));
+        fmt::print("publishes: {} ({:.1f}/s, measured {:.1f} s)\n", stats_source->publish_count(),
+                   perf_lab::rate_per_second(stats_source->publish_count(), seconds), seconds);
         fmt::print("build_time_ms: min {:.2f} median {:.2f} p95 {:.2f} max {:.2f}\n",
                    summary.min_ms, summary.median_ms, summary.p95_ms, summary.max_ms);
         fmt::print("last frame: dirty {} · cmds {} · {}\n",

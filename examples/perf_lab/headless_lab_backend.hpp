@@ -2,7 +2,7 @@
 
 // Headless backend for `perf_lab --headless N`: run() blocks until the deadline (or a
 // close request), then delivers WindowClose — same shape as python's DelayHeadlessBackend
-// (python/src/prism_ext.cpp:2264). submit() samples every published snapshot's build
+// in python/src/prism_ext.cpp. submit() samples every published snapshot's build
 // stats for the end-of-run report. present_stats stays the BackendBase default
 // (std::nullopt): there are no presents headless — the report covers publish-side costs.
 

@@ -101,6 +101,8 @@ TEST_CASE("parse_lab_args defaults, flags, positional svg, and errors") {
     CHECK_FALSE(parse_lab_args({"--rows", "abc"}).has_value());
     CHECK_FALSE(parse_lab_args({"--rows", "0"}).has_value());
     CHECK_FALSE(parse_lab_args({"--bogus", "1"}).has_value());
+    // Above INT_MAX would narrow implementation-definedly into headless_seconds (int).
+    CHECK_FALSE(parse_lab_args({"--headless", "999999999999"}).has_value());
     CHECK_FALSE(parse_lab_args({"a.svg", "b.svg"}).has_value());
     // The showcase SVG convention reads argv[1] as the output path, so a positional
     // capture path is only valid as the sole argument.

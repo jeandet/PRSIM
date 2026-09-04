@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -168,7 +169,10 @@ inline std::optional<LabConfig> parse_lab_args(const std::vector<std::string>& a
             if (!v) return std::nullopt;
             if (a == "--rows") cfg.rows = *v;
             else if (a == "--points") cfg.points = *v;
-            else cfg.headless_seconds = static_cast<int>(*v);
+            else {
+                if (*v > INT_MAX) return std::nullopt; // would narrow UB-ishly into int
+                cfg.headless_seconds = static_cast<int>(*v);
+            }
         } else if (a == "--rate") {
             if (i + 1 >= args.size()) return std::nullopt;
             const auto v = parse_positive_double(args[++i]);
