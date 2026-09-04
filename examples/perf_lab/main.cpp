@@ -2,6 +2,7 @@
 #include <prism/widgets/plot.hpp>
 #include "../showcase/showcase_common.hpp"
 #include "lab_model.hpp"
+#include "headless_lab_backend.hpp"
 
 #include <fmt/format.h>
 
@@ -140,6 +141,38 @@ int main(int argc, char* argv[]) {
     if (!cfg->svg_path.empty()) {
         app.seed_demo_data();
         return showcase(argc, argv, app, 1280, 800);
+    }
+
+    if (cfg->headless_seconds > 0) {
+        auto lab_backend = std::make_unique<perf_lab::HeadlessLabBackend>(cfg->headless_seconds);
+        auto* stats_source = lab_backend.get();
+        auto backend = prism::Backend{std::move(lab_backend)};
+        auto& window = backend.create_window({.title = "perf_lab", .width = 1280, .height = 800});
+
+        std::jthread producer;
+        prism::model_app(backend, window, app, [&](prism::AppContext& ctx) {
+            app.telemetry.observe([&app](const double& v) { app.ingest(v); });
+            // Perpetual tick: keeps Shared<T> draining with zero input events (same
+            // rationale as model_system_monitor's heartbeat callback).
+            ctx.clock().add([](prism::AnimationClock::time_point) { return true; });
+            producer = std::jthread(produce_loop, std::ref(app.telemetry), cfg->rate_hz);
+        });
+        producer.request_stop();
+        producer.join();
+
+        const auto summary = perf_lab::summarize_build_times(stats_source->build_times());
+        const auto last = stats_source->last_stats();
+        const double seconds = static_cast<double>(cfg->headless_seconds);
+        fmt::print("perf_lab headless report ({} s, {} rows, {} points, {:.0f} Hz target)\n",
+                   cfg->headless_seconds, cfg->rows, cfg->points, cfg->rate_hz);
+        fmt::print("publishes: {} ({:.1f}/s)\n", stats_source->publish_count(),
+                   perf_lab::rate_per_second(stats_source->publish_count(), seconds));
+        fmt::print("build_time_ms: min {:.2f} median {:.2f} p95 {:.2f} max {:.2f}\n",
+                   summary.min_ms, summary.median_ms, summary.p95_ms, summary.max_ms);
+        fmt::print("last frame: dirty {} · cmds {} · {}\n",
+                   last.dirty_widgets, last.draw_commands,
+                   perf_lab::format_bytes(last.approx_bytes));
+        return 0;
     }
 
     std::jthread producer;
