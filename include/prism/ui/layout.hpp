@@ -24,6 +24,27 @@ namespace scrollbar {
     inline Height thumb_height(Height viewport_h, Height content_h) {
         return Height{std::max(min_thumb_h.raw(), viewport_h.raw() * (viewport_h.raw() / content_h.raw()))};
     }
+
+    // Draws the thumb into `snap.overlay` and records it in `snap.overlay_geometry` --
+    // the overlay hit region is what starts a scrollbar drag (see
+    // app::widget_detail::route_mouse_button), so both go through this one function.
+    // No-op when the content fits the viewport.
+    inline void emit_thumb(SceneSnapshot& snap, WidgetId id, Rect viewport,
+                           Height content_h, DY scroll_offset, const Theme& theme) {
+        Height viewport_h = viewport.extent.h;
+        if (content_h.raw() <= viewport_h.raw()) return;
+        Height thumb_h = thumb_height(viewport_h, content_h);
+        float max_scroll = content_h.raw() - viewport_h.raw();
+        float thumb_y = max_scroll > 0
+            ? scroll_offset.raw() * (viewport_h.raw() - thumb_h.raw()) / max_scroll
+            : 0.f;
+        Rect thumb_rect{
+            Point{viewport.origin.x + DX{viewport.extent.w.raw() - track_inset.raw()},
+                  viewport.origin.y + DY{thumb_y}},
+            Size{Width{track_width}, thumb_h}};
+        snap.overlay.filled_rect(thumb_rect, theme.scrollbar_thumb);
+        snap.overlay_geometry.push_back({id, thumb_rect});
+    }
 }
 
 namespace splitter {
@@ -317,205 +338,195 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
 // this node in a ClipPush/ClipPop pair. Leaf/Canvas DrawLists are only cached and shared
 // across frames (see LayoutNode::widget below) when this is false -- see the comment at
 // that cache check for why.
-inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_by_ancestor = false) {
-    if (node.kind == LayoutNode::Kind::Spacer) return;
+inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_by_ancestor = false);
 
-    if (node.kind == LayoutNode::Kind::Tabs) {
+namespace layout_detail {
+
+inline void flatten_table(LayoutNode& node, SceneSnapshot& snap) {
+    auto vp = node.allocated;
+    Height item_h = node.vlist_item_height.raw() > 0 ? node.vlist_item_height : Height{24.f};
+    Height header_h = node.table_header_h.raw() > 0 ? node.table_header_h : item_h;
+
+    snap.geometry.push_back({node.id, vp});
+
+    // Header background (fixed at top, doesn't scroll vertically)
+    DrawList header_dl;
+    header_dl.clip_push(vp.origin, Size{vp.extent.w, header_h});
+    header_dl.filled_rect(
+        Rect{vp.origin, Size{vp.extent.w, header_h}},
+        node.theme->table_header);
+    header_dl.filled_rect(
+        Rect{Point{vp.origin.x, vp.origin.y + DY{header_h.raw() - 2.f}},
+             Size{vp.extent.w, Height{2.f}}},
+        node.theme->table_header_divider);
+    // Header cell text
+    DX hdr_dx{vp.origin.x.raw()};
+    DY hdr_dy{vp.origin.y.raw()};
+    for (auto& cmd : node.overlay_draws.commands) {
+        auto translated = cmd;
+        layout_detail::translate_cmd(translated, hdr_dx, hdr_dy);
+        header_dl.commands.push_back(std::move(translated));
+    }
+    header_dl.clip_pop();
+    snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(header_dl)));
+    snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
+
+    // Body region (clipped, scrollable)
+    Rect body_rect{
+        Point{vp.origin.x, vp.origin.y + DY{header_h.raw()}},
+        Size{vp.extent.w, vp.extent.h - header_h}};
+
+    DrawList body_clip;
+    body_clip.clip_push(body_rect.origin, body_rect.extent);
+    snap.geometry.push_back({0, body_rect});
+    snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip)));
+    snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
+
+    // Flatten visible children with scroll offset only
+    // (header offset already applied during layout_arrange)
+    DY scroll_dy = node.scroll_offset;
+    DY neg_scroll{-scroll_dy.raw()};
+    for (auto& child : node.children) {
+        layout_detail::offset_subtree_y(child, neg_scroll);
+        layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
+        layout_detail::offset_subtree_y(child, DY{scroll_dy.raw()});
+    }
+
+    DrawList body_clip_pop;
+    body_clip_pop.clip_pop();
+    snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
+    snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip_pop)));
+    snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
+
+    scrollbar::emit_thumb(snap, node.id, body_rect, node.scroll_content_h, scroll_dy, *node.theme);
+}
+
+inline void flatten_scrollable(LayoutNode& node, SceneSnapshot& snap) {
+    // ClipPush for the viewport
+    DrawList clip_dl;
+    clip_dl.clip_push(node.allocated.origin, node.allocated.extent);
+    snap.geometry.push_back({node.id, node.allocated});
+    snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_dl)));
+    snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
+
+    // Flatten visible children with scroll offset applied to entire subtree
+    DY scroll_dy = node.scroll_offset;
+    DY neg_scroll{-scroll_dy.raw()};
+    for (auto& child : node.children) {
+        Y child_top = child.allocated.origin.y - scroll_dy;
+        Y child_bottom = child_top + DY{child.allocated.extent.h.raw()};
+        Y vp_top = node.allocated.origin.y;
+        Y vp_bottom = vp_top + DY{node.allocated.extent.h.raw()};
+
+        if (child_bottom <= vp_top || child_top >= vp_bottom)
+            continue;
+
+        layout_detail::offset_subtree_y(child, neg_scroll);
+        layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
+        DY restore{scroll_dy.raw()};
+        layout_detail::offset_subtree_y(child, restore);
+    }
+
+    // ClipPop
+    DrawList clip_pop_dl;
+    clip_pop_dl.clip_pop();
+    snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
+    snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_pop_dl)));
+    snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
+
+    scrollbar::emit_thumb(snap, node.id, node.allocated, node.scroll_content_h,
+                          node.scroll_offset, *node.theme);
+}
+
+inline void flatten_node_draws(LayoutNode& node, SceneSnapshot& snap, bool clipped_by_ancestor) {
+    if (node.draws.empty() && node.kind != LayoutNode::Kind::Canvas) return;
+
+    // Reuse last frame's already-translated+clipped DrawList when this widget's content
+    // didn't change (!dirty) AND it's still at the same screen rect -- a widget can be
+    // clean but still relocate (a sibling resized, the window resized, ...), which would
+    // make a stale translated copy wrong. Restricted to !clipped_by_ancestor: resolve_clips
+    // only ever mutates a ClipPush rect in place when an outer clip is already active on
+    // its stack, and that can only happen for entries reached with clipped_by_ancestor
+    // true -- so an entry eligible for reuse here is guaranteed to never be mutated after
+    // publication, which is what makes sharing it across snapshots (and across the render
+    // thread) safe. Rows inside Scroll/VirtualList/Table therefore never get this reuse --
+    // simplify: recycled-row identity would need its own invalidation story; revisit if
+    // profiling shows scrolled/tabular content dominates snapshot-build cost.
+    bool cache_hit = !clipped_by_ancestor && node.widget && !node.widget->dirty
+        && node.widget->cached_snapshot_draws
+        && node.widget->cached_screen_rect == node.allocated;
+
+    Rect hit_rect;
+    std::shared_ptr<const DrawList> entry;
+    if (cache_hit) {
+        entry = node.widget->cached_snapshot_draws;
+        hit_rect = node.widget->cached_hit_rect;
+    } else {
+        DX dx{node.allocated.origin.x.raw()};
+        DY dy{node.allocated.origin.y.raw()};
+        layout_detail::translate_draw_list(node.draws, dx, dy);
+        // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
+        hit_rect = (node.kind == LayoutNode::Kind::Canvas)
+            ? node.allocated : node.draws.bounding_box();
+
+        auto clipped = std::make_shared<DrawList>();
+        clipped->clip_push(node.allocated.origin, node.allocated.extent);
+        clipped->commands.insert(clipped->commands.end(),
+            std::make_move_iterator(node.draws.commands.begin()),
+            std::make_move_iterator(node.draws.commands.end()));
+        clipped->clip_pop();
+
+        if (!clipped_by_ancestor && node.widget) {
+            node.widget->cached_screen_rect = node.allocated;
+            node.widget->cached_hit_rect = hit_rect;
+            node.widget->cached_snapshot_draws = clipped;
+        }
+        entry = std::move(clipped);
+    }
+
+    auto idx = static_cast<uint32_t>(snap.geometry.size());
+    snap.geometry.push_back({node.id, hit_rect});
+    snap.draw_lists.push_back(std::move(entry));
+    snap.z_order.push_back(idx);
+}
+
+inline void flatten_overlays(LayoutNode& node, SceneSnapshot& snap) {
+    if (node.overlay_draws.empty()) return;
+    DX dx{node.allocated.origin.x.raw()};
+    DY dy{node.allocated.origin.y.raw()};
+    layout_detail::translate_draw_list(node.overlay_draws, dx, dy);
+    snap.overlay_geometry.push_back({node.id, node.overlay_draws.bounding_box()});
+    for (auto& cmd : node.overlay_draws.commands)
+        snap.overlay.commands.push_back(std::move(cmd));
+}
+
+} // namespace layout_detail
+
+// `clipped_by_ancestor`: true when some ancestor (Scroll/VirtualList/Table) already wraps
+// this node in a ClipPush/ClipPop pair. Leaf/Canvas DrawLists are only cached and shared
+// across frames (see LayoutNode::widget below) when this is false -- see the comment at
+// that cache check for why.
+inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_by_ancestor) {
+    switch (node.kind) {
+    case LayoutNode::Kind::Spacer:
+        return;
+    case LayoutNode::Kind::Tabs:
         for (auto& child : node.children)
             layout_flatten(child, snap, clipped_by_ancestor);
         return;
-    }
-
-    if (node.kind == LayoutNode::Kind::Table) {
-        auto vp = node.allocated;
-        Height item_h = node.vlist_item_height.raw() > 0 ? node.vlist_item_height : Height{24.f};
-        Height header_h = node.table_header_h.raw() > 0 ? node.table_header_h : item_h;
-
-        snap.geometry.push_back({node.id, vp});
-
-        // Header background (fixed at top, doesn't scroll vertically)
-        DrawList header_dl;
-        header_dl.clip_push(vp.origin, Size{vp.extent.w, header_h});
-        header_dl.filled_rect(
-            Rect{vp.origin, Size{vp.extent.w, header_h}},
-            node.theme->table_header);
-        header_dl.filled_rect(
-            Rect{Point{vp.origin.x, vp.origin.y + DY{header_h.raw() - 2.f}},
-                 Size{vp.extent.w, Height{2.f}}},
-            node.theme->table_header_divider);
-        // Header cell text
-        DX hdr_dx{vp.origin.x.raw()};
-        DY hdr_dy{vp.origin.y.raw()};
-        for (auto& cmd : node.overlay_draws.commands) {
-            auto translated = cmd;
-            layout_detail::translate_cmd(translated, hdr_dx, hdr_dy);
-            header_dl.commands.push_back(std::move(translated));
-        }
-        header_dl.clip_pop();
-        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(header_dl)));
-        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
-
-        // Body region (clipped, scrollable)
-        Rect body_rect{
-            Point{vp.origin.x, vp.origin.y + DY{header_h.raw()}},
-            Size{vp.extent.w, vp.extent.h - header_h}};
-
-        DrawList body_clip;
-        body_clip.clip_push(body_rect.origin, body_rect.extent);
-        snap.geometry.push_back({0, body_rect});
-        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip)));
-        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
-
-        // Flatten visible children with scroll offset only
-        // (header offset already applied during layout_arrange)
-        DY scroll_dy = node.scroll_offset;
-        DY neg_scroll{-scroll_dy.raw()};
-        for (auto& child : node.children) {
-            layout_detail::offset_subtree_y(child, neg_scroll);
-            layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
-            layout_detail::offset_subtree_y(child, DY{scroll_dy.raw()});
-        }
-
-        DrawList body_clip_pop;
-        body_clip_pop.clip_pop();
-        snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
-        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(body_clip_pop)));
-        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
-
-        // Vertical scrollbar
-        if (node.scroll_content_h.raw() > body_rect.extent.h.raw()) {
-            Height thumb_h = scrollbar::thumb_height(body_rect.extent.h, node.scroll_content_h);
-            float max_scroll = node.scroll_content_h.raw() - body_rect.extent.h.raw();
-            float thumb_y = max_scroll > 0
-                ? scroll_dy.raw() * (body_rect.extent.h.raw() - thumb_h.raw()) / max_scroll
-                : 0.f;
-            Rect track_rect{
-                Point{body_rect.origin.x + DX{body_rect.extent.w.raw() - scrollbar::track_inset.raw()},
-                      body_rect.origin.y},
-                Size{Width{scrollbar::track_inset}, body_rect.extent.h}};
-            snap.overlay.filled_rect(
-                Rect{Point{track_rect.origin.x, body_rect.origin.y + DY{thumb_y}},
-                     Size{Width{scrollbar::track_width}, thumb_h}},
-                node.theme->scrollbar_thumb);
-            snap.overlay_geometry.push_back({node.id, track_rect});
-        }
-
+    case LayoutNode::Kind::Table:
+        layout_detail::flatten_table(node, snap);
         return;
-    }
-
-    if (node.kind == LayoutNode::Kind::Scroll || node.kind == LayoutNode::Kind::VirtualList) {
-        // ClipPush for the viewport
-        DrawList clip_dl;
-        clip_dl.clip_push(node.allocated.origin, node.allocated.extent);
-        snap.geometry.push_back({node.id, node.allocated});
-        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_dl)));
-        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
-
-        // Flatten visible children with scroll offset applied to entire subtree
-        DY scroll_dy = node.scroll_offset;
-        DY neg_scroll{-scroll_dy.raw()};
-        for (auto& child : node.children) {
-            Y child_top = child.allocated.origin.y - scroll_dy;
-            Y child_bottom = child_top + DY{child.allocated.extent.h.raw()};
-            Y vp_top = node.allocated.origin.y;
-            Y vp_bottom = vp_top + DY{node.allocated.extent.h.raw()};
-
-            if (child_bottom <= vp_top || child_top >= vp_bottom)
-                continue;
-
-            layout_detail::offset_subtree_y(child, neg_scroll);
-            layout_flatten(child, snap, /*clipped_by_ancestor=*/true);
-            DY restore{scroll_dy.raw()};
-            layout_detail::offset_subtree_y(child, restore);
-        }
-
-        // ClipPop
-        DrawList clip_pop_dl;
-        clip_pop_dl.clip_pop();
-        snap.geometry.push_back({0, Rect{Point{X{0}, Y{0}}, Size{Width{0}, Height{0}}}});
-        snap.draw_lists.push_back(std::make_shared<DrawList>(std::move(clip_pop_dl)));
-        snap.z_order.push_back(static_cast<uint32_t>(snap.geometry.size() - 1));
-
-        // Scrollbar overlay (if content exceeds viewport)
-        if (node.scroll_content_h.raw() > node.allocated.extent.h.raw()) {
-            auto vp = node.allocated;
-            Height viewport_h = vp.extent.h;
-            Height content_h = node.scroll_content_h;
-            Height thumb_h = scrollbar::thumb_height(viewport_h, content_h);
-            float max_scroll = content_h.raw() - viewport_h.raw();
-            float thumb_y = (max_scroll > 0)
-                ? node.scroll_offset.raw() * (viewport_h.raw() - thumb_h.raw()) / max_scroll
-                : 0.f;
-
-            Rect thumb_rect{
-                Point{vp.origin.x + DX{vp.extent.w.raw() - scrollbar::track_inset.raw()},
-                      vp.origin.y + DY{thumb_y}},
-                Size{Width{scrollbar::track_width}, thumb_h}};
-            snap.overlay.filled_rect(thumb_rect, node.theme->scrollbar_thumb);
-            snap.overlay_geometry.push_back({node.id, thumb_rect});
-        }
-
+    case LayoutNode::Kind::Scroll:
+    case LayoutNode::Kind::VirtualList:
+        layout_detail::flatten_scrollable(node, snap);
         return;
+    default:
+        break;
     }
 
-    if (!node.draws.empty() || node.kind == LayoutNode::Kind::Canvas) {
-        // Reuse last frame's already-translated+clipped DrawList when this widget's content
-        // didn't change (!dirty) AND it's still at the same screen rect -- a widget can be
-        // clean but still relocate (a sibling resized, the window resized, ...), which would
-        // make a stale translated copy wrong. Restricted to !clipped_by_ancestor: resolve_clips
-        // only ever mutates a ClipPush rect in place when an outer clip is already active on
-        // its stack, and that can only happen for entries reached with clipped_by_ancestor
-        // true -- so an entry eligible for reuse here is guaranteed to never be mutated after
-        // publication, which is what makes sharing it across snapshots (and across the render
-        // thread) safe. Rows inside Scroll/VirtualList/Table therefore never get this reuse --
-        // simplify: recycled-row identity would need its own invalidation story; revisit if
-        // profiling shows scrolled/tabular content dominates snapshot-build cost.
-        bool cache_hit = !clipped_by_ancestor && node.widget && !node.widget->dirty
-            && node.widget->cached_snapshot_draws
-            && node.widget->cached_screen_rect == node.allocated;
-
-        Rect hit_rect;
-        std::shared_ptr<const DrawList> entry;
-        if (cache_hit) {
-            entry = node.widget->cached_snapshot_draws;
-            hit_rect = node.widget->cached_hit_rect;
-        } else {
-            DX dx{node.allocated.origin.x.raw()};
-            DY dy{node.allocated.origin.y.raw()};
-            layout_detail::translate_draw_list(node.draws, dx, dy);
-            // Canvas nodes fill their allocation; leaf widgets use drawn content bounds
-            hit_rect = (node.kind == LayoutNode::Kind::Canvas)
-                ? node.allocated : node.draws.bounding_box();
-
-            auto clipped = std::make_shared<DrawList>();
-            clipped->clip_push(node.allocated.origin, node.allocated.extent);
-            clipped->commands.insert(clipped->commands.end(),
-                std::make_move_iterator(node.draws.commands.begin()),
-                std::make_move_iterator(node.draws.commands.end()));
-            clipped->clip_pop();
-
-            if (!clipped_by_ancestor && node.widget) {
-                node.widget->cached_screen_rect = node.allocated;
-                node.widget->cached_hit_rect = hit_rect;
-                node.widget->cached_snapshot_draws = clipped;
-            }
-            entry = std::move(clipped);
-        }
-
-        auto idx = static_cast<uint32_t>(snap.geometry.size());
-        snap.geometry.push_back({node.id, hit_rect});
-        snap.draw_lists.push_back(std::move(entry));
-        snap.z_order.push_back(idx);
-    }
-
-    if (!node.overlay_draws.empty()) {
-        DX dx{node.allocated.origin.x.raw()};
-        DY dy{node.allocated.origin.y.raw()};
-        layout_detail::translate_draw_list(node.overlay_draws, dx, dy);
-        snap.overlay_geometry.push_back({node.id, node.overlay_draws.bounding_box()});
-        for (auto& cmd : node.overlay_draws.commands)
-            snap.overlay.commands.push_back(std::move(cmd));
-    }
+    layout_detail::flatten_node_draws(node, snap, clipped_by_ancestor);
+    layout_detail::flatten_overlays(node, snap);
 
     for (auto& child : node.children) {
         layout_flatten(child, snap, clipped_by_ancestor);
