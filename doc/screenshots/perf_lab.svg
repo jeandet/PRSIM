@@ -1,0 +1,955 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800">
+<rect width="1280" height="800" fill="rgba(30,30,30,1)"/>
+<clipPath id="clip-0"><rect x="0" y="0" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-0)">
+<rect x="0" y="0" width="640" height="24" fill="rgba(42,42,74,1)"/>
+<rect x="0" y="22" width="640" height="2" fill="rgba(74,74,106,1)"/>
+<text x="4" y="4" font-family="monospace" font-size="14" fill="rgba(136,136,204,1)" dominant-baseline="hanging">id</text>
+<text x="132" y="4" font-family="monospace" font-size="14" fill="rgba(136,136,204,1)" dominant-baseline="hanging">name</text>
+<text x="260" y="4" font-family="monospace" font-size="14" fill="rgba(136,136,204,1)" dominant-baseline="hanging">value</text>
+<text x="388" y="4" font-family="monospace" font-size="14" fill="rgba(136,136,204,1)" dominant-baseline="hanging">rate</text>
+<text x="516" y="4" font-family="monospace" font-size="14" fill="rgba(136,136,204,1)" dominant-baseline="hanging">status</text>
+</g>
+<clipPath id="clip-1"><rect x="0" y="24" width="640" height="714"/></clipPath>
+<g clip-path="url(#clip-1)">
+<clipPath id="clip-2"><rect x="0" y="24" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-2)">
+<rect x="0" y="24" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-3"><rect x="0" y="24" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-3)">
+<text x="4" y="28" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0</text>
+</g>
+<clipPath id="clip-4"><rect x="128" y="24" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-4)">
+<text x="132" y="28" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_0</text>
+</g>
+<rect x="128" y="24" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-5"><rect x="256" y="24" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-5)">
+<text x="260" y="28" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="24" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-6"><rect x="384" y="24" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-6)">
+<text x="388" y="28" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="24" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-7"><rect x="512" y="24" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-7)">
+<text x="516" y="28" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="24" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-8"><rect x="0" y="48" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-8)">
+<rect x="0" y="48" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-9"><rect x="0" y="48" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-9)">
+<text x="4" y="52" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">1</text>
+</g>
+<clipPath id="clip-10"><rect x="128" y="48" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-10)">
+<text x="132" y="52" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_1</text>
+</g>
+<rect x="128" y="48" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-11"><rect x="256" y="48" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-11)">
+<text x="260" y="52" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="48" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-12"><rect x="384" y="48" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-12)">
+<text x="388" y="52" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="48" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-13"><rect x="512" y="48" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-13)">
+<text x="516" y="52" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="48" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-14"><rect x="0" y="72" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-14)">
+<rect x="0" y="72" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-15"><rect x="0" y="72" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-15)">
+<text x="4" y="76" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">2</text>
+</g>
+<clipPath id="clip-16"><rect x="128" y="72" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-16)">
+<text x="132" y="76" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_2</text>
+</g>
+<rect x="128" y="72" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-17"><rect x="256" y="72" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-17)">
+<text x="260" y="76" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="72" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-18"><rect x="384" y="72" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-18)">
+<text x="388" y="76" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="72" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-19"><rect x="512" y="72" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-19)">
+<text x="516" y="76" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="72" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-20"><rect x="0" y="96" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-20)">
+<rect x="0" y="96" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-21"><rect x="0" y="96" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-21)">
+<text x="4" y="100" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">3</text>
+</g>
+<clipPath id="clip-22"><rect x="128" y="96" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-22)">
+<text x="132" y="100" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_3</text>
+</g>
+<rect x="128" y="96" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-23"><rect x="256" y="96" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-23)">
+<text x="260" y="100" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="96" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-24"><rect x="384" y="96" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-24)">
+<text x="388" y="100" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="96" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-25"><rect x="512" y="96" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-25)">
+<text x="516" y="100" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="96" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-26"><rect x="0" y="120" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-26)">
+<rect x="0" y="120" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-27"><rect x="0" y="120" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-27)">
+<text x="4" y="124" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">4</text>
+</g>
+<clipPath id="clip-28"><rect x="128" y="120" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-28)">
+<text x="132" y="124" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_4</text>
+</g>
+<rect x="128" y="120" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-29"><rect x="256" y="120" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-29)">
+<text x="260" y="124" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="120" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-30"><rect x="384" y="120" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-30)">
+<text x="388" y="124" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="120" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-31"><rect x="512" y="120" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-31)">
+<text x="516" y="124" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="120" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-32"><rect x="0" y="144" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-32)">
+<rect x="0" y="144" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-33"><rect x="0" y="144" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-33)">
+<text x="4" y="148" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">5</text>
+</g>
+<clipPath id="clip-34"><rect x="128" y="144" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-34)">
+<text x="132" y="148" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_5</text>
+</g>
+<rect x="128" y="144" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-35"><rect x="256" y="144" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-35)">
+<text x="260" y="148" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="144" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-36"><rect x="384" y="144" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-36)">
+<text x="388" y="148" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="144" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-37"><rect x="512" y="144" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-37)">
+<text x="516" y="148" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="144" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-38"><rect x="0" y="168" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-38)">
+<rect x="0" y="168" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-39"><rect x="0" y="168" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-39)">
+<text x="4" y="172" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">6</text>
+</g>
+<clipPath id="clip-40"><rect x="128" y="168" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-40)">
+<text x="132" y="172" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_6</text>
+</g>
+<rect x="128" y="168" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-41"><rect x="256" y="168" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-41)">
+<text x="260" y="172" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="168" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-42"><rect x="384" y="168" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-42)">
+<text x="388" y="172" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="168" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-43"><rect x="512" y="168" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-43)">
+<text x="516" y="172" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="168" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-44"><rect x="0" y="192" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-44)">
+<rect x="0" y="192" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-45"><rect x="0" y="192" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-45)">
+<text x="4" y="196" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">7</text>
+</g>
+<clipPath id="clip-46"><rect x="128" y="192" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-46)">
+<text x="132" y="196" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_7</text>
+</g>
+<rect x="128" y="192" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-47"><rect x="256" y="192" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-47)">
+<text x="260" y="196" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="192" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-48"><rect x="384" y="192" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-48)">
+<text x="388" y="196" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="192" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-49"><rect x="512" y="192" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-49)">
+<text x="516" y="196" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="192" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-50"><rect x="0" y="216" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-50)">
+<rect x="0" y="216" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-51"><rect x="0" y="216" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-51)">
+<text x="4" y="220" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">8</text>
+</g>
+<clipPath id="clip-52"><rect x="128" y="216" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-52)">
+<text x="132" y="220" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_8</text>
+</g>
+<rect x="128" y="216" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-53"><rect x="256" y="216" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-53)">
+<text x="260" y="220" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="216" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-54"><rect x="384" y="216" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-54)">
+<text x="388" y="220" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="216" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-55"><rect x="512" y="216" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-55)">
+<text x="516" y="220" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="216" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-56"><rect x="0" y="240" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-56)">
+<rect x="0" y="240" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-57"><rect x="0" y="240" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-57)">
+<text x="4" y="244" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">9</text>
+</g>
+<clipPath id="clip-58"><rect x="128" y="240" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-58)">
+<text x="132" y="244" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_9</text>
+</g>
+<rect x="128" y="240" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-59"><rect x="256" y="240" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-59)">
+<text x="260" y="244" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="240" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-60"><rect x="384" y="240" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-60)">
+<text x="388" y="244" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="240" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-61"><rect x="512" y="240" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-61)">
+<text x="516" y="244" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="240" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-62"><rect x="0" y="264" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-62)">
+<rect x="0" y="264" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-63"><rect x="0" y="264" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-63)">
+<text x="4" y="268" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">10</text>
+</g>
+<clipPath id="clip-64"><rect x="128" y="264" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-64)">
+<text x="132" y="268" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_10</text>
+</g>
+<rect x="128" y="264" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-65"><rect x="256" y="264" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-65)">
+<text x="260" y="268" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="264" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-66"><rect x="384" y="264" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-66)">
+<text x="388" y="268" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="264" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-67"><rect x="512" y="264" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-67)">
+<text x="516" y="268" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="264" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-68"><rect x="0" y="288" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-68)">
+<rect x="0" y="288" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-69"><rect x="0" y="288" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-69)">
+<text x="4" y="292" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">11</text>
+</g>
+<clipPath id="clip-70"><rect x="128" y="288" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-70)">
+<text x="132" y="292" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_11</text>
+</g>
+<rect x="128" y="288" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-71"><rect x="256" y="288" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-71)">
+<text x="260" y="292" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="288" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-72"><rect x="384" y="288" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-72)">
+<text x="388" y="292" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="288" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-73"><rect x="512" y="288" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-73)">
+<text x="516" y="292" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="288" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-74"><rect x="0" y="312" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-74)">
+<rect x="0" y="312" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-75"><rect x="0" y="312" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-75)">
+<text x="4" y="316" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">12</text>
+</g>
+<clipPath id="clip-76"><rect x="128" y="312" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-76)">
+<text x="132" y="316" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_12</text>
+</g>
+<rect x="128" y="312" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-77"><rect x="256" y="312" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-77)">
+<text x="260" y="316" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="312" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-78"><rect x="384" y="312" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-78)">
+<text x="388" y="316" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="312" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-79"><rect x="512" y="312" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-79)">
+<text x="516" y="316" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="312" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-80"><rect x="0" y="336" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-80)">
+<rect x="0" y="336" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-81"><rect x="0" y="336" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-81)">
+<text x="4" y="340" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">13</text>
+</g>
+<clipPath id="clip-82"><rect x="128" y="336" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-82)">
+<text x="132" y="340" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_13</text>
+</g>
+<rect x="128" y="336" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-83"><rect x="256" y="336" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-83)">
+<text x="260" y="340" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="336" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-84"><rect x="384" y="336" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-84)">
+<text x="388" y="340" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="336" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-85"><rect x="512" y="336" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-85)">
+<text x="516" y="340" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="336" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-86"><rect x="0" y="360" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-86)">
+<rect x="0" y="360" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-87"><rect x="0" y="360" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-87)">
+<text x="4" y="364" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">14</text>
+</g>
+<clipPath id="clip-88"><rect x="128" y="360" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-88)">
+<text x="132" y="364" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_14</text>
+</g>
+<rect x="128" y="360" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-89"><rect x="256" y="360" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-89)">
+<text x="260" y="364" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="360" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-90"><rect x="384" y="360" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-90)">
+<text x="388" y="364" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="360" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-91"><rect x="512" y="360" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-91)">
+<text x="516" y="364" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="360" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-92"><rect x="0" y="384" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-92)">
+<rect x="0" y="384" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-93"><rect x="0" y="384" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-93)">
+<text x="4" y="388" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">15</text>
+</g>
+<clipPath id="clip-94"><rect x="128" y="384" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-94)">
+<text x="132" y="388" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_15</text>
+</g>
+<rect x="128" y="384" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-95"><rect x="256" y="384" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-95)">
+<text x="260" y="388" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="384" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-96"><rect x="384" y="384" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-96)">
+<text x="388" y="388" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="384" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-97"><rect x="512" y="384" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-97)">
+<text x="516" y="388" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="384" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-98"><rect x="0" y="408" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-98)">
+<rect x="0" y="408" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-99"><rect x="0" y="408" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-99)">
+<text x="4" y="412" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">16</text>
+</g>
+<clipPath id="clip-100"><rect x="128" y="408" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-100)">
+<text x="132" y="412" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_16</text>
+</g>
+<rect x="128" y="408" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-101"><rect x="256" y="408" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-101)">
+<text x="260" y="412" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="408" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-102"><rect x="384" y="408" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-102)">
+<text x="388" y="412" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="408" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-103"><rect x="512" y="408" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-103)">
+<text x="516" y="412" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="408" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-104"><rect x="0" y="432" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-104)">
+<rect x="0" y="432" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-105"><rect x="0" y="432" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-105)">
+<text x="4" y="436" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">17</text>
+</g>
+<clipPath id="clip-106"><rect x="128" y="432" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-106)">
+<text x="132" y="436" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_17</text>
+</g>
+<rect x="128" y="432" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-107"><rect x="256" y="432" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-107)">
+<text x="260" y="436" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="432" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-108"><rect x="384" y="432" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-108)">
+<text x="388" y="436" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="432" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-109"><rect x="512" y="432" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-109)">
+<text x="516" y="436" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="432" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-110"><rect x="0" y="456" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-110)">
+<rect x="0" y="456" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-111"><rect x="0" y="456" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-111)">
+<text x="4" y="460" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">18</text>
+</g>
+<clipPath id="clip-112"><rect x="128" y="456" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-112)">
+<text x="132" y="460" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_18</text>
+</g>
+<rect x="128" y="456" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-113"><rect x="256" y="456" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-113)">
+<text x="260" y="460" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="456" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-114"><rect x="384" y="456" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-114)">
+<text x="388" y="460" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="456" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-115"><rect x="512" y="456" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-115)">
+<text x="516" y="460" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="456" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-116"><rect x="0" y="480" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-116)">
+<rect x="0" y="480" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-117"><rect x="0" y="480" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-117)">
+<text x="4" y="484" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">19</text>
+</g>
+<clipPath id="clip-118"><rect x="128" y="480" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-118)">
+<text x="132" y="484" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_19</text>
+</g>
+<rect x="128" y="480" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-119"><rect x="256" y="480" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-119)">
+<text x="260" y="484" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="480" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-120"><rect x="384" y="480" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-120)">
+<text x="388" y="484" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="480" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-121"><rect x="512" y="480" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-121)">
+<text x="516" y="484" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="480" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-122"><rect x="0" y="504" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-122)">
+<rect x="0" y="504" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-123"><rect x="0" y="504" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-123)">
+<text x="4" y="508" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">20</text>
+</g>
+<clipPath id="clip-124"><rect x="128" y="504" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-124)">
+<text x="132" y="508" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_20</text>
+</g>
+<rect x="128" y="504" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-125"><rect x="256" y="504" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-125)">
+<text x="260" y="508" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="504" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-126"><rect x="384" y="504" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-126)">
+<text x="388" y="508" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="504" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-127"><rect x="512" y="504" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-127)">
+<text x="516" y="508" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="504" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-128"><rect x="0" y="528" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-128)">
+<rect x="0" y="528" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-129"><rect x="0" y="528" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-129)">
+<text x="4" y="532" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">21</text>
+</g>
+<clipPath id="clip-130"><rect x="128" y="528" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-130)">
+<text x="132" y="532" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_21</text>
+</g>
+<rect x="128" y="528" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-131"><rect x="256" y="528" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-131)">
+<text x="260" y="532" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="528" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-132"><rect x="384" y="528" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-132)">
+<text x="388" y="532" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="528" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-133"><rect x="512" y="528" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-133)">
+<text x="516" y="532" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="528" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-134"><rect x="0" y="552" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-134)">
+<rect x="0" y="552" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-135"><rect x="0" y="552" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-135)">
+<text x="4" y="556" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">22</text>
+</g>
+<clipPath id="clip-136"><rect x="128" y="552" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-136)">
+<text x="132" y="556" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_22</text>
+</g>
+<rect x="128" y="552" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-137"><rect x="256" y="552" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-137)">
+<text x="260" y="556" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="552" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-138"><rect x="384" y="552" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-138)">
+<text x="388" y="556" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="552" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-139"><rect x="512" y="552" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-139)">
+<text x="516" y="556" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="552" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-140"><rect x="0" y="576" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-140)">
+<rect x="0" y="576" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-141"><rect x="0" y="576" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-141)">
+<text x="4" y="580" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">23</text>
+</g>
+<clipPath id="clip-142"><rect x="128" y="576" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-142)">
+<text x="132" y="580" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_23</text>
+</g>
+<rect x="128" y="576" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-143"><rect x="256" y="576" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-143)">
+<text x="260" y="580" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="576" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-144"><rect x="384" y="576" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-144)">
+<text x="388" y="580" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="576" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-145"><rect x="512" y="576" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-145)">
+<text x="516" y="580" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="576" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-146"><rect x="0" y="600" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-146)">
+<rect x="0" y="600" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-147"><rect x="0" y="600" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-147)">
+<text x="4" y="604" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">24</text>
+</g>
+<clipPath id="clip-148"><rect x="128" y="600" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-148)">
+<text x="132" y="604" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_24</text>
+</g>
+<rect x="128" y="600" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-149"><rect x="256" y="600" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-149)">
+<text x="260" y="604" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="600" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-150"><rect x="384" y="600" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-150)">
+<text x="388" y="604" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="600" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-151"><rect x="512" y="600" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-151)">
+<text x="516" y="604" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="600" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-152"><rect x="0" y="624" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-152)">
+<rect x="0" y="624" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-153"><rect x="0" y="624" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-153)">
+<text x="4" y="628" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">25</text>
+</g>
+<clipPath id="clip-154"><rect x="128" y="624" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-154)">
+<text x="132" y="628" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_25</text>
+</g>
+<rect x="128" y="624" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-155"><rect x="256" y="624" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-155)">
+<text x="260" y="628" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="624" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-156"><rect x="384" y="624" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-156)">
+<text x="388" y="628" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="624" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-157"><rect x="512" y="624" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-157)">
+<text x="516" y="628" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="624" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-158"><rect x="0" y="648" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-158)">
+<rect x="0" y="648" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-159"><rect x="0" y="648" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-159)">
+<text x="4" y="652" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">26</text>
+</g>
+<clipPath id="clip-160"><rect x="128" y="648" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-160)">
+<text x="132" y="652" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_26</text>
+</g>
+<rect x="128" y="648" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-161"><rect x="256" y="648" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-161)">
+<text x="260" y="652" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="648" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-162"><rect x="384" y="648" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-162)">
+<text x="388" y="652" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="648" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-163"><rect x="512" y="648" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-163)">
+<text x="516" y="652" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="648" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-164"><rect x="0" y="672" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-164)">
+<rect x="0" y="672" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-165"><rect x="0" y="672" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-165)">
+<text x="4" y="676" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">27</text>
+</g>
+<clipPath id="clip-166"><rect x="128" y="672" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-166)">
+<text x="132" y="676" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_27</text>
+</g>
+<rect x="128" y="672" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-167"><rect x="256" y="672" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-167)">
+<text x="260" y="676" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="672" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-168"><rect x="384" y="672" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-168)">
+<text x="388" y="676" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="672" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-169"><rect x="512" y="672" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-169)">
+<text x="516" y="676" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="672" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-170"><rect x="0" y="696" width="640" height="24"/></clipPath>
+<g clip-path="url(#clip-170)">
+<rect x="0" y="696" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-171"><rect x="0" y="696" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-171)">
+<text x="4" y="700" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">28</text>
+</g>
+<clipPath id="clip-172"><rect x="128" y="696" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-172)">
+<text x="132" y="700" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_28</text>
+</g>
+<rect x="128" y="696" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-173"><rect x="256" y="696" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-173)">
+<text x="260" y="700" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="696" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-174"><rect x="384" y="696" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-174)">
+<text x="388" y="700" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="696" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-175"><rect x="512" y="696" width="128" height="24"/></clipPath>
+<g clip-path="url(#clip-175)">
+<text x="516" y="700" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="696" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-176"><rect x="0" y="720" width="640" height="18"/></clipPath>
+<g clip-path="url(#clip-176)">
+<rect x="0" y="720" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-177"><rect x="0" y="720" width="128" height="18"/></clipPath>
+<g clip-path="url(#clip-177)">
+<text x="4" y="724" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">29</text>
+</g>
+<clipPath id="clip-178"><rect x="128" y="720" width="128" height="18"/></clipPath>
+<g clip-path="url(#clip-178)">
+<text x="132" y="724" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_29</text>
+</g>
+<rect x="128" y="720" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-179"><rect x="256" y="720" width="128" height="18"/></clipPath>
+<g clip-path="url(#clip-179)">
+<text x="260" y="724" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="720" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-180"><rect x="384" y="720" width="128" height="18"/></clipPath>
+<g clip-path="url(#clip-180)">
+<text x="388" y="724" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="720" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-181"><rect x="512" y="720" width="128" height="18"/></clipPath>
+<g clip-path="url(#clip-181)">
+<text x="516" y="724" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="720" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-182"><rect x="0" y="744" width="640" height="0"/></clipPath>
+<g clip-path="url(#clip-182)">
+<rect x="0" y="744" width="640" height="24" fill="rgba(30,30,50,1)"/>
+<clipPath id="clip-183"><rect x="0" y="744" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-183)">
+<text x="4" y="748" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">30</text>
+</g>
+<clipPath id="clip-184"><rect x="128" y="744" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-184)">
+<text x="132" y="748" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_30</text>
+</g>
+<rect x="128" y="744" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-185"><rect x="256" y="744" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-185)">
+<text x="260" y="748" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="744" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-186"><rect x="384" y="744" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-186)">
+<text x="388" y="748" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="744" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-187"><rect x="512" y="744" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-187)">
+<text x="516" y="748" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="744" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+<clipPath id="clip-188"><rect x="0" y="768" width="640" height="0"/></clipPath>
+<g clip-path="url(#clip-188)">
+<rect x="0" y="768" width="640" height="24" fill="rgba(26,26,46,1)"/>
+<clipPath id="clip-189"><rect x="0" y="768" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-189)">
+<text x="4" y="772" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">31</text>
+</g>
+<clipPath id="clip-190"><rect x="128" y="768" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-190)">
+<text x="132" y="772" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sensor_31</text>
+</g>
+<rect x="128" y="768" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-191"><rect x="256" y="768" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-191)">
+<text x="260" y="772" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.50</text>
+</g>
+<rect x="256" y="768" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-192"><rect x="384" y="768" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-192)">
+<text x="388" y="772" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">0.25</text>
+</g>
+<rect x="384" y="768" width="1" height="24" fill="rgba(50,50,70,1)"/>
+<clipPath id="clip-193"><rect x="512" y="768" width="128" height="0"/></clipPath>
+<g clip-path="url(#clip-193)">
+<text x="516" y="772" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">WARN</text>
+</g>
+<rect x="512" y="768" width="1" height="24" fill="rgba(50,50,70,1)"/>
+</g>
+</g>
+<clipPath id="clip-194"><rect x="640" y="0" width="640" height="738"/></clipPath>
+<g clip-path="url(#clip-194)">
+<rect x="700" y="10" width="570" height="683" fill="rgba(30,30,30,1)"/>
+<rect x="700" y="10" width="570" height="683" stroke="rgba(90,90,105,1)" fill="none" stroke-width="1"/>
+<clipPath id="clip-195"><rect x="700" y="10" width="570" height="683"/></clipPath>
+<g clip-path="url(#clip-195)">
+<line x1="725.909" y1="10" x2="725.909" y2="693" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="855.519" y1="10" x2="855.519" y2="693" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="985.13" y1="10" x2="985.13" y2="693" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="1114.74" y1="10" x2="1114.74" y2="693" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="1244.35" y1="10" x2="1244.35" y2="693" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="700" y1="515.773" x2="1270" y2="515.773" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="700" y1="338.272" x2="1270" y2="338.272" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="700" y1="160.771" x2="1270" y2="160.771" stroke="rgba(60,60,70,1)" stroke-width="1"/>
+<line x1="700" y1="10" x2="700" y2="693" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<line x1="700" y1="693" x2="1270" y2="693" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<polyline points="725.909,343.984 726.168,312.432 726.428,296.468 726.687,275.589 726.946,266.949 727.205,249.921 727.464,258.484 727.724,237.012 727.983,229.605 728.242,205.132 728.501,203.623 728.76,197.358 729.02,170.196 729.279,187.572 729.538,185.786 729.797,161.958 730.057,168.58 730.316,166.637 730.575,140.933 730.834,164.26 731.094,161.142 731.353,153.987 731.612,166.755 731.871,171.112 732.13,174.2 732.39,181.227 732.649,174.273 732.908,174.516 733.167,184.611 733.427,181.852 733.686,208.116 733.945,212.586 734.204,209.484 734.463,194.849 734.723,212.501 734.982,214.122 735.241,208.661 735.5,224.163 735.759,217.506 736.019,227.791 736.278,229.122 736.537,223.942 736.796,224.925 737.056,216.241 737.315,217.872 737.574,215.236 737.833,240.051 738.092,214.392 738.352,239.051 738.611,205.616 738.87,206.329 739.129,224.551 739.389,217.905 739.648,215.151 739.907,199.171 740.166,206.773 740.425,209.669 740.685,202.723 740.944,225.185 741.203,213.552 741.462,219.021 741.722,228.546 741.981,222.788 742.24,220.771 742.499,201.113 742.758,212.135 743.018,240.28 743.277,242.795 743.536,231.006 743.795,244.666 744.055,226.423 744.314,220.842 744.573,239.047 744.832,252.127 745.091,233.338 745.351,244.228 745.61,230.409 745.869,237.65 746.128,253.831 746.388,252.157 746.647,253.725 746.906,247.584 747.165,242.878 747.424,235.607 747.684,216.632 747.943,223.861 748.202,199.702 748.461,181.505 748.721,187.411 748.98,190.346 749.239,184.79 749.498,154.759 749.757,141.807 750.017,146.603 750.276,138.41 750.535,121.131 750.794,106.135 751.053,94.9971 751.313,100.715 751.572,74.97 751.831,69.22 752.09,56.5707 752.35,65.0975 752.609,66.463 752.868,63.755 753.127,65.7342 753.386,70.0971 753.646,41.0455 753.905,43.2488 754.164,47.3606 754.423,59.347 754.683,67.2199 754.942,83.8845 755.201,89.0647 755.46,109.215 755.719,92.5852 755.979,101.025 756.238,124.795 756.497,125.875 756.756,151.338 757.016,155.296 757.275,193.821 757.534,186.404 757.793,215.836 758.052,211.383 758.312,218.626 758.571,251.388 758.83,261.054 759.089,286.48 759.349,280.232 759.608,288.847 759.867,321.019 760.126,309.667 760.385,334.21 760.645,326.475 760.904,323.042 761.163,355.497 761.422,348.761 761.682,343.7 761.941,346.799 762.2,370.933 762.459,370.427 762.718,374.34 762.978,363.531 763.237,376.675 763.496,372.402 763.755,384.074 764.015,387.368 764.274,361.951 764.533,366.273 764.792,359.362 765.051,376.655 765.311,360.637 765.57,370.797 765.829,369.643 766.088,371.778 766.347,355.313 766.607,370.007 766.866,369.572 767.125,382.392 767.384,385.243 767.644,371.802 767.903,389.316 768.162,404.913 768.421,393.84 768.68,401.274 768.94,399.154 769.199,395.262 769.458,396.581 769.717,418.198 769.977,423.337 770.236,404.544 770.495,421.221 770.754,409.927 771.013,427.193 771.273,424.366 771.532,432.031 771.791,405.221 772.05,421.651 772.31,419.408 772.569,429.633 772.828,401.942 773.087,410.503 773.346,408.012 773.606,404.31 773.865,378.931 774.124,393.912 774.383,399.166 774.643,382.256 774.902,384.226 775.161,359.97 775.42,372.139 775.679,354.074 775.939,367.004 776.198,357.329 776.457,358.85 776.716,340.226 776.976,348.296 777.235,360.197 777.494,353.818 777.753,361.318 778.012,349.042 778.272,348.772 778.531,372.841 778.79,381.545 779.049,395.566 779.309,378.711 779.568,394.251 779.827,415.112 780.086,411.884 780.345,441.699 780.605,455.363 780.864,440.401 781.123,472.836 781.382,467.773 781.641,488.865 781.901,515.136 782.16,537.611 782.419,534.039 782.678,531.697 782.938,556.651 783.197,557.784 783.456,574.644 783.715,604.843 783.974,603.381 784.234,612.208 784.493,634.57 784.752,619.003 785.011,642.878 785.271,640.03 785.53,647.691 785.789,620.918 786.048,627.065 786.307,650.13 786.567,642.349 786.826,626.664 787.085,627.021 787.344,607.696 787.604,625.843 787.863,623.15 788.122,592.684 788.381,599.682 788.64,598.311 788.9,586.544 789.159,582.221 789.418,567.712 789.677,554.218 789.937,534.889 790.196,525.275 790.455,512.975 790.714,513.203 790.973,501.954 791.233,511.618 791.492,492.211 791.751,503.349 792.01,484.353 792.27,489.868 792.529,466.79 792.788,479.801 793.047,464.769 793.306,463.445 793.566,475.448 793.825,467.629 794.084,443.826 794.343,455.67 794.603,434.602 794.862,441.753 795.121,436.959 795.38,447.444 795.639,436.701 795.899,451.917 796.158,435.426 796.417,430.948 796.676,445.181 796.936,417.492 797.195,418.073 797.454,415.637 797.713,407.778 797.972,423.411 798.232,401.589 798.491,409.356 798.75,397.387 799.009,382.786 799.268,372.712 799.528,383.181 799.787,364.294 800.046,373.766 800.305,352.74 800.565,361 800.824,338.598 801.083,353.364 801.342,351.546 801.601,345.621 801.861,329.011 802.12,326.533 802.379,317.588 802.638,326.22 802.898,335.099 803.157,323.52 803.416,334.306 803.675,332.557 803.934,322.982 804.194,353.782 804.453,344.368 804.712,336.388 804.971,364.095 805.231,364.774 805.49,386.38 805.749,385.163 806.008,389.132 806.267,394.294 806.527,416.168 806.786,406.234 807.045,423.808 807.304,415.868 807.564,433.07 807.823,435.875 808.082,444.933 808.341,440.42 808.6,435.367 808.86,437.006 809.119,449.043 809.378,447.354 809.637,426.345 809.897,419.768 810.156,415.271 810.415,424.955 810.674,432.62 810.933,412.814 811.193,392.974 811.452,372.616 811.711,393.971 811.97,350.662 812.229,359.416 812.489,357.235 812.748,342.822 813.007,319.377 813.266,294.437 813.526,270.4 813.785,279.409 814.044,264.828 814.303,235.924 814.562,215.956 814.822,219.834 815.081,215.948 815.34,188.199 815.599,167.309 815.859,162.008 816.118,164.042 816.377,153.222 816.636,147.573 816.896,122.467 817.155,137.093 817.414,110.441 817.673,125.823 817.932,132.004 818.192,133.406 818.451,125.428 818.71,134.836 818.969,117.428 819.229,131.254 819.488,134.72 819.747,137.666 820.006,120.296 820.265,133.298 820.525,124.612 820.784,144.774 821.043,122.856 821.302,116.068 821.561,139.233 821.821,148.125 822.08,149.351 822.339,138.435 822.598,143.069 822.858,156.809 823.117,156.312 823.376,155.412 823.635,149.734 823.894,152.721 824.154,156.901 824.413,132.622 824.672,150.999 824.931,146.711 825.191,142.742 825.45,135.235 825.709,153.16 825.968,149.661 826.227,126.43 826.487,138.359 826.746,130.461 827.005,154.468 827.264,132.605 827.524,135.21 827.783,166.648 828.042,161.436 828.301,166.576 828.56,154.05 828.82,191.634 829.079,169.926 829.338,184.335 829.597,199.675 829.857,202.005 830.116,228.26 830.375,226.895 830.634,226.766 830.893,222.732 831.153,245.26 831.412,250.214 831.671,273.477 831.93,250.655 832.19,278.649 832.449,283.836 832.708,301.274 832.967,296.448 833.226,290.898 833.486,311.782 833.745,305.239 834.004,290.774 834.263,309.638 834.522,308.056 834.782,286.612 835.041,281.973 835.3,285.807 835.559,276.158 835.819,280.028 836.078,266.626 836.337,267.812 836.596,263.521 836.855,242.455 837.115,221.771 837.374,235.469 837.633,225.123 837.892,214.017 838.152,198.303 838.411,168.072 838.67,156.714 838.929,174.857 839.188,148.979 839.448,164.132 839.707,157.19 839.966,134.984 840.225,134.557 840.485,130.155 840.744,117.661 841.003,132.241 841.262,123.228 841.521,119.406 841.781,134.734 842.04,139.627 842.299,153.394 842.558,144.233 842.818,158.905 843.077,161.575 843.336,179.198 843.595,192.334 843.854,187.999 844.114,209.663 844.373,226.513 844.632,216.495 844.891,240.521 845.151,234.391 845.41,243.849 845.669,268.075 845.928,270.956 846.187,298.319 846.447,302.937 846.706,299.763 846.965,329.981 847.224,335.632 847.484,354.649 847.743,351.266 848.002,367.447 848.261,374.253 848.52,366.22 848.78,388.159 849.039,389.095 849.298,384.528 849.557,401.053 849.817,394.975 850.076,412.073 850.335,400.844 850.594,425.958 850.853,404.768 851.113,425.064 851.372,409.465 851.631,422.759 851.89,412.619 852.149,417.618 852.409,422.682 852.668,424.966 852.927,448.273 853.186,446.271 853.446,442.789 853.705,441.622 853.964,458.471 854.223,474.503 854.482,469.804 854.742,463.393 855.001,498.097 855.26,484.702 855.519,480.786 855.779,510.659 856.038,511.697 856.297,523.389 856.556,527.602 856.815,526.697 857.075,512.008 857.334,521.652 857.593,524.599 857.852,529.208 858.112,537.431 858.371,521.977 858.63,535.22 858.889,517.649 859.148,534.585 859.408,518.999 859.667,514.212 859.926,513.079 860.185,523.855 860.445,512.663 860.704,489.007 860.963,507.548 861.222,470.286 861.481,490.185 861.741,481.7 862,468.626 862.259,453.005 862.518,456.719 862.778,437.328 863.037,423.121 863.296,430.668 863.555,413.581 863.814,412.932 864.074,376.974 864.333,384.877 864.592,367.221 864.851,393.76 865.11,386.92 865.37,366.569 865.629,369.804 865.888,381.39 866.147,372.475 866.407,380.145 866.666,406.388 866.925,402.107 867.184,412.278 867.443,403.185 867.703,417.143 867.962,412.45 868.221,455.881 868.48,462.264 868.74,462.273 868.999,473.001 869.258,485.905 869.517,491.764 869.776,503.4 870.036,531.886 870.295,511.014 870.554,537.36 870.813,558.387 871.073,552.929 871.332,573.386 871.591,587.311 871.85,581.02 872.109,570.394 872.369,580.236 872.628,605.489 872.887,595.9 873.146,608.02 873.406,600.895 873.665,599.961 873.924,594.184 874.183,591.852 874.442,568.072 874.702,568.996 874.961,563.938 875.22,564.26 875.479,565.008 875.739,548.645 875.998,563.302 876.257,562.362 876.516,544.397 876.775,550.226 877.035,528.945 877.294,533.032 877.553,531.138 877.812,493.854 878.072,501.842 878.331,500.505 878.59,501.872 878.849,493.188 879.108,486.526 879.368,488.586 879.627,483.385 879.886,480.156 880.145,483.226 880.405,474.535 880.664,449.07 880.923,451.824 881.182,440.249 881.441,447.743 881.701,459.215 881.96,449.643 882.219,436.861 882.478,430.25 882.737,422.627 882.997,427.729 883.256,407.161 883.515,410.987 883.774,398.58 884.034,382.551 884.293,377.225 884.552,371.581 884.811,385.424 885.07,350.59 885.33,364.513 885.589,356.83 885.848,346.791 886.107,310.494 886.367,309.899 886.626,316.452 886.885,304.394 887.144,268.473 887.403,286.698 887.663,258.525 887.922,254.71 888.181,257.308 888.44,234.588 888.7,234.384 888.959,223.056 889.218,201.499 889.477,212.219 889.736,216.724 889.996,226.441 890.255,193.336 890.514,224.473 890.773,218.657 891.033,199.477 891.292,221.484 891.551,230.889 891.81,219.816 892.069,234.482 892.329,235.06 892.588,243.035 892.847,259.015 893.106,247.046 893.366,274.42 893.625,263.613 893.884,288.47 894.143,293.486 894.402,291.285 894.662,305.647 894.921,311.268 895.18,323.167 895.439,323.951 895.699,355.913 895.958,353.422 896.217,336.805 896.476,350.15 896.735,357.556 896.995,358.456 897.254,362.06 897.513,335.142 897.772,357.032 898.031,355.106 898.291,333.074 898.55,332.92 898.809,339.8 899.068,337.058 899.328,314.65 899.587,291.248 899.846,300.307 900.105,277.108 900.365,271.657 900.624,263.72 900.883,248.029 901.142,254.881 901.401,225.511 901.661,207.225 901.92,199.232 902.179,207.904 902.438,191.357 902.698,178.595 902.957,173.995 903.216,154.392 903.475,156.385 903.734,143.08 903.994,146.581 904.253,140.525 904.512,140.154 904.771,141.582 905.03,135.32 905.29,133.602 905.549,112.097 905.808,122.349 906.067,130.024 906.327,120.107 906.586,139.454 906.845,133.278 907.104,135.558 907.363,115.564 907.623,122.42 907.882,122.015 908.141,126.194 908.4,132.131 908.66,114.915 908.919,127.284 909.178,119.592 909.437,105.495 909.696,112.192 909.956,130.38 910.215,99.6014 910.474,108.479 910.733,114.199 910.993,113.798 911.252,95.7317 911.511,96.4008 911.77,83.6964 912.029,93.5332 912.289,82.2881 912.548,98.9018 912.807,89.6647 913.066,113.795 913.326,98.3061 913.585,95.7211 913.844,95.509 914.103,102.118 914.362,112.753 914.622,116.24 914.881,136.323 915.14,135.172 915.399,140.575 915.659,140.118 915.918,165.182 916.177,171.39 916.436,187.721 916.695,195.251 916.955,181.985 917.214,216.025 917.473,229.288 917.732,226.741 917.992,232.17 918.251,270.454 918.51,262.902 918.769,285.387 919.028,288.572 919.288,290.83 919.547,325.07 919.806,332.119 920.065,347.203 920.324,349.415 920.584,360.179 920.843,362.447 921.102,367.791 921.361,368.541 921.621,369.616 921.88,386.689 922.139,358.433 922.398,374.537 922.657,373.885 922.917,375.499 923.176,347.598 923.435,349.552 923.694,344.466 923.954,357.865 924.213,338.133 924.472,340.581 924.731,333.206 924.99,315.771 925.25,295.18 925.509,315.109 925.768,292.714 926.027,289.751 926.287,266.875 926.546,279.506 926.805,246.994 927.064,267.948 927.323,242.368 927.583,248.244 927.842,254.099 928.101,241.111 928.36,256.007 928.62,241.632 928.879,241.746 929.138,235.411 929.397,254.952 929.656,246.567 929.916,240.815 930.175,256.906 930.434,269.37 930.693,251.695 930.953,279.849 931.212,276.521 931.471,278.708 931.73,313.358 931.989,314.719 932.249,320.877 932.508,312.059 932.767,333.22 933.026,320.266 933.286,338.112 933.545,341.196 933.804,373.469 934.063,365.588 934.322,365.492 934.582,370.008 934.841,400.022 935.1,385.38 935.359,396.765 935.619,404.892 935.878,406.394 936.137,398.089 936.396,418.228 936.655,398.764 936.915,431.423 937.174,422.689 937.433,435.513 937.692,421.414 937.951,427.494 938.211,453.556 938.47,428.543 938.729,436.767 938.988,436.979 939.248,455.983 939.507,445.109 939.766,459.73 940.025,471.061 940.284,484.67 940.544,482.859 940.803,487.139 941.062,505.486 941.321,518.957 941.581,503.385 941.84,544.508 942.099,553.177 942.358,537.775 942.617,568.126 942.877,555.606 943.136,557.558 943.395,584.169 943.654,605.29 943.914,609.706 944.173,603.338 944.432,604.843 944.691,608.972 944.95,619.316 945.21,603.63 945.469,625.864 945.728,601.455 945.987,612.702 946.247,624.026 946.506,614.942 946.765,621.73 947.024,594.56 947.283,594.011 947.543,588.255 947.802,563.542 948.061,564.682 948.32,548.247 948.58,552.42 948.839,549.502 949.098,516.973 949.357,498.477 949.616,512.349 949.876,479.341 950.135,474.278 950.394,467.275 950.653,446.995 950.912,449.558 951.172,421.139 951.431,441.531 951.69,426.318 951.949,393.667 952.209,384.171 952.468,393.755 952.727,392.321 952.986,385.838 953.245,380.28 953.505,371.779 953.764,392.68 954.023,400.196 954.282,380.564 954.542,374.548 954.801,374.211 955.06,400.423 955.319,382.475 955.578,420.799 955.838,429.087 956.097,409.832 956.356,426.641 956.615,436.487 956.875,437.094 957.134,461.689 957.393,466.755 957.652,467.315 957.911,460.318 958.171,466.859 958.43,468.947 958.689,494.035 958.948,494.017 959.208,506.331 959.467,491.634 959.726,488.119 959.985,511.901 960.244,500.174 960.504,509.313 960.763,511.507 961.022,493.708 961.281,496.075 961.541,495.227 961.8,504.374 962.059,478.455 962.318,478.372 962.577,495.489 962.837,478.415 963.096,474.521 963.355,464.706 963.614,484.641 963.874,453.124 964.133,467.192 964.392,470.419 964.651,449.095 964.91,463.57 965.17,435.228 965.429,463.306 965.688,452.747 965.947,457.321 966.207,453.77 966.466,446.097 966.725,433.116 966.984,425.912 967.243,435.359 967.503,450.971 967.762,450.126 968.021,433.824 968.28,429.6 968.539,425.523 968.799,416.592 969.058,415.909 969.317,436.397 969.576,428.513 969.836,396.907 970.095,418.768 970.354,387.595 970.613,373.87 970.872,388.173 971.132,376.102 971.391,381.745 971.65,344.511 971.909,347.485 972.169,318.133 972.428,333.445 972.687,300.679 972.946,295.177 973.205,292.422 973.465,284.714 973.724,260.894 973.983,231.225 974.242,212.845 974.502,197.447 974.761,212.066 975.02,203.652 975.279,182.415 975.538,158.693 975.798,136.648 976.057,133.474 976.316,147.144 976.575,124.714 976.835,113.198 977.094,117.731 977.353,117.684 977.612,108.28 977.871,97.4063 978.131,126.942 978.39,126.086 978.649,105.181 978.908,127.09 979.168,134.157 979.427,138.351 979.686,141.961 979.945,146.835 980.204,165.029 980.464,158.91 980.723,168.25 980.982,158.172 981.241,176.966 981.5,205.711 981.76,190.829 982.019,200.976 982.278,237.69 982.537,225.851 982.797,253.644 983.056,250.325 983.315,242.152 983.574,254.164 983.833,248.867 984.093,279.386 984.352,274.875 984.611,288.396 984.87,276.973 985.13,274.153 985.389,279.716 985.648,276.321 985.907,261.878 986.167,268.783 986.426,274.478 986.685,269.074 986.944,246.681 987.203,259.706 987.463,241.169 987.722,245.654 987.981,229.812 988.24,236.798 988.5,223.331 988.759,222.002 989.018,215.716 989.277,189.672 989.536,195.128 989.796,193.129 990.055,179.483 990.314,183.899 990.573,186.525 990.832,189.48 991.092,162.753 991.351,167.753 991.61,161.917 991.869,186.969 992.129,167.155 992.388,181.544 992.647,178.363 992.906,166.294 993.165,171.667 993.425,185.868 993.684,158.521 993.943,173.202 994.202,185.383 994.462,164.773 994.721,166.651 994.98,188.254 995.239,181.848 995.498,164.894 995.758,184.58 996.017,178.926 996.276,166.448 996.535,150.071 996.795,168.978 997.054,136.104 997.313,132.665 997.572,150.729 997.831,149.151 998.091,128.244 998.35,119.559 998.609,108.205 998.868,117.083 999.128,128.843 999.387,110.422 999.646,97.1725 999.905,120.309 1000.16,113.168 1000.42,108.17 1000.68,116.608 1000.94,107.521 1001.2,100.939 1001.46,114.573 1001.72,128.755 1001.98,108.431 1002.24,113.05 1002.5,150.084 1002.76,146.203 1003.02,166.127 1003.28,156.857 1003.53,172.054 1003.79,176.026 1004.05,202.856 1004.31,219.669 1004.57,214.149 1004.83,248.231 1005.09,242.271 1005.35,256.609 1005.61,268.89 1005.87,284.464 1006.13,308.582 1006.39,344.678 1006.64,362.042 1006.9,342.839 1007.16,371.766 1007.42,385.144 1007.68,413.032 1007.94,409.48 1008.2,408.704 1008.46,414.819 1008.72,448.679 1008.98,452.739 1009.24,434.553 1009.5,441.394 1009.76,437.976 1010.01,452.359 1010.27,458.352 1010.53,443.935 1010.79,431.081 1011.05,456.839 1011.31,455.215 1011.57,422.754 1011.83,437.11 1012.09,424.295 1012.35,431.099 1012.61,432.684 1012.87,411.725 1013.13,419.52 1013.38,408.078 1013.64,399.399 1013.9,381.033 1014.16,390.208 1014.42,380.301 1014.68,383.98 1014.94,356.872 1015.2,357.462 1015.46,373.875 1015.72,358.244 1015.98,377.032 1016.24,365.052 1016.5,358.593 1016.75,365.242 1017.01,377.949 1017.27,379.423 1017.53,361.834 1017.79,382.156 1018.05,385.55 1018.31,397.641 1018.57,376.755 1018.83,384.054 1019.09,381.169 1019.35,400.593 1019.61,414.135 1019.87,399.485 1020.12,422.72 1020.38,410.895 1020.64,413.862 1020.9,424.92 1021.16,431.819 1021.42,414.127 1021.68,439.662 1021.94,431.287 1022.2,408.255 1022.46,427.675 1022.72,423.837 1022.98,436.88 1023.24,423.632 1023.49,423.576 1023.75,420.749 1024.01,443.612 1024.27,444.192 1024.53,412.29 1024.79,443.565 1025.05,439.861 1025.31,428.541 1025.57,418.301 1025.83,434.989 1026.09,449.527 1026.35,435.981 1026.6,467.904 1026.86,441.412 1027.12,472.013 1027.38,460.867 1027.64,463.12 1027.9,484.15 1028.16,489.954 1028.42,504.386 1028.68,506.282 1028.94,525.695 1029.2,521.934 1029.46,553.329 1029.72,558.959 1029.97,569.51 1030.23,577.71 1030.49,581.874 1030.75,604.625 1031.01,587.946 1031.27,613.164 1031.53,623.597 1031.79,637.047 1032.05,642.999 1032.31,655.31 1032.57,651.841 1032.83,651.188 1033.09,661.955 1033.34,638.656 1033.6,650.98 1033.86,626.785 1034.12,639.915 1034.38,617.429 1034.64,620.321 1034.9,630.08 1035.16,611.963 1035.42,606.784 1035.68,604.209 1035.94,568.683 1036.2,556.175 1036.46,555.362 1036.71,536.781 1036.97,541.855 1037.23,505.447 1037.49,503.936 1037.75,494.731 1038.01,476.929 1038.27,459.063 1038.53,461.224 1038.79,446.738 1039.05,441.574 1039.31,403.223 1039.57,415.054 1039.83,382.645 1040.08,377.123 1040.34,383.513 1040.6,374.66 1040.86,357.18 1041.12,354.725 1041.38,362.648 1041.64,378.917 1041.9,343.77 1042.16,363.142 1042.42,360.546 1042.68,374.259 1042.94,379.893 1043.2,366.242 1043.45,379.006 1043.71,368.453 1043.97,358.645 1044.23,375.739 1044.49,363.456 1044.75,361.509 1045.01,386.985 1045.27,388.247 1045.53,367.002 1045.79,371.198 1046.05,402.345 1046.31,401.396 1046.56,372.942 1046.82,389.054 1047.08,382.86 1047.34,371.606 1047.6,378.04 1047.86,390.117 1048.12,390.714 1048.38,369.668 1048.64,376.942 1048.9,359.784 1049.16,373.333 1049.42,345.555 1049.68,349.563 1049.93,346.381 1050.19,357.594 1050.45,362.918 1050.71,364.265 1050.97,339.304 1051.23,332.558 1051.49,362.618 1051.75,358.971 1052.01,334.93 1052.27,351.225 1052.53,337.531 1052.79,357.972 1053.05,337.721 1053.3,352.801 1053.56,360.561 1053.82,356.188 1054.08,367.103 1054.34,381.897 1054.6,370.025 1054.86,363.594 1055.12,378.443 1055.38,392.004 1055.64,383.849 1055.9,393.038 1056.16,370.001 1056.42,377.392 1056.67,377.046 1056.93,377.414 1057.19,374.464 1057.45,362.306 1057.71,373.624 1057.97,348.652 1058.23,358.437 1058.49,337.184 1058.75,319.719 1059.01,337.978 1059.27,298.594 1059.53,308.882 1059.79,288.959 1060.04,260.859 1060.3,271.32 1060.56,238.476 1060.82,243.151 1061.08,232.058 1061.34,222.014 1061.6,189.118 1061.86,171.191 1062.12,148.156 1062.38,159.429 1062.64,151.6 1062.9,114.809 1063.16,96.7192 1063.41,100.998 1063.67,75.8887 1063.93,66.7615 1064.19,88.6304 1064.45,73.3498 1064.71,71.0927 1064.97,58.2932 1065.23,63.324 1065.49,58.8475 1065.75,65.6728 1066.01,67.0375 1066.27,47.7437 1066.52,73.3593 1066.78,65.1349 1067.04,57.6528 1067.3,72.7361 1067.56,77.6097 1067.82,103.692 1068.08,94.9031 1068.34,102.685 1068.6,124.453 1068.86,134.167 1069.12,126.993 1069.38,147.463 1069.64,158.926 1069.89,165.499 1070.15,154.643 1070.41,175.309 1070.67,185.863 1070.93,192.715 1071.19,195.201 1071.45,212.996 1071.71,198.223 1071.97,195.961 1072.23,191.71 1072.49,211.974 1072.75,228.597 1073.01,213.648 1073.26,207.957 1073.52,220.573 1073.78,220.291 1074.04,217.051 1074.3,231.214 1074.56,226.5 1074.82,231.446 1075.08,226.332 1075.34,205.375 1075.6,228.582 1075.86,206.485 1076.12,197.595 1076.38,213.93 1076.63,208.763 1076.89,200.013 1077.15,207.357 1077.41,215.951 1077.67,215.643 1077.93,227.754 1078.19,220.652 1078.45,244.03 1078.71,246.223 1078.97,227.347 1079.23,245.923 1079.49,228.461 1079.75,259.053 1080,245.889 1080.26,272.476 1080.52,269.944 1080.78,266.005 1081.04,260.697 1081.3,267.551 1081.56,250.065 1081.82,254.007 1082.08,253.461 1082.34,255.548 1082.6,260.507 1082.86,258.878 1083.11,248.648 1083.37,256.606 1083.63,246.935 1083.89,246.576 1084.15,229.983 1084.41,220.504 1084.67,246.792 1084.93,222.202 1085.19,226.991 1085.45,204.067 1085.71,220.557 1085.97,189.328 1086.23,184.428 1086.48,176.294 1086.74,174.805 1087,162.749 1087.26,151.545 1087.52,154.574 1087.78,170.856 1088.04,164.577 1088.3,142.508 1088.56,158.854 1088.82,157.124 1089.08,172.492 1089.34,180.46 1089.6,181.265 1089.85,165.974 1090.11,172.932 1090.37,190.596 1090.63,190.984 1090.89,208.905 1091.15,232.103 1091.41,231.515 1091.67,260.138 1091.93,256.584 1092.19,269.17 1092.45,301.036 1092.71,298.579 1092.97,331.064 1093.22,349.725 1093.48,354.371 1093.74,375.029 1094,386.171 1094.26,408.821 1094.52,428.044 1094.78,412.432 1095.04,442.368 1095.3,456.266 1095.56,466.952 1095.82,466.931 1096.08,496.175 1096.34,491.211 1096.59,505.898 1096.85,483.147 1097.11,511.168 1097.37,524.615 1097.63,512.858 1097.89,517.364 1098.15,523.279 1098.41,504.582 1098.67,506.396 1098.93,500.185 1099.19,496.158 1099.45,522.637 1099.71,511.068 1099.96,485.4 1100.22,489.577 1100.48,497.857 1100.74,491.614 1101,489.484 1101.26,497.737 1101.52,480.455 1101.78,491.453 1102.04,468.971 1102.3,478.125 1102.56,484.217 1102.82,489.036 1103.07,488.955 1103.33,490.468 1103.59,493.988 1103.85,496.219 1104.11,474.978 1104.37,494.08 1104.63,488.49 1104.89,477.477 1105.15,494.662 1105.41,494.814 1105.67,500.028 1105.93,492.567 1106.19,485.216 1106.44,476.061 1106.7,499.417 1106.96,506.333 1107.22,506.517 1107.48,484.611 1107.74,479.02 1108,475.584 1108.26,489.363 1108.52,482.291 1108.78,461.746 1109.04,456.384 1109.3,456.489 1109.56,478.624 1109.81,445.757 1110.07,453.33 1110.33,439.841 1110.59,446.756 1110.85,434.76 1111.11,418.243 1111.37,436.191 1111.63,405.873 1111.89,420.426 1112.15,432.897 1112.41,395.566 1112.67,414.622 1112.93,407.848 1113.18,420.356 1113.44,417.081 1113.7,414.548 1113.96,412.123 1114.22,433.011 1114.48,408.498 1114.74,436.994 1115,444.683 1115.26,448.159 1115.52,448.316 1115.78,464.54 1116.04,464.701 1116.3,486.4 1116.55,489.944 1116.81,493.446 1117.07,509.325 1117.33,510.853 1117.59,550.113 1117.85,529.144 1118.11,556.146 1118.37,558.447 1118.63,560.54 1118.89,595.239 1119.15,585.691 1119.41,589.825 1119.67,595.429 1119.92,593.209 1120.18,592.918 1120.44,626.688 1120.7,626.518 1120.96,598.203 1121.22,626.064 1121.48,594.804 1121.74,618.887 1122,600.396 1122.26,605.118 1122.52,581.906 1122.78,567.071 1123.03,570.048 1123.29,568.828 1123.55,524.525 1123.81,513.866 1124.07,513.663 1124.33,522.254 1124.59,491.165 1124.85,475.256 1125.11,455.166 1125.37,443.405 1125.63,447.439 1125.89,446.725 1126.15,420.851 1126.4,418.838 1126.66,386.004 1126.92,401.658 1127.18,366.243 1127.44,360.637 1127.7,375.813 1127.96,344.169 1128.22,365.045 1128.48,361.171 1128.74,333.534 1129,338.845 1129.26,338.219 1129.52,335.062 1129.77,321.008 1130.03,317.448 1130.29,303.416 1130.55,300.935 1130.81,320.114 1131.07,303.646 1131.33,321.371 1131.59,301.924 1131.85,314.123 1132.11,308.412 1132.37,295.03 1132.63,295.206 1132.89,302.205 1133.14,280.596 1133.4,296.173 1133.66,273.624 1133.92,285.514 1134.18,268.655 1134.44,281.65 1134.7,254.663 1134.96,270.531 1135.22,241.063 1135.48,249.441 1135.74,261.499 1136,250.648 1136.26,253.32 1136.51,224.734 1136.77,220.589 1137.03,224.002 1137.29,211.456 1137.55,228.335 1137.81,204.445 1138.07,220.349 1138.33,237.24 1138.59,218.238 1138.85,229.584 1139.11,241.248 1139.37,225.621 1139.62,246.3 1139.88,225.257 1140.14,227.212 1140.4,245.924 1140.66,235.796 1140.92,256.527 1141.18,268.412 1141.44,281.971 1141.7,293.583 1141.96,269.295 1142.22,292.937 1142.48,307.553 1142.74,319.17 1142.99,294.678 1143.25,308.608 1143.51,305.497 1143.77,337.436 1144.03,315.64 1144.29,333.549 1144.55,317.521 1144.81,342.328 1145.07,334.619 1145.33,314.52 1145.59,303.411 1145.85,309.374 1146.11,300.561 1146.36,283.392 1146.62,278.196 1146.88,271.741 1147.14,258.85 1147.4,274.175 1147.66,266.129 1147.92,247.019 1148.18,236.601 1148.44,201.184 1148.7,208.731 1148.96,174.991 1149.22,176.936 1149.48,152.522 1149.73,148.176 1149.99,140.331 1150.25,126.661 1150.51,121.136 1150.77,98.857 1151.03,109.112 1151.29,67.7703 1151.55,84.969 1151.81,62.9291 1152.07,76.7593 1152.33,72.6853 1152.59,70.5746 1152.85,65.8034 1153.1,68.209 1153.36,58.8798 1153.62,69.7059 1153.88,56.2355 1154.14,54.1983 1154.4,63.9473 1154.66,86.7225 1154.92,60.6789 1155.18,75.1988 1155.44,85.2424 1155.7,102.43 1155.96,101.744 1156.22,99.6963 1156.47,127.835 1156.73,119.497 1156.99,122.165 1157.25,117.444 1157.51,134.794 1157.77,153.879 1158.03,156.826 1158.29,157.863 1158.55,164.266 1158.81,160.454 1159.07,173.491 1159.33,170.594 1159.58,191.666 1159.84,183.403 1160.1,165.083 1160.36,170.947 1160.62,182.866 1160.88,206.356 1161.14,207.717 1161.4,192.434 1161.66,197.636 1161.92,217.931 1162.18,214.844 1162.44,207.511 1162.7,209.013 1162.95,234.574 1163.21,219.863 1163.47,233.364 1163.73,220.291 1163.99,245.527 1164.25,251.849 1164.51,235.246 1164.77,258.491 1165.03,254.635 1165.29,263.653 1165.55,268.254 1165.81,284.308 1166.07,313.558 1166.32,317.264 1166.58,306.348 1166.84,324.94 1167.1,337.699 1167.36,347.362 1167.62,352.349 1167.88,363.176 1168.14,344.986 1168.4,371.594 1168.66,361.611 1168.92,361.562 1169.18,369.126 1169.44,396.365 1169.69,384.911 1169.95,376.999 1170.21,365.181 1170.47,376.766 1170.73,389.509 1170.99,357.323 1171.25,354.558 1171.51,360.505 1171.77,369.593 1172.03,347.661 1172.29,356.442 1172.55,335.88 1172.81,314.173 1173.06,302.754 1173.32,295.794 1173.58,280.863 1173.84,290.885 1174.1,294.629 1174.36,289.041 1174.62,280.124 1174.88,263.483 1175.14,243.757 1175.4,245.431 1175.66,241.516 1175.92,263.1 1176.18,246.006 1176.43,229.026 1176.69,248.086 1176.95,251.232 1177.21,237.337 1177.47,252.844 1177.73,249.059 1177.99,280.932 1178.25,287.744 1178.51,271.755 1178.77,302.661 1179.03,294.573 1179.29,308.14 1179.55,350.057 1179.8,333.556 1180.06,369.836 1180.32,383.117 1180.58,368.549 1180.84,381.531 1181.1,402.04 1181.36,410.891 1181.62,440.867 1181.88,458.72 1182.14,451.276 1182.4,468.281 1182.66,479.037 1182.91,475.696 1183.17,500.541 1183.43,515.591 1183.69,526.898 1183.95,500.12 1184.21,519.522 1184.47,535.516 1184.73,514.162 1184.99,532.745 1185.25,532.83 1185.51,530.855 1185.77,550.148 1186.03,531.69 1186.28,542.755 1186.54,544.877 1186.8,549.145 1187.06,542.16 1187.32,538.633 1187.58,549.742 1187.84,549.111 1188.1,546.419 1188.36,547.041 1188.62,558.385 1188.88,549.277 1189.14,540.633 1189.4,555.933 1189.65,546.767 1189.91,535.448 1190.17,543.797 1190.43,556.553 1190.69,548.999 1190.95,549.537 1191.21,544.047 1191.47,557.974 1191.73,552.563 1191.99,559.831 1192.25,582.783 1192.51,582.349 1192.77,560.271 1193.02,576.761 1193.28,578.181 1193.54,581.076 1193.8,555.525 1194.06,574.639 1194.32,545.479 1194.58,565.663 1194.84,556.538 1195.1,535.141 1195.36,535.334 1195.62,519.224 1195.88,525.507 1196.14,530.272 1196.39,497.871 1196.65,478.542 1196.91,473.482 1197.17,463.09 1197.43,469.683 1197.69,446.01 1197.95,458.092 1198.21,443.452 1198.47,406.234 1198.73,403.012 1198.99,395.32 1199.25,407.981 1199.51,401.536 1199.76,370.204 1200.02,384.485 1200.28,385.394 1200.54,382.593 1200.8,367.852 1201.06,376.264 1201.32,361.333 1201.58,374.953 1201.84,374.556 1202.1,351.492 1202.36,370.416 1202.62,388.43 1202.87,377.157 1203.13,372.424 1203.39,396.944 1203.65,415.934 1203.91,407.801 1204.17,404.257 1204.43,423.44 1204.69,457.873 1204.95,455.609 1205.21,468.419 1205.47,472.64 1205.73,491.019 1205.99,490.852 1206.24,492.063 1206.5,508.364 1206.76,509.444 1207.02,504.376 1207.28,502.218 1207.54,516.711 1207.8,509.389 1208.06,524.424 1208.32,519.817 1208.58,535.857 1208.84,503.984 1209.1,534.618 1209.36,511.327 1209.61,506.891 1209.87,507.927 1210.13,510.257 1210.39,483.354 1210.65,463.981 1210.91,466.458 1211.17,463.863 1211.43,444.045 1211.69,462.41 1211.95,435.872 1212.21,433.469 1212.47,426.234 1212.73,393.418 1212.98,409.938 1213.24,378.303 1213.5,389.651 1213.76,353.595 1214.02,375.368 1214.28,365.457 1214.54,344.954 1214.8,354.099 1215.06,346.052 1215.32,325.029 1215.58,314.835 1215.84,305.598 1216.1,300.556 1216.35,295.177 1216.61,288.909 1216.87,290.613 1217.13,311.985 1217.39,275.429 1217.65,273.871 1217.91,292.04 1218.17,272.969 1218.43,292.09 1218.69,273.802 1218.95,257.91 1219.21,256.021 1219.46,266.8 1219.72,248.239 1219.98,249.344 1220.24,232.266 1220.5,238.248 1220.76,216.433 1221.02,196.422 1221.28,199.182 1221.54,202.879 1221.8,194.698 1222.06,188.495 1222.32,160.34 1222.58,175.398 1222.83,166.24 1223.09,137.491 1223.35,130.672 1223.61,141.669 1223.87,120.11 1224.13,114.234 1224.39,127.589 1224.65,123.899 1224.91,112.73 1225.17,109.939 1225.43,122.407 1225.69,119.365 1225.95,107.962 1226.2,106.545 1226.46,104.395 1226.72,110.818 1226.98,138.908 1227.24,144.088 1227.5,152.753 1227.76,161.138 1228.02,142.026 1228.28,181.379 1228.54,190.586 1228.8,204.223 1229.06,206.636 1229.32,212.565 1229.57,227.273 1229.83,218.905 1230.09,247.991 1230.35,230.823 1230.61,245.724 1230.87,249.401 1231.13,280.585 1231.39,270.155 1231.65,273.96 1231.91,273.245 1232.17,290.391 1232.43,275.83 1232.69,289.484 1232.94,296.794 1233.2,307.597 1233.46,272.804 1233.72,289.492 1233.98,282.408 1234.24,289.933 1234.5,277.173 1234.76,249.679 1235.02,272.452 1235.28,238.752 1235.54,233.503 1235.8,221.246 1236.06,209.898 1236.31,205.763 1236.57,202.482 1236.83,199.177 1237.09,193.181 1237.35,173.756 1237.61,169.183 1237.87,156.362 1238.13,153.172 1238.39,148.267 1238.65,117.797 1238.91,144.311 1239.17,127.222 1239.42,111.983 1239.68,125.169 1239.94,98.3591 1240.2,112.847 1240.46,103.654 1240.72,110.248 1240.98,111.35 1241.24,107.263 1241.5,118.893 1241.76,114.52 1242.02,115.476 1242.28,114.257 1242.54,131.644 1242.79,129.57 1243.05,136.219 1243.31,158.973 1243.57,134.378 1243.83,139.906 1244.09,141.806" stroke="rgba(0,140,200,1)" fill="none" stroke-width="2"/>
+</g>
+<line x1="725.909" y1="693" x2="725.909" y2="698" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="719.309" y="700" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-0</text>
+<line x1="855.519" y1="693" x2="855.519" y2="698" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="845.619" y="700" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">500</text>
+<line x1="985.13" y1="693" x2="985.13" y2="698" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="971.93" y="700" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">1000</text>
+<line x1="1114.74" y1="693" x2="1114.74" y2="698" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="1101.54" y="700" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">1500</text>
+<line x1="1244.35" y1="693" x2="1244.35" y2="698" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="1231.15" y="700" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">2000</text>
+<line x1="695" y1="515.773" x2="700" y2="515.773" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="679.8" y="509.773" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">-1</text>
+<line x1="695" y1="338.272" x2="700" y2="338.272" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="686.4" y="332.272" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">0</text>
+<line x1="695" y1="160.771" x2="700" y2="160.771" stroke="rgba(90,90,105,1)" stroke-width="1"/>
+<text x="686.4" y="154.771" font-family="monospace" font-size="11" fill="rgba(180,180,190,1)" dominant-baseline="hanging">1</text>
+<text x="955" y="711" font-family="monospace" font-size="12" fill="rgba(220,220,220,1)" dominant-baseline="hanging">sample</text>
+<text x="650" y="351.5" font-family="monospace" font-size="12" fill="rgba(220,220,220,1)" text-anchor="middle" dominant-baseline="central" transform="rotate(-90 650 351.5)">value</text>
+</g>
+<clipPath id="clip-196"><rect x="0" y="738" width="1280" height="30"/></clipPath>
+<g clip-path="url(#clip-196)">
+<rect x="0" y="738" width="1280" height="30" fill="rgba(45,45,55,1)"/>
+<text x="4" y="742" font-family="monospace" font-size="14" fill="rgba(220,220,220,1)" dominant-baseline="hanging">perf lab — static capture</text>
+</g>
+<rect x="632" y="24" width="6" height="20" fill="rgba(120,120,130,0.627451)"/>
+</svg>

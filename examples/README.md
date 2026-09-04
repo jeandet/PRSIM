@@ -42,6 +42,12 @@ reference app.
 <td>Model-driven</td>
 <td>Background-thread data ingestion via <code>Shared&lt;T&gt;</code>, live plots, sortable table/tree over real <code>/proc</code> data</td>
 </tr>
+<tr>
+<td><a href="perf_lab/">perf_lab</a></td>
+<td><img src="../doc/screenshots/perf_lab.svg" width="180"/></td>
+<td>Model-driven</td>
+<td>Perf lab: 100k-row table + 1M-point plot + 1 kHz telemetry, live FPS/build-stats bar, <code>--headless N</code> reporter</td>
+</tr>
 </table>
 
 `showcase/` is a separate, internal set of minimal snippets used only to auto-generate the
