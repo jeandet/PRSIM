@@ -989,100 +989,78 @@ private:
         vls->visible_end = new_end;
     }
 
-    void materialize_table(WidgetNode& node) {
-        auto* ts = get_table_state(node);
-        if (!ts || !ts->source.row_count) return;
-
-        if (ts->row_height.raw() <= 0.f)
-            ts->row_height = Height{24.f};
-
-        size_t total_rows = ts->row_count();
-        auto [new_start, new_end] = compute_visible_range(
-            ItemCount{total_rows}, ts->row_height, ts->scroll_y,
-            ts->viewport_h, ts->overscan);
-
+    // Moves every materialized row back into the row pool for reuse.
+    void recycle_table_rows(WidgetNode& node, TableState& ts) {
         for (auto it = node.children.rbegin(); it != node.children.rend(); ++it) {
             unindex_node(it->id);
-            ts->pool.push_back(std::move(*it));
+            ts.pool.push_back(std::move(*it));
         }
         node.children.clear();
+    }
 
-        Width col_w = ts->column_count > 0
-            ? Width{std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))}
-            : Width{120.f};
-
-        size_t range_size = new_end.raw() - new_start.raw();
-        node.children.reserve(range_size);
-        for (size_t i = new_start.raw(); i < new_end.raw(); ++i) {
-            WidgetNode wn;
-            if (!ts->pool.empty()) {
-                wn = std::move(ts->pool.back());
-                ts->pool.pop_back();
-            }
-            wn.id = 0;  // cells are hit-test transparent; the table container handles input
-            wn.dirty = true;
-            wn.draws.clear();
-            wn.theme = &theme_;
-
-            size_t row_idx = i;
-            bool selected = ts->selected_row.get().has_value() &&
-                            ts->selected_row.get().value() == row_idx;
-
-            auto bg = (row_idx % 2 == 0)
-                ? wn.theme->table_row_even
-                : wn.theme->table_row_odd;
-            if (selected)
-                bg = wn.theme->table_selected;
-
-            Width total_w = col_w * static_cast<float>(ts->column_count);
-            wn.draws.filled_rect(
-                Rect{Point{X{0}, Y{0}},
-                     Size{total_w, ts->row_height}},
-                bg);
-
-            for (size_t c = 0; c < ts->column_count; ++c) {
-                std::string txt = ts->source.cell_text(row_idx, c);
-                X cx{static_cast<float>(c) * col_w.raw()};
-                wn.draws.clip_push(
-                    Point{cx, Y{0}},
-                    Size{col_w, ts->row_height});
-                wn.draws.text(std::move(txt),
-                    Point{X{4.f}, Y{4.f}},
-                    14.f, wn.theme->text);
-                wn.draws.clip_pop();
-
-                if (c > 0) {
-                    wn.draws.filled_rect(
-                        Rect{Point{cx, Y{0}},
-                             Size{Width{1.f}, ts->row_height}},
-                        wn.theme->table_divider);
-                }
-            }
-
-            // id=0 is shared by every row (hit-test transparent, see above);
-            // registering it in index_/parent_map_ would alias to whichever
-            // row was inserted last, so it's deliberately skipped here.
-            node.children.push_back(std::move(wn));
+    // Paints one row (recycled from the pool when possible): zebra/selection
+    // background, per-cell clipped text, and column dividers.
+    WidgetNode paint_table_row(TableState& ts, size_t row_idx, Width col_w) {
+        WidgetNode wn;
+        if (!ts.pool.empty()) {
+            wn = std::move(ts.pool.back());
+            ts.pool.pop_back();
         }
+        wn.id = 0;  // cells are hit-test transparent; the table container handles input
+        wn.dirty = true;
+        wn.draws.clear();
+        wn.theme = &theme_;
 
-        for (auto& c : node.children)
-            if (c.id != 0) index_[c.id] = &c;
+        bool selected = ts.selected_row.get().has_value() &&
+                        ts.selected_row.get().value() == row_idx;
+        auto bg = (row_idx % 2 == 0)
+            ? wn.theme->table_row_even
+            : wn.theme->table_row_odd;
+        if (selected)
+            bg = wn.theme->table_selected;
 
-        ts->visible_start = new_start;
-        ts->visible_end = new_end;
+        Width total_w = col_w * static_cast<float>(ts.column_count);
+        wn.draws.filled_rect(
+            Rect{Point{X{0}, Y{0}},
+                 Size{total_w, ts.row_height}},
+            bg);
 
-        // Render header text into overlay_draws (picked up by table flatten)
-        node.overlay_draws.clear();
-        for (size_t c = 0; c < ts->column_count; ++c) {
+        for (size_t c = 0; c < ts.column_count; ++c) {
+            std::string txt = ts.source.cell_text(row_idx, c);
             X cx{static_cast<float>(c) * col_w.raw()};
-            auto hdr = ts->column_header(c);
+            wn.draws.clip_push(
+                Point{cx, Y{0}},
+                Size{col_w, ts.row_height});
+            wn.draws.text(std::move(txt),
+                Point{X{4.f}, Y{4.f}},
+                14.f, wn.theme->text);
+            wn.draws.clip_pop();
+
+            if (c > 0) {
+                wn.draws.filled_rect(
+                    Rect{Point{cx, Y{0}},
+                         Size{Width{1.f}, ts.row_height}},
+                    wn.theme->table_divider);
+            }
+        }
+        return wn;
+    }
+
+    // Renders header text into overlay_draws (picked up by table flatten).
+    void render_table_header(WidgetNode& node, const TableState& ts, Width col_w) {
+        node.overlay_draws.clear();
+        for (size_t c = 0; c < ts.column_count; ++c) {
+            X cx{static_cast<float>(c) * col_w.raw()};
+            auto hdr = ts.column_header(c);
             node.overlay_draws.text(std::string(hdr),
                 Point{cx + DX{4.f}, Y{4.f}},
                 14.f, node.theme->table_header_text);
         }
+    }
 
-        // Wire input handler for selection (only once)
-        if (!node.table_input_wired) {
+    // Wires the input handler for selection/scrolling (only once per node).
+    void wire_table_input(WidgetNode& node, TableState* ts) {
+        if (node.table_input_wired) return;
         node.table_input_wired = true;
         auto node_id = node.id;
         node.connections.push_back(
@@ -1149,7 +1127,43 @@ private:
                 }
             })
         );
-        } // if (!node.table_input_wired)
+    }
+
+    void materialize_table(WidgetNode& node) {
+        auto* ts = get_table_state(node);
+        if (!ts || !ts->source.row_count) return;
+
+        if (ts->row_height.raw() <= 0.f)
+            ts->row_height = Height{24.f};
+
+        size_t total_rows = ts->row_count();
+        auto [new_start, new_end] = compute_visible_range(
+            ItemCount{total_rows}, ts->row_height, ts->scroll_y,
+            ts->viewport_h, ts->overscan);
+
+        recycle_table_rows(node, *ts);
+
+        Width col_w = ts->column_count > 0
+            ? Width{std::max(120.f, ts->viewport_w.raw() / static_cast<float>(ts->column_count))}
+            : Width{120.f};
+
+        size_t range_size = new_end.raw() - new_start.raw();
+        node.children.reserve(range_size);
+        for (size_t i = new_start.raw(); i < new_end.raw(); ++i) {
+            // id=0 is shared by every row (hit-test transparent, see paint_table_row);
+            // registering it in index_/parent_map_ would alias to whichever
+            // row was inserted last, so it's deliberately skipped here.
+            node.children.push_back(paint_table_row(*ts, i, col_w));
+        }
+
+        for (auto& c : node.children)
+            if (c.id != 0) index_[c.id] = &c;
+
+        ts->visible_start = new_start;
+        ts->visible_end = new_end;
+
+        render_table_header(node, *ts, col_w);
+        wire_table_input(node, ts);
     }
 
     void materialize_all_virtual_lists(WidgetNode& node) {
