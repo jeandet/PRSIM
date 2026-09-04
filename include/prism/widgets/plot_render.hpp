@@ -217,27 +217,102 @@ inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
     }
 }
 
+// Gate for min-max decimation: per-column bucketing would turn a non-monotonic
+// series' back-and-forth lines into an envelope — a silent visual change, so dense
+// decimation is only allowed for non-decreasing x.
+template <typename S>
+bool series_is_monotonic_x(const S& s)
+{
+    for (size_t i = 1; i < s.size(); ++i)
+        if (s.x(i) < s.x(i - 1)) return false;
+    return true;
+}
+
+// Min-max decimation: the min-y and max-y pixel point of each pixel column, in column
+// order — the exact visual envelope of the full polyline at this density, at
+// <= 2 points per column. Only meaningful for monotonic-x series (see the gate above).
+// NaN samples are skipped, so a NaN-only column vanishes (a gap) instead of drawing
+// a garbage point.
+template <typename S>
+std::vector<Point> decimated_series_points(const S& s, const PlotMapping& map)
+{
+    const float left = map.left().raw();
+    const int columns = std::max(1, static_cast<int>(map.right().raw() - left));
+
+    struct Bucket {
+        Point min_pt{}, max_pt{};
+        size_t min_i = 0, max_i = 0;
+        bool any = false;
+    };
+    std::vector<Bucket> buckets(static_cast<size_t>(columns));
+
+    for (size_t i = 0; i < s.size(); ++i) {
+        const Point p = map.to_pixel(s.x(i), s.y(i));
+        if (std::isnan(p.x.raw()) || std::isnan(p.y.raw())) continue;
+        // Points outside the visible x-range fold into the edge columns, keeping the
+        // polyline continuous instead of opening a gap at the boundary.
+        const int col = std::clamp(static_cast<int>(p.x.raw() - left), 0, columns - 1);
+        auto& b = buckets[static_cast<size_t>(col)];
+        if (!b.any || p.y.raw() < b.min_pt.y.raw()) { b.min_pt = p; b.min_i = i; }
+        if (!b.any || p.y.raw() > b.max_pt.y.raw()) { b.max_pt = p; b.max_i = i; }
+        b.any = true;
+    }
+
+    std::vector<Point> out;
+    out.reserve(static_cast<size_t>(columns) * 2);
+    for (const auto& b : buckets) {
+        if (!b.any) continue;
+        if (b.min_i == b.max_i) {
+            out.push_back(b.min_pt);
+        } else if (b.min_i < b.max_i) {
+            out.push_back(b.min_pt);
+            out.push_back(b.max_pt);
+        } else {
+            out.push_back(b.max_pt);
+            out.push_back(b.min_pt);
+        }
+    }
+    return out;
+}
+
 template <typename SeriesRange>
 void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series)
 {
     for (auto& s : series) {
         if (s.size() < 2) continue;
 
+        // A series much denser than the plot is wide pays O(N) transform + allocation
+        // here and O(N) per-segment rendering in the backend, for output no pixel can
+        // show (measured by the perf lab: ~260 ms/publish at 1M points). Min-max
+        // decimation is the exact visual envelope at <= 2 points per pixel column;
+        // non-monotonic-x series keep the full-fidelity path — their back-and-forth
+        // line shape IS the data.
+        const float plot_w = map.right().raw() - map.left().raw();
+        const bool decimate = plot_w > 0.f
+            && s.size() > static_cast<size_t>(plot_w) * 4
+            && series_is_monotonic_x(s);
+
+        std::vector<Point> pts;
+        if (decimate) {
+            pts = decimated_series_points(s, map);
+        } else {
+            pts.reserve(s.size());
+            for (size_t i = 0; i < s.size(); ++i)
+                pts.push_back(map.to_pixel(s.x(i), s.y(i)));
+        }
+
         if (s.style().fill) {
             std::vector<Point> strip;
-            strip.reserve(s.size() * 2);
-            for (size_t i = 0; i < s.size(); ++i) {
-                strip.push_back(map.to_pixel(s.x(i), s.y(i)));
-                strip.push_back(map.to_pixel(s.x(i), s.style().baseline));
+            strip.reserve(pts.size() * 2);
+            const Y baseline_y = map.to_pixel(0.0, s.style().baseline).y;
+            for (const auto& p : pts) {
+                strip.push_back(p);
+                strip.push_back(Point{p.x, baseline_y});
             }
             Color c = s.style().color;
             dl.filled_polygon(std::move(strip), Color::rgba(c.r, c.g, c.b, 40));
         }
 
-        std::vector<Point> pts;
-        pts.reserve(s.size());
-        for (size_t i = 0; i < s.size(); ++i)
-            pts.push_back(map.to_pixel(s.x(i), s.y(i)));
         dl.polyline(std::move(pts), s.style().color, s.style().thickness);
     }
 }

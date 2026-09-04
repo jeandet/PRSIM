@@ -2,6 +2,9 @@
 #include <doctest.h>
 #include <prism/widgets/plot_render.hpp>
 #include <prism/widgets/plot.hpp>
+#include <array>
+#include <cmath>
+#include <limits>
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
 namespace prism {
@@ -1096,4 +1099,142 @@ TEST_CASE("PlotPanel series management")
     bool has_polyline = false;
     for (auto& cmd : dl.commands) if (std::holds_alternative<Polyline>(cmd)) has_polyline = true;
     CHECK(!has_polyline);
+}
+
+// --- min-max decimation (plot_render.hpp) ---
+
+static prism::plot::PlotMapping make_test_map(float w, float h,
+                                              double xmin, double xmax,
+                                              double ymin, double ymax)
+{
+    return prism::plot::PlotMapping{
+        .x_range = {.min = xmin, .max = xmax, .auto_fit = false},
+        .y_range = {.min = ymin, .max = ymax, .auto_fit = false},
+        .plot_area = prism::Rect{prism::Point{prism::X{0.f}, prism::Y{0.f}},
+                                 prism::Size{prism::Width{w}, prism::Height{h}}},
+    };
+}
+
+TEST_CASE("series_is_monotonic_x accepts non-decreasing, rejects any decrease")
+{
+    prism::plot::XYData up{{0, 1, 2, 3}, {0, 0, 0, 0}};
+    CHECK(prism::plot::series_is_monotonic_x(up));
+    prism::plot::XYData flat{{0, 1, 1, 2}, {0, 0, 0, 0}};
+    CHECK(prism::plot::series_is_monotonic_x(flat));
+    prism::plot::XYData dip{{0, 2, 1, 3}, {0, 0, 0, 0}};
+    CHECK_FALSE(prism::plot::series_is_monotonic_x(dip));
+}
+
+TEST_CASE("decimated_series_points keeps the exact per-column envelope")
+{
+    prism::plot::XYData data;
+    const size_t n = 10'000;
+    for (size_t i = 0; i < n; ++i) {
+        data.xs.push_back(static_cast<double>(i));
+        data.ys.push_back(std::sin(static_cast<double>(i) * 0.01));
+    }
+    data.ys[4242] = 1.9; // unique global max above the sine's amplitude
+
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+    auto out = prism::plot::decimated_series_points(data, map);
+
+    CHECK(out.size() <= 200); // <= 2 points per pixel column
+    CHECK(out.size() > 50);
+
+    // Output x is non-decreasing (monotonic input, column order, index order inside).
+    for (size_t i = 1; i < out.size(); ++i)
+        CHECK(out[i].x.raw() >= out[i - 1].x.raw());
+
+    // The global extremes survive decimation.
+    float min_y = std::numeric_limits<float>::max();
+    float max_y = std::numeric_limits<float>::lowest();
+    for (size_t i = 0; i < n; ++i) {
+        const float py = map.to_pixel(data.x(i), data.y(i)).y.raw();
+        min_y = std::min(min_y, py);
+        max_y = std::max(max_y, py);
+    }
+    bool has_min = false, has_max = false;
+    for (auto& p : out) {
+        if (p.y.raw() == min_y) has_min = true;
+        if (p.y.raw() == max_y) has_max = true;
+    }
+    CHECK(has_min);
+    CHECK(has_max);
+
+    // Every emitted point is an actual input sample's pixel point (not an interpolation).
+    for (auto& p : out) {
+        bool found = false;
+        for (size_t i = 0; i < n && !found; ++i) {
+            const auto q = map.to_pixel(data.x(i), data.y(i));
+            if (q.x.raw() == p.x.raw() && q.y.raw() == p.y.raw()) found = true;
+        }
+        CHECK(found);
+    }
+}
+
+TEST_CASE("decimated_series_points skips NaN samples")
+{
+    prism::plot::XYData data;
+    for (size_t i = 0; i < 1000; ++i) {
+        data.xs.push_back(static_cast<double>(i));
+        data.ys.push_back(std::nan(""));
+    }
+    data.ys[500] = 1.0; // a single real sample
+    auto map = make_test_map(10, 100, 0.0, 1000.0, -2.0, 2.0);
+    auto out = prism::plot::decimated_series_points(data, map);
+    CHECK(out.size() == 1); // its column's min == max, emitted once
+}
+
+TEST_CASE("draw_series keeps the full-fidelity path below the threshold")
+{
+    prism::plot::XYData data;
+    for (size_t i = 0; i < 200; ++i) { // 2 samples/px < 4x threshold
+        data.xs.push_back(static_cast<double>(i));
+        data.ys.push_back(std::sin(static_cast<double>(i) * 0.1));
+    }
+    prism::plot::Series s(data, prism::plot::SeriesStyle{});
+    std::array<prism::plot::Series, 1> range{std::move(s)};
+    auto map = make_test_map(100, 100, 0.0, 200.0, -2.0, 2.0);
+
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, range);
+    REQUIRE(dl.commands.size() == 1);
+    auto& pl = std::get<prism::Polyline>(dl.commands[0]);
+    CHECK(pl.points.size() == 200);
+}
+
+TEST_CASE("draw_series decimates a dense monotonic series")
+{
+    prism::plot::XYData data;
+    for (size_t i = 0; i < 10'000; ++i) {
+        data.xs.push_back(static_cast<double>(i));
+        data.ys.push_back(std::sin(static_cast<double>(i) * 0.01));
+    }
+    prism::plot::Series s(data, prism::plot::SeriesStyle{});
+    std::array<prism::plot::Series, 1> range{std::move(s)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, range);
+    REQUIRE(dl.commands.size() == 1);
+    auto& pl = std::get<prism::Polyline>(dl.commands[0]);
+    CHECK(pl.points.size() <= 200);
+}
+
+TEST_CASE("draw_series does not decimate a dense non-monotonic series")
+{
+    prism::plot::XYData data;
+    for (size_t i = 0; i < 10'000; ++i) { // x zig-zags: every even step decreases
+        data.xs.push_back(i % 2 == 0 ? static_cast<double>(i) : static_cast<double>(i) - 1.5);
+        data.ys.push_back(std::sin(static_cast<double>(i) * 0.01));
+    }
+    prism::plot::Series s(data, prism::plot::SeriesStyle{});
+    std::array<prism::plot::Series, 1> range{std::move(s)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, range);
+    REQUIRE(dl.commands.size() == 1);
+    auto& pl = std::get<prism::Polyline>(dl.commands[0]);
+    CHECK(pl.points.size() == 10'000);
 }
