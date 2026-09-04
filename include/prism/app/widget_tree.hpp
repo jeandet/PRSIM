@@ -411,8 +411,10 @@ public:
             snap->draw_command_count += dl->size();
             snap->approx_bytes += dl->approx_bytes();
         }
+        const auto build_end = std::chrono::steady_clock::now();
         snap->build_time_ms = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - build_start).count();
+            build_end - build_start).count();
+        snap->built_at = build_end;
         return snap;
     }
 

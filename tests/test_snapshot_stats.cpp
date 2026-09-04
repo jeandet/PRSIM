@@ -177,3 +177,13 @@ TEST_CASE("build_snapshot lays out twice again when the viewport actually resize
     auto snap = tree.build_snapshot(400, 250, 2); // genuine viewport resize
     CHECK(snap->layout_pass_count == 2);
 }
+
+TEST_CASE("build_snapshot stamps built_at at completion") {
+    SimpleModel model;
+    prism::WidgetTree tree(model);
+    auto before = std::chrono::steady_clock::now();
+    auto snap = tree.build_snapshot(800, 600, 1);
+    auto after = std::chrono::steady_clock::now();
+    CHECK(snap->built_at >= before);
+    CHECK(snap->built_at <= after);
+}

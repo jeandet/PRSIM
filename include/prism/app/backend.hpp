@@ -4,13 +4,25 @@
 #include <prism/render/scene_snapshot.hpp>
 #include <prism/app/window.hpp>
 
+#include <chrono>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace prism::app {
 using namespace prism::render;
 using namespace prism::input;
 
+
+// Present-side statistics, reported by backends that actually present frames
+// (SoftwareBackend). Pull-based — no cross-thread callbacks. Backends that don't
+// present (Null/Test/Capturing/headless) return std::nullopt.
+struct PresentStats {
+    uint64_t present_count = 0;                          // since run() start
+    std::chrono::steady_clock::time_point last_present_at{};
+    double last_present_ms = 0.0;                        // duration of last render+present
+};
 
 class BackendBase {
 public:
@@ -24,6 +36,7 @@ public:
     virtual void wake() = 0;
     virtual void quit() = 0;
     virtual void wait_ready() {}
+    virtual std::optional<PresentStats> present_stats(WindowId) const { return std::nullopt; }
 };
 
 class Backend {
@@ -43,6 +56,7 @@ public:
     void wake() { impl_->wake(); }
     void quit() { impl_->quit(); }
     void wait_ready() { impl_->wait_ready(); }
+    std::optional<PresentStats> present_stats(WindowId w) const { return impl_->present_stats(w); }
 
     Backend(Backend&&) noexcept = default;
     Backend& operator=(Backend&&) noexcept = default;
