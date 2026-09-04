@@ -41,21 +41,14 @@ def main() -> None:
 
     m.value.observe(on_value_change)
 
-    ticks = 0
-
-    def ticker() -> None:
-        nonlocal ticks
-        ticks += 1
-        m.value.value = ticks
-
-    prism.worker(ticker, interval=0.03, repeat=10)
+    prism.worker(lambda: m.value.add(1), interval=0.03, repeat=10)
 
     def flaky_worker(stop: threading.Event) -> None:
         raise RuntimeError("worker failed once")
 
     prism.worker(flaky_worker)
 
-    prism.run(m, title="Error Handling — Python", headless=1.0 if "--headless" in sys.argv else None)
+    prism.run(m, title="Error Handling — Python", headless_seconds=1.0 if "--headless" in sys.argv else None)
 
     print(f"status={m.status.value} error_count={len(errors)}")
     prism.on_error(None)

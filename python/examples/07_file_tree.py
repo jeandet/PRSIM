@@ -2,7 +2,8 @@
 
 Demonstrates:
   - prism.tree_field(source) over a prism.TreeSource-shaped object
-  - vb.tree(ctrl) — virtual-list rows + detail panel, lazy child expansion
+  - the auto-stacked tree view: virtual-list rows + detail panel, lazy child
+    expansion (an explicit vb.tree(ctrl) call is shown in 08_dashboard.py)
   - DictTreeSource/FsTreeSource live in tree_sources.py (shared with 08_dashboard.py)
 
 Run:

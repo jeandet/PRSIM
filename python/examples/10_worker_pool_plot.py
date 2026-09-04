@@ -12,7 +12,8 @@ Demonstrates:
   - no view(): the auto-stacked view shows windows_done next to status too
     (it used to be hidden behind a custom view()) — simpler than adding one
     back just to hide a field
-  - prism.headless() for --headless / CI
+  - run(headless_seconds=..., until=...) for --headless / CI — the headless
+    run ends once the first window is plotted, TimeoutError otherwise
 
 Run:
   PYTHONPATH=builddir/python python3 python/examples/10_worker_pool_plot.py
@@ -99,17 +100,16 @@ def main() -> None:
 
     prism.worker(producer)
 
-    if "--headless" in sys.argv:
-        with prism.headless(m, timeout=1.0) as app:
-            app.wait_until(lambda: m.windows_done.value >= 1, timeout=1.0)
-    else:
-        prism.run(m, title="Worker Pool Plot — Python")
+    prism.run(
+        m,
+        title="Worker Pool Plot — Python",
+        headless_seconds=1.0 if "--headless" in sys.argv else None,
+        until=lambda: m.windows_done.value >= 1,
+    )
 
     print(f"status={m.status.value}")
     if hasattr(sys, "_is_gil_enabled"):
         print(f"GIL enabled: {sys._is_gil_enabled()}")
-    if "--headless" in sys.argv:
-        assert m.windows_done.value >= 1, "no window was plotted"
 
 
 if __name__ == "__main__":

@@ -8,7 +8,8 @@ Demonstrates:
     to schedule work on that loop from a field change
   - the coroutine feeding its result back through a prism.channel — the
     only thread-safe way into the model from the loop's own thread
-  - prism.headless() for --headless / CI
+  - run(headless_seconds=..., until=...) for --headless / CI — the headless
+    run ends as soon as one round trip lands, TimeoutError otherwise
 
 Run:
   PYTHONPATH=builddir/python python3 python/examples/12_asyncio_bridge.py
@@ -70,24 +71,16 @@ def main() -> None:
 
     m.results.observe(on_result)
 
-    ticks = 0
+    prism.worker(lambda: m.trigger.add(1), interval=0.05)
 
-    def ticker() -> None:
-        nonlocal ticks
-        ticks += 1
-        m.trigger.value = ticks
-
-    prism.worker(ticker, interval=0.05)
-
-    if "--headless" in sys.argv:
-        with prism.headless(m, timeout=1.0) as app:
-            app.wait_until(lambda: m.round_trips.value >= 1, timeout=1.0)
-    else:
-        prism.run(m, title="Asyncio Bridge — Python")
+    prism.run(
+        m,
+        title="Asyncio Bridge — Python",
+        headless_seconds=1.0 if "--headless" in sys.argv else None,
+        until=lambda: m.round_trips.value >= 1,
+    )
 
     print(f"status={m.status.value} round_trips={m.round_trips.value}")
-    if "--headless" in sys.argv:
-        assert m.round_trips.value >= 1, "no asyncio round trip completed"
 
 
 if __name__ == "__main__":

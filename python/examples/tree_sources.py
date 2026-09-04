@@ -38,7 +38,9 @@ class DictTreeSource(prism.TreeSource):
         return len(node.get("children", []))
 
     def child_at(self, nid, i):
-        k = self._key_of.get(nid, "")
+        k = self._key_of.get(nid)
+        if k is None:
+            return 0
         node = self._data.get(k, {})
         child_key = node["children"][i]
         return hash(child_key)
@@ -51,12 +53,16 @@ class DictTreeSource(prism.TreeSource):
         return node.get("label", k)
 
     def has_children(self, nid):
-        k = self._key_of.get(nid, "")
+        k = self._key_of.get(nid)
+        if k is None:
+            return False
         node = self._data.get(k, {})
         return len(node.get("children", [])) > 0
 
     def attributes(self, nid):
-        k = self._key_of.get(nid, "")
+        k = self._key_of.get(nid)
+        if k is None:
+            return {}
         node = self._data.get(k, {})
         return node.get("attrs", {})
 

@@ -22,7 +22,7 @@ class LivePlot(prism.Model):
     amplitude = prism.slider(1.0, min=0.1, max=5.0)
     show_cos = prism.checkbox(False, label="Show cosine")
     status = prism.field("Ready")
-    title = prism.derived(
+    caption = prism.derived(
         lambda self: f"freq={self.frequency.value:.1f} amp={self.amplitude.value:.1f}",
         frequency,
         amplitude,
@@ -32,7 +32,7 @@ class LivePlot(prism.Model):
         vb.canvas(self.plot)
         vb.hstack(self.frequency, self.amplitude, self.show_cos)
         vb.widget(self.status)
-        vb.widget(self.title)
+        vb.widget(self.caption)
 
     @prism.on_change(frequency, amplitude, show_cos, immediate=True)
     def redraw(self):
