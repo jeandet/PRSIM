@@ -43,6 +43,7 @@ public:
     void wake() override;
     void quit() override;
     void wait_ready() override;
+    std::optional<PresentStats> present_stats(WindowId id) const override;
 
 private:
     RenderConfig render_config_;
@@ -66,6 +67,11 @@ private:
     // per-slot atomic snapshot pointer itself.
     struct WindowSnapshot {
         std::atomic<std::shared_ptr<const SceneSnapshot>> snapshot;
+        // Present statistics (see BackendBase::present_stats); written by the render
+        // thread, read via present_stats() under windows_mutex_.
+        std::atomic<uint64_t> present_count{0};
+        std::atomic<int64_t> last_present_ns{0};  // steady_clock epoch ns
+        std::atomic<double> last_present_ms{0.0};
     };
     std::unordered_map<WindowId, WindowSnapshot> snapshots_;
 

@@ -117,6 +117,12 @@ test_software_backend_concurrent = executable('test_software_backend_concurrent'
 )
 test('software_backend_concurrent', test_software_backend_concurrent)
 
+test_software_backend_present_stats = executable('test_software_backend_present_stats',
+  files('test_software_backend_present_stats.cpp'),
+  dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],
+)
+test('software_backend_present_stats', test_software_backend_present_stats)
+
 test_model_app_chrome_cursor = executable('test_model_app_chrome_cursor',
   files('test_model_app_chrome_cursor.cpp'),
   dependencies : [prism_software_backend_dep, sdl3_dep, sdl3_ttf_dep, doctest_dep],

@@ -416,7 +416,22 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                     if (auto it = windows_.find(id); it != windows_.end()) win = it->second.get();
                 }
                 if (win) {
+                    const auto t0 = FramePacer::clock::now();
                     win->render_snapshot(*snap, font_);
+                    const auto t1 = FramePacer::clock::now();
+                    {
+                        std::lock_guard<std::mutex> lk(windows_mutex_);
+                        if (auto it = snapshots_.find(id); it != snapshots_.end()) {
+                            it->second.present_count.fetch_add(1, std::memory_order_relaxed);
+                            it->second.last_present_ns.store(
+                                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    t1.time_since_epoch()).count(),
+                                std::memory_order_relaxed);
+                            it->second.last_present_ms.store(
+                                std::chrono::duration<double, std::milli>(t1 - t0).count(),
+                                std::memory_order_relaxed);
+                        }
+                    }
                     presented_any = true;
                 }
             }
@@ -431,6 +446,21 @@ void SoftwareBackend::submit(WindowId window, std::shared_ptr<const SceneSnapsho
     std::lock_guard<std::mutex> lk(windows_mutex_);
     if (auto it = snapshots_.find(window); it != snapshots_.end())
         it->second.snapshot.store(std::move(snap), std::memory_order_release);
+}
+
+std::optional<PresentStats> SoftwareBackend::present_stats(WindowId id) const {
+    std::lock_guard<std::mutex> lk(windows_mutex_);
+    auto it = snapshots_.find(id);
+    if (it == snapshots_.end()) return std::nullopt;
+    const auto& slot = it->second;
+    const uint64_t count = slot.present_count.load(std::memory_order_relaxed);
+    if (count == 0) return std::nullopt;
+    return PresentStats{
+        .present_count = count,
+        .last_present_at = std::chrono::steady_clock::time_point{std::chrono::nanoseconds{
+            slot.last_present_ns.load(std::memory_order_relaxed)}},
+        .last_present_ms = slot.last_present_ms.load(std::memory_order_relaxed),
+    };
 }
 
 void SoftwareBackend::wake() {
