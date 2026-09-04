@@ -825,6 +825,13 @@ struct PlotHandle {
 
 // Tree support — Python-backed TreeSource
 struct PythonTreeSource {
+    // Python-side node ids are signed ints (typically hash() values, which can be
+    // negative); C++ stores them in the unsigned TreeNodeId. root_at/child_at cast
+    // on the way in — cast back on the way out, or a negative hash reaches the
+    // source as a huge unsigned int and misses every lookup (labels fall back to
+    // std::to_string(id) and the tree renders giant integers).
+    static int64_t to_py_id(prism::ui::TreeNodeId id) { return static_cast<int64_t>(id); }
+
     // Takes the ONE shared holder for the source object (SlotTree::py_src_holder),
     // so resetting *holder to None (SlotTree::clear) also neutralizes these
     // callbacks — they dereference the same shared_ptr on every call.
@@ -850,14 +857,14 @@ struct PythonTreeSource {
         src.child_count = [held](prism::ui::TreeNodeId id) -> size_t {
             nb::gil_scoped_acquire g;
             auto o = *held;
-            if (nb::hasattr(o, "child_count")) return nb::cast<size_t>(o.attr("child_count")(id));
+            if (nb::hasattr(o, "child_count")) return nb::cast<size_t>(o.attr("child_count")(to_py_id(id)));
             return 0;
         };
         src.child_at = [held](prism::ui::TreeNodeId id, size_t i) -> prism::ui::TreeNodeId {
             nb::gil_scoped_acquire g;
             auto o = *held;
             if (nb::hasattr(o, "child_at")) {
-                auto v = o.attr("child_at")(id, i);
+                auto v = o.attr("child_at")(to_py_id(id), i);
                 int64_t tmp = nb::cast<int64_t>(v);
                 return static_cast<prism::ui::TreeNodeId>(tmp);
             }
@@ -866,13 +873,13 @@ struct PythonTreeSource {
         src.label = [held](prism::ui::TreeNodeId id) -> std::string {
             nb::gil_scoped_acquire g;
             auto o = *held;
-            if (nb::hasattr(o, "label")) return nb::cast<std::string>(o.attr("label")(id));
+            if (nb::hasattr(o, "label")) return nb::cast<std::string>(o.attr("label")(to_py_id(id)));
             return std::to_string(id);
         };
         src.has_children = [held](prism::ui::TreeNodeId id) -> bool {
             nb::gil_scoped_acquire g;
             auto o = *held;
-            if (nb::hasattr(o, "has_children")) return nb::cast<bool>(o.attr("has_children")(id));
+            if (nb::hasattr(o, "has_children")) return nb::cast<bool>(o.attr("has_children")(to_py_id(id)));
             return false;
         };
         src.attributes = [held](prism::ui::TreeNodeId id) -> std::vector<std::pair<std::string,std::string>> {
@@ -880,7 +887,7 @@ struct PythonTreeSource {
             auto o = *held;
             std::vector<std::pair<std::string,std::string>> out;
             if (nb::hasattr(o, "attributes")) {
-                auto res = o.attr("attributes")(id);
+                auto res = o.attr("attributes")(to_py_id(id));
                 if (!res.is_none()) {
                     auto d = nb::cast<nb::dict>(res);
                     for (auto kv : d) out.emplace_back(nb::cast<std::string>(kv.first), nb::cast<std::string>(kv.second));
@@ -893,7 +900,7 @@ struct PythonTreeSource {
             nb::gil_scoped_acquire g;
             auto o = *held;
             if (nb::hasattr(o, "icon")) {
-                auto v = o.attr("icon")(id);
+                auto v = o.attr("icon")(to_py_id(id));
                 if (!v.is_none()) return nb::cast<std::string>(v);
             }
             return std::nullopt;

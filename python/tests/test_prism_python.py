@@ -2770,6 +2770,53 @@ def test_tree_rows_return_namedtuples_with_named_fields():
     assert label == "n1" and depth == 0
 
 
+def test_tree_source_negative_node_ids_round_trip():
+    """hash()-based ids can be negative. root_at/child_at hand C++ a signed
+    Python int that is stored in the unsigned TreeNodeId; every id-taking
+    callback (label/child_count/...) must receive the ORIGINAL signed value
+    back. Otherwise the source's id->key map misses and label() falls back to
+    str(id) — the tree renders giant integers (the uint64 bit pattern)."""
+    from prism import tree_field
+
+    NEG = -9073115756834981104  # a real negative hash('Device') (PYTHONHASHSEED=0)
+    NEG_CHILD = -4430316960354283655  # negative hash('Device') at PYTHONHASHSEED=2
+    seen = []
+
+    class NegSrc:
+        def root_count(self):
+            return 1
+
+        def root_at(self, i):
+            return NEG
+
+        def child_count(self, nid):
+            seen.append(("child_count", nid))
+            return 1 if nid == NEG else 0
+
+        def child_at(self, nid, i):
+            seen.append(("child_at", nid))
+            return NEG_CHILD
+
+        def label(self, nid):
+            seen.append(("label", nid))
+            return {NEG: "root", NEG_CHILD: "kid"}.get(nid, str(nid))
+
+        def has_children(self, nid):
+            seen.append(("has_children", nid))
+            return nid == NEG
+
+    class M(Model):
+        t = tree_field(NegSrc())
+
+    m = M()
+    rows = m.t.rows()
+    assert len(rows) == 1
+    assert rows[0].label == "root"
+    assert rows[0].has_children is True
+    assert ("label", NEG) in seen
+    assert all(nid in (NEG, NEG_CHILD) for _, nid in seen)
+
+
 def test_tree_source_missing_method_yields_empty():
     """Documents today's C++ fallback: a source missing root_count() (the method
     that drives row count) renders as an empty tree instead of raising."""
