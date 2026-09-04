@@ -63,6 +63,10 @@ SceneSnapshot
 - No tile splitting or parallel rasterisation — sequential full-buffer pass.
 - No text rendering.
 
+## Present Cadence
+
+`SoftwareBackend` paces presents to the display's refresh rate (`RenderConfig::frame_pacing`, default on): the run loop waits on `SDL_WaitEventTimeout` against a `FramePacer` frame clock (`include/prism/backends/frame_pacer.hpp`) and presents at most one frame per window per refresh interval. `RenderConfig::target_fps` overrides the rate (0 = display rate, 60 Hz fallback). Input event dispatch to the app thread is *not* paced — only presents are — so input latency is independent of the frame clock. A window is presented only when its snapshot changed since the last present (`shared_ptr` comparison) or SDL requested a redraw (`SDL_EVENT_WINDOW_EXPOSED`); a high-rate publish stream coalesces into one present per frame. Renderer vsync is requested as a best-effort tear guard. `frame_pacing = false` restores event-rate-bound behavior.
+
 ## Build System
 
 The core library is header-only (no SDL dependency). Each backend is a separate shared library:
