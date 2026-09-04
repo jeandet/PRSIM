@@ -157,6 +157,16 @@ struct SvgEmitter {
     }
 };
 
+// z-ordered draw lists, then the overlay on top -- shared by both
+// to_svg(SceneSnapshot) overloads.
+inline void emit_scene(SvgEmitter& e, const SceneSnapshot& snap) {
+    for (uint32_t idx : snap.z_order)
+        e.emit_commands(*snap.draw_lists[idx]);
+
+    if (!snap.overlay.empty())
+        e.emit_commands(snap.overlay);
+}
+
 } // namespace svg_detail
 
 inline std::string to_svg(const DrawList& dl) {
@@ -200,11 +210,7 @@ inline std::string to_svg(const SceneSnapshot& snap) {
           << svg_detail::fmt_float(max_x - min_x) << " "
           << svg_detail::fmt_float(max_y - min_y) << "\">\n";
 
-    for (uint32_t idx : snap.z_order)
-        e.emit_commands(*snap.draw_lists[idx]);
-
-    if (!snap.overlay.empty())
-        e.emit_commands(snap.overlay);
+    svg_detail::emit_scene(e, snap);
 
     e.out << "</svg>\n";
     return e.out.str();
@@ -223,11 +229,7 @@ inline std::string to_svg(const SceneSnapshot& snap, float width, float height,
           << "\" height=\"" << svg_detail::fmt_float(height)
           << "\" fill=\"" << svg_detail::fmt_color(bg) << "\"/>\n";
 
-    for (uint32_t idx : snap.z_order)
-        e.emit_commands(*snap.draw_lists[idx]);
-
-    if (!snap.overlay.empty())
-        e.emit_commands(snap.overlay);
+    svg_detail::emit_scene(e, snap);
 
     e.out << "</svg>\n";
     return e.out.str();

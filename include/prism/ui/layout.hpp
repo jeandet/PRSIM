@@ -93,6 +93,7 @@ struct LayoutNode {
 };
 
 inline void layout_measure(LayoutNode& node, LayoutAxis parent_axis);
+inline void layout_arrange(LayoutNode& node, Rect available);
 
 namespace layout_detail {
 
@@ -134,6 +135,19 @@ inline void measure_scrollable(LayoutNode& node) {
     node.hint.expand = true;
     node.hint.preferred = 0;
     node.hint.cross = max_cross;
+}
+
+// Shared body of layout_arrange's Table/VirtualList branches: every child gets the
+// full width and a uniform row height, stacked from first_row_top downward.
+inline void arrange_uniform_rows(LayoutNode& node, Rect available, Height item_h, Y first_row_top) {
+    Y start_y{first_row_top.raw() + static_cast<float>(node.vlist_visible_start) * item_h.raw()};
+    for (auto& child : node.children) {
+        layout_arrange(child, {
+            Point{available.origin.x, start_y},
+            Size{available.extent.w, item_h}
+        });
+        start_y += DY{item_h.raw()};
+    }
 }
 
 } // namespace layout_detail
@@ -201,14 +215,7 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
         if (item_h.raw() <= 0) item_h = Height{24.f};
         Height header_h = node.table_header_h.raw() > 0 ? node.table_header_h : item_h;
         Y body_top{available.origin.y.raw() + header_h.raw()};
-        Y start_y{body_top.raw() + static_cast<float>(node.vlist_visible_start) * item_h.raw()};
-        for (auto& child : node.children) {
-            layout_arrange(child, {
-                Point{available.origin.x, start_y},
-                Size{available.extent.w, item_h}
-            });
-            start_y += DY{item_h.raw()};
-        }
+        layout_detail::arrange_uniform_rows(node, available, item_h, body_top);
         return;
     }
 
@@ -216,15 +223,7 @@ inline void layout_arrange(LayoutNode& node, Rect available) {
         Height item_h = node.vlist_item_height;
         if (item_h.raw() <= 0 && !node.children.empty())
             item_h = Height{node.children[0].hint.preferred};
-        Y start_y{available.origin.y.raw()
-            + static_cast<float>(node.vlist_visible_start) * item_h.raw()};
-        for (auto& child : node.children) {
-            layout_arrange(child, {
-                Point{available.origin.x, start_y},
-                Size{available.extent.w, item_h}
-            });
-            start_y += DY{item_h.raw()};
-        }
+        layout_detail::arrange_uniform_rows(node, available, item_h, available.origin.y);
         return;
     }
 

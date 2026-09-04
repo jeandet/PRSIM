@@ -170,6 +170,20 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
         }
     };
 
+    // Caller must hold windows_mutex_.
+    auto find_window = [&](WindowId id) -> SdlWindow* {
+        auto it = windows_.find(id);
+        return it != windows_.end() ? it->second.get() : nullptr;
+    };
+    // Window-space Y -> client-space Y (custom chrome draws its own title bar
+    // above the client area). Caller must hold windows_mutex_.
+    auto client_y = [&](WindowId id, float y) {
+        if (auto* win = find_window(id);
+            win && win->decoration_mode() == DecorationMode::Custom)
+            y -= WindowChrome::title_bar_h.raw();
+        return y;
+    };
+
     while (running_.load(std::memory_order_relaxed)) {
         SDL_Event ev;
         if (!SDL_WaitEvent(&ev)) continue;
@@ -212,9 +226,8 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 int rh = ev.window.data2;
                 {
                     std::lock_guard<std::mutex> lk(windows_mutex_);
-                    auto it_w = windows_.find(wid);
-                    if (it_w != windows_.end() &&
-                        it_w->second->decoration_mode() == DecorationMode::Custom)
+                    if (auto* win = find_window(wid);
+                        win && win->decoration_mode() == DecorationMode::Custom)
                         rh -= static_cast<int>(WindowChrome::title_bar_h.raw());
                 }
                 event_cb(WindowEvent{wid, WindowResize{ev.window.data1, rh}});
@@ -223,28 +236,24 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             case SDL_EVENT_MOUSE_MOTION: {
                 {
                     std::lock_guard<std::mutex> lk(windows_mutex_);
-                    auto it_w = windows_.find(wid);
-                    if (it_w != windows_.end() && it_w->second->in_resize()) {
-                        it_w->second->update_resize(
+                    auto* win = find_window(wid);
+                    if (win && win->in_resize()) {
+                        win->update_resize(
                             static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
                         break;
                     }
-                    if (it_w != windows_.end() &&
-                        it_w->second->decoration_mode() == DecorationMode::Custom) {
+                    if (win && win->decoration_mode() == DecorationMode::Custom) {
                         int ww, wh;
-                        SDL_GetWindowSize(it_w->second->sdl_window(), &ww, &wh);
+                        SDL_GetWindowSize(win->sdl_window(), &ww, &wh);
                         auto zone = WindowChrome::hit_test(
                             static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y), ww, wh);
                         if (zone != WindowChrome::HitZone::Client) {
-                            it_w->second->set_cursor(WindowChrome::cursor_for(zone));
+                            win->set_cursor(WindowChrome::cursor_for(zone));
                             break;
                         }
                     }
-                    float my = ev.motion.y;
-                    if (it_w != windows_.end() &&
-                        it_w->second->decoration_mode() == DecorationMode::Custom)
-                        my -= WindowChrome::title_bar_h.raw();
-                    pending_motion = WindowEvent{wid, MouseMove{Point{X{ev.motion.x}, Y{my}}}};
+                    pending_motion = WindowEvent{wid, MouseMove{
+                        Point{X{ev.motion.x}, Y{client_y(wid, ev.motion.y)}}}};
                 }
                 break;
             }
@@ -252,11 +261,10 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                 SDL_CaptureMouse(true);
                 pressed_window_ = wid;
                 std::lock_guard<std::mutex> lk(windows_mutex_);
-                auto it_w = windows_.find(wid);
-                if (it_w != windows_.end() &&
-                    it_w->second->decoration_mode() == DecorationMode::Custom) {
+                auto* win = find_window(wid);
+                if (win && win->decoration_mode() == DecorationMode::Custom) {
                     int ww, wh;
-                    SDL_GetWindowSize(it_w->second->sdl_window(), &ww, &wh);
+                    SDL_GetWindowSize(win->sdl_window(), &ww, &wh);
                     auto zone = WindowChrome::hit_test(
                         static_cast<int>(ev.button.x), static_cast<int>(ev.button.y), ww, wh);
                     if (zone == WindowChrome::HitZone::Close) {
@@ -264,60 +272,46 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
                         break;
                     }
                     if (zone == WindowChrome::HitZone::Minimize) {
-                        it_w->second->minimize();
+                        win->minimize();
                         break;
                     }
                     if (zone == WindowChrome::HitZone::Maximize) {
-                        if (it_w->second->is_fullscreen())
-                            it_w->second->restore();
+                        if (win->is_fullscreen())
+                            win->restore();
                         else
-                            it_w->second->maximize();
+                            win->maximize();
                         break;
                     }
                     if (zone != WindowChrome::HitZone::Client) {
-                        it_w->second->begin_resize(
+                        win->begin_resize(
                             static_cast<int>(ev.button.x), static_cast<int>(ev.button.y));
                         break;
                     }
-                    // Client zone: offset Y by title bar height
-                    float offset_y = ev.button.y - WindowChrome::title_bar_h.raw();
-                    event_cb(WindowEvent{wid, MouseButton{
-                        Point{X{ev.button.x}, Y{offset_y}}, ev.button.button, true}});
-                } else {
-                    event_cb(WindowEvent{wid, MouseButton{
-                        Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, true}});
                 }
+                event_cb(WindowEvent{wid, MouseButton{
+                    Point{X{ev.button.x}, Y{client_y(wid, ev.button.y)}},
+                    ev.button.button, true}});
                 break;
             }
             case SDL_EVENT_MOUSE_BUTTON_UP: {
                 SDL_CaptureMouse(false);
                 pressed_window_ = 0;
                 std::lock_guard<std::mutex> lk(windows_mutex_);
-                auto it_w = windows_.find(wid);
-                if (it_w != windows_.end() && it_w->second->in_resize()) {
-                    it_w->second->end_resize();
+                auto* win = find_window(wid);
+                if (win && win->in_resize()) {
+                    win->end_resize();
                     break;
                 }
-                if (it_w != windows_.end() &&
-                    it_w->second->decoration_mode() == DecorationMode::Custom) {
-                    float offset_y = ev.button.y - WindowChrome::title_bar_h.raw();
-                    event_cb(WindowEvent{wid, MouseButton{
-                        Point{X{ev.button.x}, Y{offset_y}}, ev.button.button, false}});
-                } else {
-                    event_cb(WindowEvent{wid, MouseButton{
-                        Point{X{ev.button.x}, Y{ev.button.y}}, ev.button.button, false}});
-                }
+                event_cb(WindowEvent{wid, MouseButton{
+                    Point{X{ev.button.x}, Y{client_y(wid, ev.button.y)}},
+                    ev.button.button, false}});
                 break;
             }
             case SDL_EVENT_MOUSE_WHEEL: {
-                float wy = ev.wheel.mouse_y;
                 std::lock_guard<std::mutex> lk(windows_mutex_);
-                auto it_w = windows_.find(wid);
-                if (it_w != windows_.end() &&
-                    it_w->second->decoration_mode() == DecorationMode::Custom)
-                    wy -= WindowChrome::title_bar_h.raw();
                 event_cb(WindowEvent{wid, MouseScroll{
-                    Point{X{ev.wheel.mouse_x}, Y{wy}}, DX{ev.wheel.x}, DY{ev.wheel.y}}});
+                    Point{X{ev.wheel.mouse_x}, Y{client_y(wid, ev.wheel.mouse_y)}},
+                    DX{ev.wheel.x}, DY{ev.wheel.y}}});
                 break;
             }
             case SDL_EVENT_KEY_DOWN:

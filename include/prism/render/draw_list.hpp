@@ -83,73 +83,55 @@ struct DrawList {
 
     void filled_rect(Rect r, Color c)
     {
-        auto o = current_offset();
-        commands.emplace_back(FilledRect{
-            {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c});
+        commands.emplace_back(FilledRect{translated(r), c});
     }
 
     void rect_outline(Rect r, Color c, float thickness = 1.0f)
     {
-        auto o = current_offset();
-        commands.emplace_back(RectOutline{
-            {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, thickness});
+        commands.emplace_back(RectOutline{translated(r), c, thickness});
     }
 
     void circle(Point center, float radius, Color c, float thickness = 0.f)
     {
-        auto o = current_offset();
-        commands.emplace_back(Circle{
-            Point{center.x + o.dx, center.y + o.dy}, radius, c, thickness});
+        commands.emplace_back(Circle{translated(center), radius, c, thickness});
     }
 
     void polyline(std::vector<Point> pts, Color c, float thickness = 1.f)
     {
-        auto o = current_offset();
         for (auto& p : pts)
-            p = Point{p.x + o.dx, p.y + o.dy};
+            p = translated(p);
         commands.emplace_back(Polyline{std::move(pts), c, thickness});
     }
 
     void filled_polygon(std::vector<Point> pts, Color c)
     {
-        auto o = current_offset();
         for (auto& p : pts)
-            p = Point{p.x + o.dx, p.y + o.dy};
+            p = translated(p);
         commands.emplace_back(FilledPolygon{std::move(pts), c});
     }
 
     void line(Point from, Point to, Color c, float thickness = 1.f)
     {
-        auto o = current_offset();
-        commands.emplace_back(Line{
-            Point{from.x + o.dx, from.y + o.dy},
-            Point{to.x + o.dx, to.y + o.dy},
-            c, thickness});
+        commands.emplace_back(Line{translated(from), translated(to), c, thickness});
     }
 
     void rounded_rect(Rect r, Color c, float radius, float thickness = 0.f)
     {
-        auto o = current_offset();
-        commands.emplace_back(RoundedRect{
-            {Point{r.origin.x + o.dx, r.origin.y + o.dy}, r.extent}, c, radius, thickness});
+        commands.emplace_back(RoundedRect{translated(r), c, radius, thickness});
     }
 
     void text(std::string s, Point origin, float size, Color c,
               float angle = 0.f, TextAnchor anchor = TextAnchor::TopLeft)
     {
-        auto o = current_offset();
         commands.emplace_back(
-            TextCmd{std::move(s), Point{origin.x + o.dx, origin.y + o.dy}, size, c,
-                    angle, anchor});
+            TextCmd{std::move(s), translated(origin), size, c, angle, anchor});
     }
 
     void clip_push(Point origin, Size extent)
     {
-        auto o = current_offset();
-        X abs_x = origin.x + o.dx;
-        Y abs_y = origin.y + o.dy;
-        origin_stack_.push_back(Offset{DX{abs_x.raw()}, DY{abs_y.raw()}});
-        commands.emplace_back(ClipPush{{Point{abs_x, abs_y}, extent}});
+        Point abs = translated(origin);
+        origin_stack_.push_back(Offset{DX{abs.x.raw()}, DY{abs.y.raw()}});
+        commands.emplace_back(ClipPush{{abs, extent}});
     }
 
 
@@ -226,6 +208,17 @@ struct DrawList {
     [[nodiscard]] Offset current_offset() const
     {
         return origin_stack_.empty() ? Offset{DX{0.f}, DY{0.f}} : origin_stack_.back();
+    }
+
+    [[nodiscard]] Point translated(Point p) const
+    {
+        auto o = current_offset();
+        return Point{p.x + o.dx, p.y + o.dy};
+    }
+
+    [[nodiscard]] Rect translated(Rect r) const
+    {
+        return Rect{translated(r.origin), r.extent};
     }
 };
 

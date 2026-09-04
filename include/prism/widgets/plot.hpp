@@ -392,6 +392,10 @@ class PlotPanel {
     PlotGroup* group_ = nullptr;   // set by PlotGroup::add_plot(); never null once added
     bool draw_x_axis_ = false;     // true only for the group's current last panel
     std::vector<Series> series_;
+
+    // The group's shared x pan/zoom with this panel's own y pan/zoom merged in.
+    // Defined after PlotGroup (incomplete type here).
+    ViewTransform merged_transform() const;
 };
 
 class PlotGroup {
@@ -451,13 +455,18 @@ class PlotGroup {
     std::vector<std::unique_ptr<PlotPanel>> panels_;
 };
 
-inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
+inline ViewTransform PlotPanel::merged_transform() const
 {
     ViewTransform merged = group_->x_view.get();
     auto yv = y_view.get();
     merged.offset_y = yv.offset_y;
     merged.scale_y = yv.scale_y;
-    Field<ViewTransform> merged_view{merged};
+    return merged;
+}
+
+inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
+{
+    Field<ViewTransform> merged_view{merged_transform()};
 
     render_plot_panel(dl, bounds, node, group_->x_range, y_range, merged_view,
                       group_->cursor, std::span<const Series>(series_),
@@ -467,11 +476,7 @@ inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
 
 inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
 {
-    ViewTransform merged = group_->x_view.get();
-    auto yv = y_view.get();
-    merged.offset_y = yv.offset_y;
-    merged.scale_y = yv.scale_y;
-    Field<ViewTransform> merged_view{merged};
+    Field<ViewTransform> merged_view{merged_transform()};
 
     // Resets the whole group (shared x-axis + every panel's own y-axis), not just this
     // panel's fields -- merged_view is reset to identity too so the split-back below

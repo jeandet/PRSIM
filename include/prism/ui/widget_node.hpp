@@ -136,13 +136,21 @@ inline const WidgetVisualState& node_vs(const WidgetNode& n) { return n.visual_s
 inline Size node_allocated(const WidgetNode& n) { return n.canvas_bounds.extent; }
 inline const Theme& node_theme(const WidgetNode& n) { return *n.theme; }
 
-// --- Node factory functions (need complete WidgetNode) ---
+namespace widget_node_detail {
+
+// Fallback paint for a leaf whose T has no Widget<T> delegate: a plain hover-tinted box.
+inline void record_fallback_box(WidgetNode& node) {
+    node.draws.clear();
+    node.overlay_draws.clear();
+    const auto& vs = node_vs(node);
+    auto bg = vs.hovered ? Color::rgba(70, 70, 80)
+                         : Color::rgba(50, 50, 60);
+    auto sz = node_allocated(node);
+    node.draws.filled_rect(Rect{Point{X{0}, Y{0}}, sz}, bg);
+}
 
 template <typename T>
-Node node_leaf(Field<T>& field, WidgetId& next_id) {
-    Node n;
-    n.id = next_id++;
-    n.is_leaf = true;
+void set_debug_name([[maybe_unused]] Node& n) {
 #ifdef PRISM_DEBUG_TOOLS_ENABLED
 #if __cpp_impl_reflection
     // has_identifier()/identifier_of() must be bound together into a single
@@ -156,6 +164,18 @@ Node node_leaf(Field<T>& field, WidgetId& next_id) {
     n.debug_name = std::string(type_name);
 #endif
 #endif
+}
+
+} // namespace widget_node_detail
+
+// --- Node factory functions (need complete WidgetNode) ---
+
+template <typename T>
+Node node_leaf(Field<T>& field, WidgetId& next_id) {
+    Node n;
+    n.id = next_id++;
+    n.is_leaf = true;
+    widget_node_detail::set_debug_name<T>(n);
 
     n.build_widget = [&field](WidgetNode& wn) {
         if constexpr (is_widget_v<T>) {
@@ -178,15 +198,7 @@ Node node_leaf(Field<T>& field, WidgetId& next_id) {
             };
         } else {
             wn.focus_policy = FocusPolicy::none;
-            wn.record = [](WidgetNode& node) {
-                node.draws.clear();
-                node.overlay_draws.clear();
-                const auto& vs = node_vs(node);
-                auto bg = vs.hovered ? Color::rgba(70, 70, 80)
-                                     : Color::rgba(50, 50, 60);
-                auto sz = node_allocated(node);
-                node.draws.filled_rect(Rect{Point{X{0}, Y{0}}, sz}, bg);
-            };
+            wn.record = widget_node_detail::record_fallback_box;
         }
         wn.record(wn);
     };
@@ -203,16 +215,7 @@ Node node_readonly_leaf(Observable& obs, WidgetId& next_id) {
     Node n;
     n.id = next_id++;
     n.is_leaf = true;
-#ifdef PRISM_DEBUG_TOOLS_ENABLED
-#if __cpp_impl_reflection
-    // See node_leaf's identical comment: has_identifier()/identifier_of() must
-    // be bound together into one static constexpr constant expression to get
-    // short-circuit behavior for T without an identifier.
-    static constexpr std::string_view type_name = std::meta::has_identifier(^^T)
-        ? std::meta::identifier_of(^^T) : std::string_view{};
-    n.debug_name = std::string(type_name);
-#endif
-#endif
+    widget_node_detail::set_debug_name<T>(n);
 
     n.build_widget = [&obs](WidgetNode& wn) {
         wn.focus_policy = FocusPolicy::none;
@@ -224,15 +227,7 @@ Node node_readonly_leaf(Observable& obs, WidgetId& next_id) {
                 Widget<T>::record(node.draws, tmp, node);
             };
         } else {
-            wn.record = [](WidgetNode& node) {
-                node.draws.clear();
-                node.overlay_draws.clear();
-                const auto& vs = node_vs(node);
-                auto bg = vs.hovered ? Color::rgba(70, 70, 80)
-                                     : Color::rgba(50, 50, 60);
-                auto sz = node_allocated(node);
-                node.draws.filled_rect(Rect{Point{X{0}, Y{0}}, sz}, bg);
-            };
+            wn.record = widget_node_detail::record_fallback_box;
         }
         wn.record(wn);
     };

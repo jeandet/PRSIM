@@ -141,27 +141,31 @@ std::pair<int, int> SdlWindow::position() const {
     return {0, 0};
 }
 
+namespace {
+
+// SDL3 can't toggle decoration/resizable flags on a live window, so both setters
+// below rebuild it -- keeping the current (possibly user-resized) size across the
+// recreate. Composed from the public API (close/set_size/ensure_created) so the
+// header doesn't need a new private member.
+void recreate_preserving_size(SdlWindow& win) {
+    auto [w, h] = win.size();
+    win.close();
+    win.set_size(w, h);
+    win.ensure_created();
+}
+
+} // namespace
+
 void SdlWindow::set_decoration_mode(DecorationMode mode) {
     if (decoration_ == mode) return;
     decoration_ = mode;
-    // Recreate window with new flags
-    auto [w, h] = size();
-    config_.width = w;
-    config_.height = h;
-    destroy_sdl_window();
-    create_sdl_window();
+    recreate_preserving_size(*this);
 }
 
 void SdlWindow::set_resizable(bool r) {
     config_.resizable = r;
     // SDL3 doesn't have a runtime toggle — recreate
-    if (sdl_window_) {
-        auto [w, h] = size();
-        config_.width = w;
-        config_.height = h;
-        destroy_sdl_window();
-        create_sdl_window();
-    }
+    if (sdl_window_) recreate_preserving_size(*this);
 }
 
 bool SdlWindow::is_resizable() const { return config_.resizable; }
