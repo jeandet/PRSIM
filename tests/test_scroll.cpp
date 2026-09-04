@@ -2,6 +2,7 @@
 #include <doctest.h>
 
 #include <prism/ui/layout.hpp>
+#include <prism/input/hit_test.hpp>
 #include <prism/app/widget_tree.hpp>
 namespace prism::core {} namespace prism::render {} namespace prism::input {}
 namespace prism::ui {} namespace prism::app {} namespace prism::plot {}
@@ -279,6 +280,31 @@ TEST_CASE("Scrollbar drag updates scroll offset") {
 
     tree.end_scrollbar_drag();
     CHECK_FALSE(tree.in_scrollbar_drag());
+}
+
+TEST_CASE("Scrollbar track gutter is a drag hit region") {
+    ScrollModel8 model;
+    WidgetTree tree(model);
+    auto snap = tree.build_snapshot(400, 100, 1);
+    // [0] is the moving thumb, [1] the full-height track gutter behind it
+    REQUIRE(snap->overlay_geometry.size() >= 2);
+
+    auto [thumb_id, thumb_rect] = snap->overlay_geometry[0];
+    auto [track_id, track_rect] = snap->overlay_geometry[1];
+    CHECK(track_id == thumb_id);
+    CHECK(track_rect.extent.h.raw() >= thumb_rect.extent.h.raw());
+    CHECK(track_rect.origin.y.raw() <= thumb_rect.origin.y.raw());
+
+    // A press on the track below the thumb hit-tests to the scroll widget
+    // (thumb starts at the top: scroll offset is 0)
+    Point gutter{track_rect.origin.x + DX{2.f},
+                 Y{track_rect.origin.y.raw() + track_rect.extent.h.raw() - 2.f}};
+    REQUIRE(!thumb_rect.contains(gutter));
+    auto hit = hit_test_overlay(*snap, gutter);
+    REQUIRE(hit.has_value());
+    tree.begin_scrollbar_drag(*hit, gutter.y);
+    CHECK(tree.in_scrollbar_drag());
+    tree.end_scrollbar_drag();
 }
 
 TEST_CASE("scroll_to sets absolute offset") {

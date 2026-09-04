@@ -1020,10 +1020,17 @@ class Model(_ModelBase):
         # so a typo'd field name fails loudly instead of silently setting
         # a plain attribute.
         for k, v in kwargs.items():
-            if not isinstance(getattr(type(self), k, None), _Descriptor):
+            attr = getattr(type(self), k, None)
+            if not isinstance(attr, _Descriptor):
                 raise TypeError(
                     f"{type(self).__name__}() got an unexpected keyword argument "
                     f"{k!r} — not a prism field descriptor"
+                )
+            if not hasattr(attr, "__set__"):
+                raise TypeError(
+                    f"{type(self).__name__}() got an unexpected keyword argument "
+                    f"{k!r} — {k!r} is a read-only descriptor; only field() and "
+                    "shared() values can be set via the constructor"
                 )
             setattr(self, k, v)
         # If subclass overrides view(), register trampoline. Use weakref to break
@@ -1108,10 +1115,11 @@ def transaction():
 
 
 def run(model, title="PRISM App", headless_seconds: float | None = None, until=None):
-    """Blocks the calling thread until the window closes; releases the GIL.
+    """Blocks the calling thread until the window closes (or the headless run ends).
 
     Starts the app event loop for *model* and returns once the window
-    closes, so other Python threads can run while it blocks.
+    closes; while blocked on the window it releases the GIL, so other
+    Python threads can run.
 
     If *headless_seconds* is a number, runs *model* headless for that many
     seconds instead (no display) — equivalent to

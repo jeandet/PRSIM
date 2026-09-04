@@ -2436,9 +2436,26 @@ def test_model_kwargs_unknown_key_raises_type_error():
         M(aa=5)
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         M(nonexistent=1)
-    # every descriptor kind is a valid kwarg
+    # settable descriptor kinds are valid kwargs
     m = M(a=3, s=7)
     assert m.a.value == 3 and m.s.value == 7
+
+
+def test_model_kwargs_read_only_descriptor_raises_type_error():
+    """A kwarg naming a descriptor without __set__ (derived/list/plot/tree/...)
+    must fail loudly too — otherwise setattr writes a plain __dict__ entry that
+    shadows the descriptor, and m.total.value breaks on a raw int."""
+    from prism import derived
+
+    class M(Model):
+        a = field(1)
+        total = derived(lambda m: m.a.value * 2, "a")
+
+    with pytest.raises(TypeError, match="read-only descriptor"):
+        M(total=5)
+    # and the descriptor is not shadowed by a rejected construction
+    m = M(a=3)
+    assert m.total.value == 6
 
 
 def test_gc_observe_torture():

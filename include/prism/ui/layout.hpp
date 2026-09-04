@@ -25,9 +25,12 @@ namespace scrollbar {
         return Height{std::max(min_thumb_h.raw(), viewport_h.raw() * (viewport_h.raw() / content_h.raw()))};
     }
 
-    // Draws the thumb into `snap.overlay` and records it in `snap.overlay_geometry` --
-    // the overlay hit region is what starts a scrollbar drag (see
-    // app::widget_detail::route_mouse_button), so both go through this one function.
+    // Draws the thumb into `snap.overlay` and records hit regions in
+    // `snap.overlay_geometry` -- the overlay hit region is what starts a
+    // scrollbar drag (see app::widget_detail::route_mouse_button), so both go
+    // through this one function. Two entries: the thumb first (tests and
+    // callers read [0] as the moving thumb), then the full-height track gutter,
+    // so a press anywhere on the track starts a drag for every scrollable kind.
     // No-op when the content fits the viewport.
     inline void emit_thumb(SceneSnapshot& snap, WidgetId id, Rect viewport,
                            Height content_h, DY scroll_offset, const Theme& theme) {
@@ -38,12 +41,14 @@ namespace scrollbar {
         float thumb_y = max_scroll > 0
             ? scroll_offset.raw() * (viewport_h.raw() - thumb_h.raw()) / max_scroll
             : 0.f;
+        X track_x{viewport.origin.x.raw() + viewport.extent.w.raw() - track_inset.raw()};
         Rect thumb_rect{
-            Point{viewport.origin.x + DX{viewport.extent.w.raw() - track_inset.raw()},
-                  viewport.origin.y + DY{thumb_y}},
+            Point{track_x, viewport.origin.y + DY{thumb_y}},
             Size{Width{track_width}, thumb_h}};
         snap.overlay.filled_rect(thumb_rect, theme.scrollbar_thumb);
         snap.overlay_geometry.push_back({id, thumb_rect});
+        snap.overlay_geometry.push_back({id, Rect{Point{track_x, viewport.origin.y},
+                                                  Size{Width{track_inset}, viewport_h}}});
     }
 }
 
@@ -333,10 +338,8 @@ inline void offset_subtree_y(LayoutNode& node, DY dy) {
 
 } // namespace layout_detail
 
-// `clipped_by_ancestor`: true when some ancestor (Scroll/VirtualList/Table) already wraps
-// this node in a ClipPush/ClipPop pair. Leaf/Canvas DrawLists are only cached and shared
-// across frames (see LayoutNode::widget below) when this is false -- see the comment at
-// that cache check for why.
+// Forward declaration — the flatten helpers below recurse into it. See the
+// definition for the clipped_by_ancestor contract.
 inline void layout_flatten(LayoutNode& node, SceneSnapshot& snap, bool clipped_by_ancestor = false);
 
 namespace layout_detail {
