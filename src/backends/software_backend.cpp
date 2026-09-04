@@ -94,6 +94,7 @@ void SoftwareBackend::drain_window_requests() {
             }
             auto win = std::make_unique<SdlWindow>(id, req->cfg);
             win->ensure_created();
+            if (pacer_) win->enable_vsync();
             SDL_StartTextInput(win->sdl_window());
             {
                 std::lock_guard<std::mutex> lk(windows_mutex_);
@@ -121,6 +122,8 @@ void SoftwareBackend::drain_close_requests() {
         std::lock_guard<std::mutex> lk(windows_mutex_);
         windows_.erase(*id_opt);
         snapshots_.erase(*id_opt);
+        last_presented_.erase(*id_opt);
+        force_redraw_.erase(*id_opt);
     }
 }
 
@@ -149,6 +152,24 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
             win->ensure_created();
             SDL_StartTextInput(win->sdl_window());
         }
+    }
+
+    // Present pacing: resolve the frame interval once — RenderConfig::target_fps,
+    // else the display's actual refresh rate (60 Hz fallback) — and ask SDL for
+    // vsync as a best-effort tear guard. Input dispatch below stays per-event-batch;
+    // only presents wait for the frame clock.
+    if (render_config_.frame_pacing) {
+        float display_hz = 0;
+        {
+            std::lock_guard<std::mutex> lk(windows_mutex_);
+            if (!windows_.empty()) {
+                if (auto display = SDL_GetDisplayForWindow(windows_.begin()->second->sdl_window()))
+                    if (const auto* mode = SDL_GetCurrentDisplayMode(display))
+                        display_hz = mode->refresh_rate;
+            }
+            for (auto& [id, win] : windows_) win->enable_vsync();
+        }
+        pacer_.emplace(frame_interval_from_hz(resolve_frame_hz(render_config_.target_fps, display_hz)));
     }
 
     ready_.store(true, std::memory_order_release);
@@ -184,179 +205,222 @@ void SoftwareBackend::run(std::function<void(const WindowEvent&)> event_cb) {
         return y;
     };
 
+    // A window needs presenting when its snapshot slot differs from what was last
+    // presented (or SDL asked for a redraw).
+    auto any_dirty = [&] {
+        std::lock_guard<std::mutex> lk(windows_mutex_);
+        for (auto& [id, slot] : snapshots_)
+            if (force_redraw_.contains(id) ||
+                slot.snapshot.load(std::memory_order_acquire) != last_presented_[id])
+                return true;
+        return false;
+    };
+
     while (running_.load(std::memory_order_relaxed)) {
         SDL_Event ev;
-        if (!SDL_WaitEvent(&ev)) continue;
+        // Paced + dirty: wait only until the next frame deadline (events still wake
+        // us earlier). Otherwise block indefinitely — every submit() is paired with
+        // wake(), and with nothing dirty there is no present to wait for.
+        bool have_event;
+        if (pacer_ && any_dirty()) {
+            have_event = SDL_WaitEventTimeout(&ev, static_cast<int>(
+                pacer_->ms_until_next_frame(FramePacer::clock::now()).count()));
+        } else {
+            have_event = SDL_WaitEvent(&ev);
+            if (!have_event) continue;
+        }
 
-        do {
-            // Resolve which prism window this event belongs to
-            WindowId wid = 0;
-            if (ev.type >= SDL_EVENT_WINDOW_FIRST && ev.type <= SDL_EVENT_WINDOW_LAST) {
-                wid = sdl_id_to_prism_id(ev.window.windowID);
-            } else if (ev.type == SDL_EVENT_MOUSE_MOTION) {
-                wid = sdl_id_to_prism_id(ev.motion.windowID);
-            } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                wid = sdl_id_to_prism_id(ev.button.windowID);
-            } else if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
-                wid = sdl_id_to_prism_id(ev.wheel.windowID);
-            } else if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
-                wid = sdl_id_to_prism_id(ev.key.windowID);
-            } else if (ev.type == SDL_EVENT_TEXT_INPUT) {
-                wid = sdl_id_to_prism_id(ev.text.windowID);
-            }
-            // During a press-drag, route events to the window that received the press
-            if (wid == 0 && pressed_window_ != 0)
-                wid = pressed_window_;
-            // For single-window case, fall back to first window
-            {
-                std::lock_guard<std::mutex> lk(windows_mutex_);
-                if (wid == 0 && windows_.size() == 1)
-                    wid = windows_.begin()->first;
-            }
-
-            if (ev.type != SDL_EVENT_MOUSE_MOTION || (pending_motion && pending_motion->window != wid))
-                flush_pending_motion();
-
-            switch (ev.type) {
-            case SDL_EVENT_QUIT:
-                event_cb(WindowEvent{wid, WindowClose{}});
-                running_.store(false, std::memory_order_relaxed);
-                break;
-            case SDL_EVENT_WINDOW_RESIZED: {
-                int rh = ev.window.data2;
+        if (have_event) {
+            do {
+                // Resolve which prism window this event belongs to
+                WindowId wid = 0;
+                if (ev.type >= SDL_EVENT_WINDOW_FIRST && ev.type <= SDL_EVENT_WINDOW_LAST) {
+                    wid = sdl_id_to_prism_id(ev.window.windowID);
+                } else if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+                    wid = sdl_id_to_prism_id(ev.motion.windowID);
+                } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    wid = sdl_id_to_prism_id(ev.button.windowID);
+                } else if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+                    wid = sdl_id_to_prism_id(ev.wheel.windowID);
+                } else if (ev.type == SDL_EVENT_KEY_DOWN || ev.type == SDL_EVENT_KEY_UP) {
+                    wid = sdl_id_to_prism_id(ev.key.windowID);
+                } else if (ev.type == SDL_EVENT_TEXT_INPUT) {
+                    wid = sdl_id_to_prism_id(ev.text.windowID);
+                }
+                // During a press-drag, route events to the window that received the press
+                if (wid == 0 && pressed_window_ != 0)
+                    wid = pressed_window_;
+                // For single-window case, fall back to first window
                 {
                     std::lock_guard<std::mutex> lk(windows_mutex_);
-                    if (auto* win = find_window(wid);
-                        win && win->decoration_mode() == DecorationMode::Custom)
-                        rh -= static_cast<int>(WindowChrome::title_bar_h.raw());
+                    if (wid == 0 && windows_.size() == 1)
+                        wid = windows_.begin()->first;
                 }
-                event_cb(WindowEvent{wid, WindowResize{ev.window.data1, rh}});
-                break;
-            }
-            case SDL_EVENT_MOUSE_MOTION: {
-                {
+
+                if (ev.type != SDL_EVENT_MOUSE_MOTION || (pending_motion && pending_motion->window != wid))
+                    flush_pending_motion();
+
+                switch (ev.type) {
+                case SDL_EVENT_QUIT:
+                    event_cb(WindowEvent{wid, WindowClose{}});
+                    running_.store(false, std::memory_order_relaxed);
+                    break;
+                case SDL_EVENT_WINDOW_RESIZED: {
+                    int rh = ev.window.data2;
+                    {
+                        std::lock_guard<std::mutex> lk(windows_mutex_);
+                        if (auto* win = find_window(wid);
+                            win && win->decoration_mode() == DecorationMode::Custom)
+                            rh -= static_cast<int>(WindowChrome::title_bar_h.raw());
+                    }
+                    event_cb(WindowEvent{wid, WindowResize{ev.window.data1, rh}});
+                    break;
+                }
+                case SDL_EVENT_MOUSE_MOTION: {
+                    {
+                        std::lock_guard<std::mutex> lk(windows_mutex_);
+                        auto* win = find_window(wid);
+                        if (win && win->in_resize()) {
+                            win->update_resize(
+                                static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
+                            break;
+                        }
+                        if (win && win->decoration_mode() == DecorationMode::Custom) {
+                            int ww, wh;
+                            SDL_GetWindowSize(win->sdl_window(), &ww, &wh);
+                            auto zone = WindowChrome::hit_test(
+                                static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y), ww, wh);
+                            if (zone != WindowChrome::HitZone::Client) {
+                                win->set_cursor(WindowChrome::cursor_for(zone));
+                                break;
+                            }
+                        }
+                        pending_motion = WindowEvent{wid, MouseMove{
+                            Point{X{ev.motion.x}, Y{client_y(wid, ev.motion.y)}}}};
+                    }
+                    break;
+                }
+                case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                    SDL_CaptureMouse(true);
+                    pressed_window_ = wid;
                     std::lock_guard<std::mutex> lk(windows_mutex_);
                     auto* win = find_window(wid);
-                    if (win && win->in_resize()) {
-                        win->update_resize(
-                            static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y));
-                        break;
-                    }
                     if (win && win->decoration_mode() == DecorationMode::Custom) {
                         int ww, wh;
                         SDL_GetWindowSize(win->sdl_window(), &ww, &wh);
                         auto zone = WindowChrome::hit_test(
-                            static_cast<int>(ev.motion.x), static_cast<int>(ev.motion.y), ww, wh);
+                            static_cast<int>(ev.button.x), static_cast<int>(ev.button.y), ww, wh);
+                        if (zone == WindowChrome::HitZone::Close) {
+                            event_cb(WindowEvent{wid, WindowClose{}});
+                            break;
+                        }
+                        if (zone == WindowChrome::HitZone::Minimize) {
+                            win->minimize();
+                            break;
+                        }
+                        if (zone == WindowChrome::HitZone::Maximize) {
+                            if (win->is_fullscreen())
+                                win->restore();
+                            else
+                                win->maximize();
+                            break;
+                        }
                         if (zone != WindowChrome::HitZone::Client) {
-                            win->set_cursor(WindowChrome::cursor_for(zone));
+                            win->begin_resize(
+                                static_cast<int>(ev.button.x), static_cast<int>(ev.button.y));
                             break;
                         }
                     }
-                    pending_motion = WindowEvent{wid, MouseMove{
-                        Point{X{ev.motion.x}, Y{client_y(wid, ev.motion.y)}}}};
-                }
-                break;
-            }
-            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                SDL_CaptureMouse(true);
-                pressed_window_ = wid;
-                std::lock_guard<std::mutex> lk(windows_mutex_);
-                auto* win = find_window(wid);
-                if (win && win->decoration_mode() == DecorationMode::Custom) {
-                    int ww, wh;
-                    SDL_GetWindowSize(win->sdl_window(), &ww, &wh);
-                    auto zone = WindowChrome::hit_test(
-                        static_cast<int>(ev.button.x), static_cast<int>(ev.button.y), ww, wh);
-                    if (zone == WindowChrome::HitZone::Close) {
-                        event_cb(WindowEvent{wid, WindowClose{}});
-                        break;
-                    }
-                    if (zone == WindowChrome::HitZone::Minimize) {
-                        win->minimize();
-                        break;
-                    }
-                    if (zone == WindowChrome::HitZone::Maximize) {
-                        if (win->is_fullscreen())
-                            win->restore();
-                        else
-                            win->maximize();
-                        break;
-                    }
-                    if (zone != WindowChrome::HitZone::Client) {
-                        win->begin_resize(
-                            static_cast<int>(ev.button.x), static_cast<int>(ev.button.y));
-                        break;
-                    }
-                }
-                event_cb(WindowEvent{wid, MouseButton{
-                    Point{X{ev.button.x}, Y{client_y(wid, ev.button.y)}},
-                    ev.button.button, true}});
-                break;
-            }
-            case SDL_EVENT_MOUSE_BUTTON_UP: {
-                SDL_CaptureMouse(false);
-                pressed_window_ = 0;
-                std::lock_guard<std::mutex> lk(windows_mutex_);
-                auto* win = find_window(wid);
-                if (win && win->in_resize()) {
-                    win->end_resize();
+                    event_cb(WindowEvent{wid, MouseButton{
+                        Point{X{ev.button.x}, Y{client_y(wid, ev.button.y)}},
+                        ev.button.button, true}});
                     break;
                 }
-                event_cb(WindowEvent{wid, MouseButton{
-                    Point{X{ev.button.x}, Y{client_y(wid, ev.button.y)}},
-                    ev.button.button, false}});
-                break;
-            }
-            case SDL_EVENT_MOUSE_WHEEL: {
-                std::lock_guard<std::mutex> lk(windows_mutex_);
-                event_cb(WindowEvent{wid, MouseScroll{
-                    Point{X{ev.wheel.mouse_x}, Y{client_y(wid, ev.wheel.mouse_y)}},
-                    DX{ev.wheel.x}, DY{ev.wheel.y}}});
-                break;
-            }
-            case SDL_EVENT_KEY_DOWN:
-                event_cb(WindowEvent{wid, KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod}});
-                break;
-            case SDL_EVENT_KEY_UP:
-                event_cb(WindowEvent{wid, KeyRelease{static_cast<int32_t>(ev.key.key), ev.key.mod}});
-                break;
-            case SDL_EVENT_TEXT_INPUT:
-                event_cb(WindowEvent{wid, TextInput{ev.text.text}});
-                break;
-            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
-                event_cb(WindowEvent{wid, WindowClose{}});
-                break;
-            case SDL_EVENT_USER:
-                drain_window_requests();
-                drain_close_requests();
-                break;
-            default:
-                break;
-            }
-        } while (SDL_PollEvent(&ev));
+                case SDL_EVENT_MOUSE_BUTTON_UP: {
+                    SDL_CaptureMouse(false);
+                    pressed_window_ = 0;
+                    std::lock_guard<std::mutex> lk(windows_mutex_);
+                    auto* win = find_window(wid);
+                    if (win && win->in_resize()) {
+                        win->end_resize();
+                        break;
+                    }
+                    event_cb(WindowEvent{wid, MouseButton{
+                        Point{X{ev.button.x}, Y{client_y(wid, ev.button.y)}},
+                        ev.button.button, false}});
+                    break;
+                }
+                case SDL_EVENT_MOUSE_WHEEL: {
+                    std::lock_guard<std::mutex> lk(windows_mutex_);
+                    event_cb(WindowEvent{wid, MouseScroll{
+                        Point{X{ev.wheel.mouse_x}, Y{client_y(wid, ev.wheel.mouse_y)}},
+                        DX{ev.wheel.x}, DY{ev.wheel.y}}});
+                    break;
+                }
+                case SDL_EVENT_KEY_DOWN:
+                    event_cb(WindowEvent{wid, KeyPress{static_cast<int32_t>(ev.key.key), ev.key.mod}});
+                    break;
+                case SDL_EVENT_KEY_UP:
+                    event_cb(WindowEvent{wid, KeyRelease{static_cast<int32_t>(ev.key.key), ev.key.mod}});
+                    break;
+                case SDL_EVENT_TEXT_INPUT:
+                    event_cb(WindowEvent{wid, TextInput{ev.text.text}});
+                    break;
+                case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+                    event_cb(WindowEvent{wid, WindowClose{}});
+                    break;
+                case SDL_EVENT_USER:
+                    drain_window_requests();
+                    drain_close_requests();
+                    break;
+                case SDL_EVENT_WINDOW_EXPOSED:
+                    // De-occlusion/un-minimize: SDL needs a redraw even though the
+                    // snapshot pointer is unchanged.
+                    {
+                        std::lock_guard<std::mutex> lk(windows_mutex_);
+                        force_redraw_.insert(wid);
+                    }
+                    break;
+                default:
+                    break;
+                }
+            } while (SDL_PollEvent(&ev));
 
-        flush_pending_motion(); // the queue's last event is very often a motion event itself
+            flush_pending_motion(); // the queue's last event is very often a motion event itself
+        }
 
         if (!running_.load(std::memory_order_relaxed)) break;
 
-        // Render any pending snapshots — collect under lock, render outside
-        {
+        // Present dirty snapshots — collect under lock, render outside. With pacing
+        // on, only on frame boundaries; last_presented_ dedupes unchanged snapshots,
+        // so a high-rate publish stream coalesces into one present per frame.
+        const auto now = FramePacer::clock::now();
+        if (!pacer_ || pacer_->frame_due(now)) {
             std::vector<std::pair<WindowId, std::shared_ptr<const SceneSnapshot>>> to_render;
             {
                 std::lock_guard<std::mutex> lk(windows_mutex_);
                 for (auto& [id, snap_slot] : snapshots_) {
                     auto snap = snap_slot.snapshot.load(std::memory_order_acquire);
-                    if (snap) to_render.emplace_back(id, std::move(snap));
+                    if (!snap) continue;
+                    if (!force_redraw_.contains(id) && snap == last_presented_[id]) continue;
+                    to_render.emplace_back(id, snap);
+                    last_presented_[id] = std::move(snap);
                 }
+                force_redraw_.clear();
             }
+            bool presented_any = false;
             for (auto& [id, snap] : to_render) {
                 SdlWindow* win = nullptr;
                 {
                     std::lock_guard<std::mutex> lk(windows_mutex_);
                     if (auto it = windows_.find(id); it != windows_.end()) win = it->second.get();
                 }
-                if (win) win->render_snapshot(*snap, font_);
+                if (win) {
+                    win->render_snapshot(*snap, font_);
+                    presented_any = true;
+                }
             }
+            if (presented_any && pacer_) pacer_->mark_presented(now);
         }
     }
     drain_window_requests();

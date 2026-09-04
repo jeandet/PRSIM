@@ -1,6 +1,7 @@
 #pragma once
 
 #include <prism/app/backend.hpp>
+#include <prism/backends/frame_pacer.hpp>
 #include <prism/backends/sdl_window.hpp>
 #include <prism/core/mpsc_queue.hpp>
 
@@ -10,7 +11,9 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 
 namespace prism::backends {
@@ -50,6 +53,14 @@ private:
     std::atomic<bool> running_{true};
     std::atomic<bool> ready_{false};
     WindowId pressed_window_ = 0;
+
+    // Frame pacing — see doc/design/render-backend.md "Present Cadence".
+    // nullopt pacer_ = unpaced (RenderConfig::frame_pacing == false).
+    std::optional<FramePacer> pacer_;
+    // Last snapshot actually presented per window; a window presents only when the
+    // slot's shared_ptr differs (or force_redraw_ contains it). Guarded by windows_mutex_.
+    std::unordered_map<WindowId, std::shared_ptr<const SceneSnapshot>> last_presented_;
+    std::unordered_set<WindowId> force_redraw_;
 
     // Per-window snapshot storage — guarded by windows_mutex_ except for
     // per-slot atomic snapshot pointer itself.
