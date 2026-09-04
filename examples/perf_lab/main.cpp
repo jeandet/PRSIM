@@ -41,6 +41,12 @@ struct PerfLab {
         // The series source reads the live ring buffer at record() time — added once,
         // never rebuilt; revision bumps drive re-recording.
         plot.add_series(perf_lab::RingPlotSource{&ring}, prism::plot::SeriesStyle{});
+        // Pre-fill the ring to capacity: --points is the number of points the plot
+        // RENDERS (the record() stress this lab exists to measure), not a capacity the
+        // 1 kHz stream would need ~points/rate seconds to reach. Negative t = history.
+        perf_lab::TelemetryGenerator gen;
+        for (size_t i = 0; i < points; ++i)
+            ring.push(gen.next(-static_cast<double>(points - i) / 1000.0));
     }
 
     void drain() { telemetry.drain_notifications(); }
