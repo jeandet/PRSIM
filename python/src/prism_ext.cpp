@@ -825,8 +825,10 @@ struct PlotHandle {
 
 // Tree support — Python-backed TreeSource
 struct PythonTreeSource {
-    static prism::ui::TreeSource make(nb::object obj) {
-        auto held = std::make_shared<nb::object>(std::move(obj));
+    // Takes the ONE shared holder for the source object (SlotTree::py_src_holder),
+    // so resetting *holder to None (SlotTree::clear) also neutralizes these
+    // callbacks — they dereference the same shared_ptr on every call.
+    static prism::ui::TreeSource make(std::shared_ptr<nb::object> held) {
         prism::ui::TreeSource src;
         src.root_count = [held]() -> size_t {
             nb::gil_scoped_acquire g;
@@ -903,7 +905,7 @@ struct SlotTree : SlotBase {
     std::shared_ptr<nb::object> py_src_holder;
     prism::ui::TreeController ctrl;
     explicit SlotTree(prism::ui::TreeSource src) : ctrl(std::move(src)) {}
-    explicit SlotTree(nb::object py_obj) : py_src_holder(std::make_shared<nb::object>(py_obj)), ctrl(PythonTreeSource::make(py_obj)) {}
+    explicit SlotTree(nb::object py_obj) : py_src_holder(std::make_shared<nb::object>(py_obj)), ctrl(PythonTreeSource::make(py_src_holder)) {}
     void build(ViewBuilder& vb) override { vb.tree(ctrl); }
     void traverse(visitproc visit, void* arg) override {
         if (py_src_holder) if (PyObject* o = py_src_holder->ptr()) visit(o, arg);
@@ -964,7 +966,7 @@ struct BoundTree {
 struct TreeHandle {
     std::shared_ptr<prism::ui::TreeController> ctrl;
     TreeHandle(prism::ui::TreeSource src): ctrl(std::make_shared<prism::ui::TreeController>(std::move(src))){}
-    TreeHandle(nb::object py_obj): ctrl(std::make_shared<prism::ui::TreeController>(PythonTreeSource::make(py_obj))){}
+    TreeHandle(nb::object py_obj): ctrl(std::make_shared<prism::ui::TreeController>(PythonTreeSource::make(std::make_shared<nb::object>(py_obj)))){}
 };
 
 // --- List dispatch helper (mirrors field_set_dispatch but for arbitrary op) ---
@@ -1843,6 +1845,22 @@ struct PyModel {
         for (auto& s : slots_copy) s->drain();
         drain_standalone();
     }
+
+    // Same body as pymodel_tp_clear, exposed for __init__.py's _atexit_clear:
+    // interpreter-exit teardown for models still rooted in module globals. Without
+    // it, a SlotTree holding a Python source object keeps that object (and, when
+    // its class lives in __main__, the whole __main__ dict — source -> class ->
+    // method __globals__) alive past nanobind's Py_AtExit leak check, so the model
+    // is reported as leaked even though nothing is actually held past exit.
+    void release_py_refs() {
+        py_view_cb = nb::none();
+        std::vector<std::shared_ptr<SlotBase>> slots_copy;
+        {
+            std::lock_guard<std::mutex> lk(slots_mutex);
+            slots_copy = slots;
+        }
+        for (auto& s : slots_copy) s->clear();
+    }
 };
 
 // tp_traverse/tp_clear — makes PyModel (and every Python subclass, including
@@ -1867,14 +1885,7 @@ static int pymodel_tp_traverse(PyObject* self, visitproc visit, void* arg) {
 
 static int pymodel_tp_clear(PyObject* self) {
     if (!nb::inst_ready(self)) return 0; // constructor may not have run yet — see tp_traverse
-    PyModel* m = nb::inst_ptr<PyModel>(self);
-    m->py_view_cb = nb::none();
-    std::vector<std::shared_ptr<SlotBase>> slots_copy;
-    {
-        std::lock_guard<std::mutex> lk(m->slots_mutex);
-        slots_copy = m->slots;
-    }
-    for (auto& s : slots_copy) s->clear();
+    nb::inst_ptr<PyModel>(self)->release_py_refs();
     return 0;
 }
 
@@ -2554,7 +2565,8 @@ NB_MODULE(_prism_ext, m) {
         .def("_add_tree_internal", [](PyModel& self, nb::object py_obj){
                 auto [owner, p] = self.add_tree_slot(py_obj);
                 BoundTree h; h.owner = std::move(owner); h.ctrl = p; return h;
-            }, nb::arg("source"));
+            }, nb::arg("source"))
+        .def("_release_py_refs_internal", [](PyModel& self){ self.release_py_refs(); });
 
 
     m.def("_txn_begin", [](){

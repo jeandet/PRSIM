@@ -280,6 +280,16 @@ def _clear_model_observers(model):
     still-in-use-safe half of this, used by ``run()``/``_run_headless()``.
     """
     _disconnect_model_observers(model)
+    # Release the C++-side Python references (view callback, derived fns, tree
+    # sources). A SlotTree's source object, when its class is defined in
+    # __main__, otherwise completes a cycle __main__ dict -> model -> source ->
+    # class -> method __globals__ -> __main__ dict that keeps the dict (and the
+    # model) alive past nanobind's Py_AtExit leak check — a spurious "leaked
+    # instance" report at exit. Safe only here, at interpreter exit.
+    try:
+        model._release_py_refs_internal()
+    except Exception:
+        pass
     d = getattr(model, "__dict__", {})
     fields = d.get("_prism_fields", {})
     # break Model -> handle cycle so nanobind doesn't report Bound* as leaked

@@ -2196,6 +2196,39 @@ def test_run_headless_does_not_leak_tree_field_model():
     assert "leaked" not in result.stderr, result.stderr
 
 
+def test_module_global_tree_field_object_source_no_leak_at_exit():
+    """A module-global Model whose tree_field source is a Python *object* (not a
+    dict) used to trip nanobind's leak check at interpreter exit: the C++-held
+    source (SlotTree's py_src_holder / PythonTreeSource callbacks) completes a
+    cycle __main__ dict -> model -> source -> source class -> method __globals__
+    -> __main__ dict that keeps the model alive past nanobind's Py_AtExit check.
+    _atexit_clear now calls PyModel::release_py_refs() to break that edge while
+    the interpreter is still healthy. No run()/gc.collect() on purpose — the
+    bug needed neither."""
+    code = (
+        "import prism\n"
+        "class Src:\n"
+        "    def root_count(self): return 1\n"
+        "    def root_at(self, i): return 42\n"
+        "    def child_count(self, nid): return 0\n"
+        "    def child_at(self, nid, i): return 0\n"
+        "    def label(self, nid): return f'n{nid}'\n"
+        "    def has_children(self, nid): return False\n"
+        "class M(prism.Model):\n"
+        "    tree = prism.tree_field(Src())\n"
+        "m = M()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env=os.environ,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "leaked" not in result.stderr, result.stderr
+
+
 def test_gc_collect_reclaims_model_with_self_referencing_observer():
     """Task 16 honest GC test — no subprocess, no _run_headless(): a genuine,
     in-process reference cycle through PyModel's py_view_cb member (Model ->
