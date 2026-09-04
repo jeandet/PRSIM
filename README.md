@@ -329,8 +329,8 @@ with prism.transaction():
 | `prism.validator_for(Annotated)` | — | Pydantic validation |
 | `prism.run(model)` | `model_app(title, model)` | `vb` trampoline via `ViewBuilder` |
 
-Also: `prism.headless()` (display-less run for tests/CI) and `prism.run(model, headless=seconds)`
-(one-liner CLI form — `prism.run(m, headless=1.0 if "--headless" in sys.argv else None)`),
+Also: `prism.headless()` (display-less run for tests/CI) and `prism.run(model, headless_seconds=seconds, until=predicate)`
+(one-liner CLI form — `prism.run(m, headless_seconds=1.0 if "--headless" in sys.argv else None)`),
 any-thread `field.add(n)` (atomic increment, avoids read-modify-write),
 `plot.replace_series()`/`set_labels()` (canvas plot updates), and the `@prism.on_change(*deps)`
 method decorator — see [Threading guarantees](python/examples/README.md#threading-guarantees) in

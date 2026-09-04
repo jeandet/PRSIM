@@ -54,6 +54,7 @@ from ._prism_ext import (
     PlotHandle,
     BoundTree,
     TreeHandle,
+    TreeRow,
     Connection,
     is_logic_thread,
     run as _run,
@@ -154,6 +155,9 @@ __all__ = [
     "TreeSource",
     "TreeNodeId",
     "is_tree_source",
+    "TableSource",
+    "is_table_source",
+    "TreeRow",
     "validator_for",
     "BoundPlot",
     "PlotHandle",
@@ -390,23 +394,44 @@ def _warn_deprecated_class_observe(name, method="observe"):
     )
 
 
-class _FieldDescriptor:
-    # kind/meta select a non-scalar internal allocator (slider()/checkbox()); left
-    # as None for a plain field(), where _kind_of(default) picks int/float/str/bool.
-    def __init__(self, default, validator=None, kind=None, meta=None):
-        self.default = default
-        self.validator = validator
-        self.kind = kind
-        self.meta = meta
+class _Descriptor:
+    """Shared plumbing for the field-descriptor classes below: name capture
+    via ``__set_name__``, and instance access allocating the C++ handle once
+    and caching it in the instance's ``_prism_fields`` dict. Each subclass's
+    ``_allocate`` builds its own handle kind behind the same cache preamble.
+    """
+
+    def __init__(self):
         self.name = None
 
     def __set_name__(self, owner, name):
         self.name = name
 
-    def _allocate(self, instance):
+    def __get__(self, instance, owner=None):
+        if instance is None:
+            return self
+        return self._allocate(instance)
+
+    def _cached(self, instance):
+        """Return ``(cache, handle)`` — handle is ``None`` on first access."""
         cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        return cache, cache.get(self.name)
+
+
+class _FieldDescriptor(_Descriptor):
+    # kind/meta select a non-scalar internal allocator (slider()/checkbox()); left
+    # as None for a plain field(), where _kind_of(default) picks int/float/str/bool.
+    def __init__(self, default, validator=None, kind=None, meta=None):
+        super().__init__()
+        self.default = default
+        self.validator = validator
+        self.kind = kind
+        self.meta = meta
+
+    def _allocate(self, instance):
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         # allocate via Model's internal add_* (no keep_alive cycle — Model owns slots)
         if self.kind == "slider":
             mn, mx = self.meta["range"]
@@ -424,11 +449,6 @@ class _FieldDescriptor:
             h.__dict__["_prism_validator"] = self.validator
         cache[self.name] = h
         return h
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
 
     def __set__(self, instance, value):
         self._allocate(instance).value = value
@@ -461,8 +481,10 @@ def slider(default, min=0.0, max=1.0, validator=None, *, orientation="horizontal
     delegate). ``orientation`` is ``"horizontal"`` (default) or ``"vertical"``
     — anything else raises ``ValueError``. ``.range`` on the returned handle
     reads the current ``(min, max)`` (posted to and read back from the logic
-    thread, like ``.value``); ``set_range(min, max)`` changes it the same way
-    ``.value =`` changes the value. Setting ``.value`` outside ``[min, max]``
+    thread, like ``.value``); assigning a tuple — ``m.s.range = (0.0, 10.0)``
+    — changes it the same way ``.value =`` changes the value
+    (``set_range(min, max)`` remains as a deprecated alias). Setting
+    ``.value`` outside ``[min, max]``
     is accepted unclamped — that's what the underlying ``Field::set()`` does;
     only dragging the rendered widget with the mouse clamps into range, and
     changing the range never retroactively clamps an existing out-of-range
@@ -491,19 +513,16 @@ def checkbox(default, label=None, validator=None):
     )
 
 
-class _SharedDescriptor:
+class _SharedDescriptor(_Descriptor):
     def __init__(self, default, validator=None):
+        super().__init__()
         self.default = default
         self.validator = validator
-        self.name = None
-
-    def __set_name__(self, owner, name):
-        self.name = name
 
     def _allocate(self, instance):
-        cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         kind = _kind_of(self.default, "shared")
         h = getattr(instance, f"_add_shared_{kind}_internal")(self.default)
         h.__dict__["_prism_name"] = self.name
@@ -511,11 +530,6 @@ class _SharedDescriptor:
             h.__dict__["_prism_validator"] = self.validator
         cache[self.name] = h
         return h
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
 
     def __set__(self, instance, value):
         self._allocate(instance).value = value
@@ -532,28 +546,20 @@ class _SharedDescriptor:
         self.__set__(instance, value)
 
 
-class _ChannelDescriptor:
+class _ChannelDescriptor(_Descriptor):
     def __init__(self, type_hint=0):
+        super().__init__()
         # type_hint determines Channel<T>: int / float / str / bool
         self.type_hint = type_hint
-        self.name = None
-
-    def __set_name__(self, owner, name):
-        self.name = name
 
     def _allocate(self, instance):
-        cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         kind = _kind_of(self.type_hint, "channel")
         h = getattr(instance, f"_add_channel_{kind}_internal")()
         cache[self.name] = h
         return h
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
 
     # deprecated (2026-09-03 followups): prefer m.<name>.observe(cb)
     def observe(self, instance, callback):
@@ -577,20 +583,17 @@ def channel(type_hint=0):
     return _ChannelDescriptor(type_hint)
 
 
-class _DerivedDescriptor:
+class _DerivedDescriptor(_Descriptor):
     def __init__(self, fn, *deps, type_hint=None):
+        super().__init__()
         self.fn = fn
         self.deps = deps  # attribute names (str) or handles resolved later
         self.type_hint = type_hint
-        self.name = None
-
-    def __set_name__(self, owner, name):
-        self.name = name
 
     def _allocate(self, instance):
-        cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         # resolve deps (string name or descriptor -> attribute name -> handle)
         dep_names = tuple(_dep_attr_name(d) for d in self.deps)
         dep_handles = [getattr(instance, n) for n in dep_names]
@@ -638,11 +641,6 @@ class _DerivedDescriptor:
         cache[self.name] = h
         return h
 
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
-
     # deprecated (2026-09-03 followups): prefer m.<name>.observe(cb)
     def observe(self, instance, callback):
         _warn_deprecated_class_observe(self.name)
@@ -676,6 +674,13 @@ def derived(fn=None, *deps, type_hint=None):
     When used as @derived('a') decorator on method, method is compute.
     ``type_hint`` accepts either a sample value (``type_hint=0.0``) or a
     bare type (``type_hint=float``) — both select the same ``float`` kind.
+
+    Arity picks the calling convention, self-style first: a one-parameter
+    callable with at least one dep is *always* called with the Model
+    instance — ``derived(lambda v: v * 2, 'a')`` receives the model, not
+    ``a.value`` (write ``lambda self: self.a.value * 2`` instead). The
+    value-style form — one parameter per dep, each receiving the dep's
+    ``.value`` — only applies with two or more deps.
     """
     if callable(fn):
         return _DerivedDescriptor(fn, *deps, type_hint=type_hint)
@@ -720,18 +725,15 @@ def on_change(*deps, immediate=False):
     return decorator
 
 
-class _ListDescriptor:
+class _ListDescriptor(_Descriptor):
     def __init__(self, default=None):
+        super().__init__()
         self.default = list(default) if default is not None else []
-        self.name = None
-
-    def __set_name__(self, owner, name):
-        self.name = name
 
     def _allocate(self, instance):
-        cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         # infer type from first element
         vals = self.default
         if not vals:
@@ -745,11 +747,6 @@ class _ListDescriptor:
                 h = getattr(instance, f"_add_list_{kind}_internal")(vals)
         cache[self.name] = h
         return h
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
 
     # deprecated (2026-09-03 followups): prefer m.<name>.observe_insert(cb)
     def observe_insert(self, instance, callback):
@@ -780,29 +777,23 @@ def list_field(default=None):
     the way there is for a plain field, so no ``add()`` analogue is needed.
     ``size()``/``to_list()`` are dispatched reads: they block the calling
     thread until the logic thread answers.
+
+    The element type is inferred from the first element of *default*
+    (int/float/str; an empty or missing default creates a str list). A
+    bool list is stored as an int list (0/1) — C++ ``vector<bool>`` is
+    incompatible with the List signal — so values read back as ints.
     """
     return _ListDescriptor(default)
 
 
-class _PlotDescriptor:
-    def __init__(self):
-        self.name = None
-
-    def __set_name__(self, owner, name):
-        self.name = name
-
+class _PlotDescriptor(_Descriptor):
     def _allocate(self, instance):
-        cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         h = instance._add_plot_internal()  # type: ignore[attr-defined]
         cache[self.name] = h
         return h
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
 
 
 _TREE_METHODS = (
@@ -833,19 +824,16 @@ def is_table_source(obj: object) -> bool:
     return isinstance(obj, TableSource)  # type: ignore[arg-type]
 
 
-class _TreeDescriptor:
+class _TreeDescriptor(_Descriptor):
     def __init__(self, source=None):
+        super().__init__()
         # source can be dict {id: {label, children:[...], attrs:{}}} or object with methods
         self.source = source
-        self.name = None
-
-    def __set_name__(self, owner, name):
-        self.name = name
 
     def _allocate(self, instance):
-        cache = instance.__dict__.setdefault("_prism_fields", {})
-        if self.name in cache:
-            return cache[self.name]
+        cache, h = self._cached(instance)
+        if h is not None:
+            return h
         # allow source to be callable returning dict/object, or direct
         src = (
             self.source()
@@ -883,11 +871,6 @@ class _TreeDescriptor:
         h = instance._add_tree_internal(src)  # type: ignore[attr-defined]
         cache[self.name] = h
         return h
-
-    def __get__(self, instance, owner=None):
-        if instance is None:
-            return self
-        return self._allocate(instance)
 
 
 def plot_field():
@@ -1021,21 +1004,17 @@ class Model(_ModelBase):
         # no other thread can see the instance before __init__ returns.
         for cls in reversed(type(self).__mro__):
             for name, attr in cls.__dict__.items():
-                if isinstance(
-                    attr,
-                    (
-                        _FieldDescriptor,
-                        _SharedDescriptor,
-                        _ChannelDescriptor,
-                        _DerivedDescriptor,
-                        _ListDescriptor,
-                        _PlotDescriptor,
-                        _TreeDescriptor,
-                    ),
-                ):
+                if isinstance(attr, _Descriptor):
                     attr._allocate(self)
-        # Apply kwargs overrides
+        # Apply kwargs overrides — each key must name a real descriptor,
+        # so a typo'd field name fails loudly instead of silently setting
+        # a plain attribute.
         for k, v in kwargs.items():
+            if not isinstance(getattr(type(self), k, None), _Descriptor):
+                raise TypeError(
+                    f"{type(self).__name__}() got an unexpected keyword argument "
+                    f"{k!r} — not a prism field descriptor"
+                )
             setattr(self, k, v)
         # If subclass overrides view(), register trampoline. Use weakref to break
         # Model -> _c_model -> py_view_cb -> bound method -> Model cycle (would leak).
@@ -1118,23 +1097,50 @@ def transaction():
     return _TransactionCtx()
 
 
-def run(model, title="PRISM App", headless: float | None = None):
+def run(model, title="PRISM App", headless_seconds: float | None = None, until=None):
     """Blocks the calling thread until the window closes; releases the GIL.
 
     Starts the app event loop for *model* and returns once the window
     closes, so other Python threads can run while it blocks.
 
-    If *headless* is a number, runs *model* headless for that many seconds
-    instead (no display) — equivalent to
-    ``with prism.headless(model, timeout=headless): pass`` — and returns once
-    it ends. The common CLI pattern is
-    ``prism.run(m, title="...", headless=1.0 if "--headless" in sys.argv else None)``.
+    If *headless_seconds* is a number, runs *model* headless for that many
+    seconds instead (no display) — equivalent to
+    ``with prism.headless(model, timeout=headless_seconds): pass`` — and
+    returns once it ends. With *until* (a zero-arg predicate) the headless
+    run ends as soon as the predicate is truthy — the one-liner form of the
+    ``headless()`` + ``wait_until`` pattern; raises ``TimeoutError`` if
+    *headless_seconds* passes first. *until* is ignored in windowed mode:
+    once ``run`` blocks on the window, nothing is left to poll it. The
+    common CLI pattern is
+    ``prism.run(m, title="...", headless_seconds=1.0 if "--headless" in sys.argv else None)``.
     """
-    if isinstance(headless, bool):
-        raise TypeError("run(): headless must be a duration in seconds or None, not a bool")
-    if headless is not None:
-        with _headless_ctx(model, timeout=headless):
-            pass
+    if isinstance(headless_seconds, bool):
+        raise TypeError(
+            "run(): headless_seconds must be a duration in seconds or None, not a bool"
+        )
+    if headless_seconds is not None:
+        with headless(model, timeout=headless_seconds) as app:
+            if until is not None:
+                try:
+                    app.wait_until(until, timeout=headless_seconds)
+                except RuntimeError as exc:
+                    # The headless backend quits on its own at the
+                    # headless_seconds ceiling — usually just before
+                    # wait_until's own identical deadline — so an unmet
+                    # predicate surfaces as "app quit" instead of
+                    # TimeoutError. Same event, so report it as the timeout
+                    # it is.
+                    if "app quit before condition was met" in str(exc):
+                        raise TimeoutError(
+                            f"run(): until predicate not met within {headless_seconds} s"
+                        ) from exc
+                    raise
+            else:
+                # No predicate: run for the full duration (the backend quits
+                # on its own at the ceiling) instead of exiting the with
+                # block — and the app via app.quit() — immediately.
+                while app.is_running:
+                    _time_mod.sleep(0.005)
         return
     try:
         return _run(model, title)
@@ -1281,12 +1287,6 @@ def headless(model, *, timeout: float = 10.0):
         thread.join(timeout=5.0)
         if error and not block_raised:
             raise error[0]
-
-
-# run(headless=...)'s parameter is also named `headless`, shadowing the function
-# name inside run()'s own body — reference it through this module-level alias
-# instead (resolved at call time, so definition order here doesn't matter).
-_headless_ctx = headless
 
 
 # Mirror of the handler installed via _set_error_handler: the C++ side has no

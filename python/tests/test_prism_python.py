@@ -617,7 +617,7 @@ def test_slider_checkbox_descriptors():
 def test_slider_range_is_exposed_as_a_tuple():
     """.range reads the Slider's current (min, max) from the logic thread
     (dispatch_sync_read) rather than a value cached once at allocation —
-    set_range() is the way to change it, and .range reflects that change."""
+    assigning a (min, max) tuple to .range is the way to change it."""
 
     class Mixer(Model):
         volume = prism.slider(0.5, min=0.0, max=1.0)
@@ -625,7 +625,20 @@ def test_slider_range_is_exposed_as_a_tuple():
     m = Mixer()
     assert m.volume.range == (0.0, 1.0)
     assert isinstance(m.volume.range, tuple)
-    m.volume.set_range(-1.0, 2.0)
+    m.volume.range = (-1.0, 2.0)
+    assert m.volume.range == (-1.0, 2.0)
+
+
+def test_slider_set_range_is_a_deprecated_alias():
+    """set_range(min, max) still works but warns — .range = (min, max) is the
+    spelling that matches .value =."""
+
+    class Mixer(Model):
+        volume = prism.slider(0.5, min=0.0, max=1.0)
+
+    m = Mixer()
+    with pytest.warns(DeprecationWarning, match="assign a \\(min, max\\) tuple to \\.range"):
+        m.volume.set_range(-1.0, 2.0)
     assert m.volume.range == (-1.0, 2.0)
 
 
@@ -648,8 +661,8 @@ def test_slider_vertical_renders_headless():
     assert m.volume.value == 0.5
 
 
-def test_slider_set_range_from_background_thread_updates_range_unclamped():
-    """set_range() posts a read-modify-write closure to the logic thread,
+def test_slider_range_assignment_from_background_thread_updates_range_unclamped():
+    """Assigning .range posts a read-modify-write closure to the logic thread,
     same dispatch shape as .value = (field_set_dispatch/list_op_dispatch in
     prism_ext.cpp). Called from a background thread under prism.headless(),
     .range (read via dispatch_sync_read) must reflect the new bounds once
@@ -661,7 +674,7 @@ def test_slider_set_range_from_background_thread_updates_range_unclamped():
 
     m = Mixer()
     with prism.headless(m) as app:
-        th = threading.Thread(target=lambda: m.volume.set_range(0.0, 10.0))
+        th = threading.Thread(target=lambda: setattr(m.volume, "range", (0.0, 10.0)))
         th.start()
         th.join()
         app.wait_until(lambda: m.volume.range == (0.0, 10.0))
@@ -2378,6 +2391,23 @@ def test_model_kwargs_override_sets_field():
     assert m.a.value == 5
 
 
+def test_model_kwargs_unknown_key_raises_type_error():
+    """A typo'd kwarg must fail loudly — silently setting a plain attribute
+    would leave the real field at its default with no signal."""
+
+    class M(Model):
+        a = field(1)
+        s = shared(0)
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'aa'"):
+        M(aa=5)
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        M(nonexistent=1)
+    # every descriptor kind is a valid kwarg
+    m = M(a=3, s=7)
+    assert m.a.value == 3 and m.s.value == 7
+
+
 def test_gc_observe_torture():
     """Torture GC + observe simultaneously (handover L10) — stresses keep_alive chain."""
     import random
@@ -2489,8 +2519,13 @@ def test_tree_source_protocol_isinstance():
 
 
 def test_table_source_protocol_isinstance():
-    """TableSource Protocol @runtime_checkable."""
+    """TableSource Protocol @runtime_checkable — and exported from __all__
+    like its TreeSource twins."""
     from prism import TableSource, is_table_source
+
+    assert "TableSource" in prism.__all__
+    assert "is_table_source" in prism.__all__
+    assert "TreeRow" in prism.__all__
 
     class Full(TableSource):
         def column_count(self):
@@ -2640,6 +2675,49 @@ def test_tree_field_duck_typed_source_rows_length_matches_root_count():
 
     m = M()
     assert len(m.t.rows()) == 3
+
+
+def test_tree_rows_return_namedtuples_with_named_fields():
+    """rows() returns TreeRow namedtuples, not anonymous dicts — attribute
+    access (row.label) and tuple unpacking both work, dict access does not."""
+    from prism import tree_field
+
+    class Duck:
+        def root_count(self):
+            return 2
+
+        def root_at(self, i):
+            return i
+
+        def child_count(self, nid):
+            return 0
+
+        def child_at(self, nid, i):
+            return 0
+
+        def label(self, nid):
+            return f"n{nid}"
+
+        def has_children(self, nid):
+            return False
+
+    class M(Model):
+        t = tree_field(Duck())
+
+    m = M()
+    rows = m.t.rows()
+    assert len(rows) == 2
+    row = rows[1]
+    assert isinstance(row, tuple)
+    assert isinstance(row, prism.TreeRow)
+    assert row._fields == ("label", "depth", "has_children", "expanded", "selected")
+    assert row.label == "n1"
+    assert row.depth == 0
+    assert row.has_children is False
+    assert row.expanded is False
+    assert row.selected is False
+    label, depth, *_ = row  # tuple unpacking still works
+    assert label == "n1" and depth == 0
 
 
 def test_tree_source_missing_method_yields_empty():
@@ -3397,21 +3475,83 @@ def test_headless_multithread_stress_example_gil_disabled_on_free_threaded_build
 def test_worker_pool_plot_example_plots_at_least_one_window(monkeypatch):
     monkeypatch.setattr(sys, "argv", [sys.argv[0], "--headless"])
     mod = _load_example("10_worker_pool_plot")
-    mod.main()  # asserts windows_done >= 1 internally
+    mod.main()  # run(until=...) raises TimeoutError unless a window is plotted
 
 
 def test_asyncio_bridge_example_completes_a_round_trip(monkeypatch):
     monkeypatch.setattr(sys, "argv", [sys.argv[0], "--headless"])
     mod = _load_example("12_asyncio_bridge")
-    mod.main()  # asserts round_trips >= 1 internally
+    mod.main()  # run(until=...) raises TimeoutError unless a round trip completes
 
 
 def test_run_headless_kwarg_rejects_bool():
     class M(Model):
         x = field(0)
 
-    with pytest.raises(TypeError, match="headless must be a duration"):
-        prism.run(M(), headless=True)
+    with pytest.raises(TypeError, match="headless_seconds must be a duration"):
+        prism.run(M(), headless_seconds=True)
+
+
+def test_run_headless_seconds_one_liner():
+    """run(headless_seconds=...) is the one-line form of
+    `with prism.headless(model, timeout=...): pass`."""
+    import time
+
+    class M(Model):
+        x = field(0)
+
+    t0 = time.monotonic()
+    prism.run(M(), headless_seconds=0.05)
+    assert time.monotonic() - t0 < 2.0
+
+
+def test_run_until_exits_headless_as_soon_as_predicate_holds():
+    """until= collapses the headless() + wait_until + assert boilerplate into
+    run()'s one-liner: the run ends once the predicate is truthy, well before
+    the headless_seconds ceiling."""
+
+    class M(Model):
+        x = field(0)
+
+    m = M()
+    prism.worker(lambda: m.x.add(1), interval=0.01)
+    import time
+
+    t0 = time.monotonic()
+    prism.run(m, headless_seconds=30.0, until=lambda: m.x.value >= 3)
+    assert m.x.value >= 3
+    assert time.monotonic() - t0 < 10.0
+
+
+def test_run_until_times_out_when_predicate_never_holds():
+    class M(Model):
+        x = field(0)
+
+    with pytest.raises(TimeoutError):
+        prism.run(M(), headless_seconds=0.05, until=lambda: False)
+
+
+def test_viewbuilder_widget_unsupported_type_surfaces_as_type_error():
+    """py_widget_dispatch's unsupported-handle-type error must surface as
+    TypeError, not RuntimeError. Raised inside view() on the logic thread, it
+    reaches on_error as the original TypeError instance (nanobind translates
+    it at the vb.widget() call boundary; the error hub passes it through)."""
+
+    class M(Model):
+        x = field(0)
+
+        def view(self, vb):
+            vb.widget(object())
+
+    errors = []
+    prism.on_error(errors.append)
+    try:
+        prism._run_headless(M(), delay_ms=50)
+    finally:
+        prism.on_error(None)
+    assert any(
+        isinstance(e, TypeError) and "unsupported handle type" in str(e) for e in errors
+    ), f"expected a TypeError mentioning 'unsupported handle type', got {errors}"
 
 
 def test_plot_color_malformed_raises_value_error_at_call_site():

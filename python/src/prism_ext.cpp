@@ -928,7 +928,7 @@ struct SlotTree : SlotBase {
 };
 // The posted reader may run on the logic thread after the interpreter is finalized
 // (see try_post_via_handle_impl's drain path), so it must not construct any nb::
-// object — TreeRow is plain C++ data, safe to copy there. The nb::list/nb::dict
+// object — TreeRow is plain C++ data, safe to copy there. The namedtuple
 // conversion happens back on the calling (GIL-holding) thread, in *_to_pylist below.
 static std::vector<prism::ui::TreeRow> snapshot_tree_rows(const prism::ui::TreeController* p) {
     std::vector<prism::ui::TreeRow> out;
@@ -936,16 +936,17 @@ static std::vector<prism::ui::TreeRow> snapshot_tree_rows(const prism::ui::TreeC
     for (size_t i = 0; i < p->rows.size(); ++i) out.push_back(p->rows[i]);
     return out;
 }
+// rows() returns a list of this namedtuple (label, depth, has_children, expanded,
+// selected) rather than anonymous dicts, so rows[0].label works. Created in
+// NB_MODULE; deliberately leaked — a static nb::object would decref at static
+// destruction, possibly after interpreter finalization.
+static nb::object* g_tree_row_type = nullptr;
 static nb::list tree_rows_to_pylist(const std::vector<prism::ui::TreeRow>& rows) {
     nb::list out;
     for (auto& r : rows) {
-        nb::dict d;
-        d["label"] = r.label;
-        d["depth"] = r.depth;
-        d["has_children"] = r.has_children;
-        d["expanded"] = r.expanded;
-        d["selected"] = r.selected;
-        out.append(d);
+        out.append((*g_tree_row_type)(
+            nb::str(r.label.c_str()), nb::int_(r.depth), nb::bool_(r.has_children),
+            nb::bool_(r.expanded), nb::bool_(r.selected)));
     }
     return out;
 }
@@ -1074,6 +1075,10 @@ struct BoundSliderValue {
     void set_range(double mn, double mx) {
         if (field_h) slider_set_range(owner, field_h, mn, mx);
         else if (field_v) slider_set_range(owner, field_v, mn, mx);
+    }
+    void set_range_tuple(nb::tuple t) {
+        if (nb::len(t) != 2) throw nb::value_error("range must be assigned a (min, max) tuple");
+        set_range(nb::cast<double>(t[0]), nb::cast<double>(t[1]));
     }
     Connection observe(nb::callable cb) {
         if (!field_h && !field_v) throw nb::value_error("observe(): handle is not bound to a Model");
@@ -1574,7 +1579,7 @@ void derived_attach_dep(std::shared_ptr<SlotDerived<T>> slot, nb::object dep) {
     if (connect_shared((SharedHandle<double>*)nullptr)) return;
     if (connect_shared((SharedHandle<std::string>*)nullptr)) return;
     if (connect_shared((SharedHandle<bool>*)nullptr)) return;
-    throw std::runtime_error("derived: unsupported dependency handle type");
+    throw nb::type_error("derived: unsupported dependency handle type");
 }
 
 inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
@@ -1599,25 +1604,25 @@ inline void py_widget_dispatch(ViewBuilder& vb, nb::object h) {
     else if (nb::isinstance<BoundList<int>>(h)) vb.list(*nb::cast<BoundList<int>&>(h).list);
     else if (nb::isinstance<BoundList<double>>(h)) vb.list(*nb::cast<BoundList<double>&>(h).list);
     else if (nb::isinstance<BoundList<std::string>>(h)) vb.list(*nb::cast<BoundList<std::string>&>(h).list);
-     else throw std::runtime_error("ViewBuilder.widget: unsupported handle type");
+     else throw nb::type_error("ViewBuilder.widget: unsupported handle type");
 }
 inline void py_list_dispatch(ViewBuilder& vb, nb::object h) {
     if (nb::isinstance<BoundList<int>>(h)) vb.list(*nb::cast<BoundList<int>&>(h).list);
     else if (nb::isinstance<BoundList<double>>(h)) vb.list(*nb::cast<BoundList<double>&>(h).list);
     else if (nb::isinstance<BoundList<std::string>>(h)) vb.list(*nb::cast<BoundList<std::string>&>(h).list);
-    else throw std::runtime_error("ViewBuilder.list: unsupported handle type");
+    else throw nb::type_error("ViewBuilder.list: unsupported handle type");
 }
 inline void py_canvas_dispatch(ViewBuilder& vb, nb::object h) {
     if (nb::isinstance<BoundPlot>(h)) {
         auto& b = nb::cast<BoundPlot&>(h);
         vb.canvas(*b.plot).depends_on(b.plot->x_range).depends_on(b.plot->y_range).depends_on(b.plot->view).depends_on(b.plot->cursor).depends_on(b.plot->revision);
-    } else throw std::runtime_error("ViewBuilder.canvas: unsupported handle type (expected BoundPlot)");
+    } else throw nb::type_error("ViewBuilder.canvas: unsupported handle type (expected BoundPlot)");
 }
 inline void py_tree_dispatch(ViewBuilder& vb, nb::object h) {
     if (nb::isinstance<BoundTree>(h)) {
         auto& b = nb::cast<BoundTree&>(h);
         if (b.ctrl) vb.tree(*b.ctrl);
-    } else throw std::runtime_error("ViewBuilder.tree: unsupported handle type (expected BoundTree)");
+    } else throw nb::type_error("ViewBuilder.tree: unsupported handle type (expected BoundTree)");
 }
 
 // add_slider_slot()'s return type: exactly one of field_h/field_v is set,
@@ -2288,73 +2293,130 @@ NB_MODULE(_prism_ext, m) {
     bind_scalar<std::string>(m, "Str");
     bind_scalar<bool>(m, "Bool");
 
-    nb::class_<BoundSliderValue>(m, "BoundSlider", nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def_prop_rw("value", &BoundSliderValue::get, &validated_set<BoundSliderValue, double>)
-        .def_prop_ro("range", &BoundSliderValue::range,
-                     "Any thread; dispatched read. Returns the slider's current (min, max) bounds as a tuple.")
+    nb::class_<BoundSliderValue>(m, "BoundSlider", nb::dynamic_attr(), nb::is_weak_referenceable(),
+                                 "Bound handle for a Model's slider field. .value/.range "
+                                 "assignments may be made from any thread (posted to the "
+                                 "logic thread); reads dispatch synchronously.")
+        .def_prop_rw("value", &BoundSliderValue::get, &validated_set<BoundSliderValue, double>,
+                     "Any thread. Current slider value (assigned unclamped — only mouse drags clamp into range).")
+        .def_prop_rw("range", &BoundSliderValue::range, &BoundSliderValue::set_range_tuple,
+                     "Any thread. The slider's (min, max) bounds as a tuple; assigning a "
+                     "(min, max) tuple posts the change to the logic thread, like .value.")
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundSliderValue&>(self).observe(cb), cb);
         }, nb::arg("callback"), kObserveDoc)
-        .def("get", &BoundSliderValue::get)
-        .def("set", &validated_set<BoundSliderValue, double>)
-        .def("set_range", &BoundSliderValue::set_range, nb::arg("min"), nb::arg("max"),
-             "Any thread; applied on the logic thread. Sets the slider's (min, max) bounds.");
+        .def("get", &BoundSliderValue::get, "Any thread; dispatched read. Same as .value.")
+        .def("set", &validated_set<BoundSliderValue, double>, nb::arg("value"),
+             "Any thread; posted to the logic thread. Same as assigning .value.")
+        .def("set_range", [](BoundSliderValue& self, double mn, double mx) {
+            PyErr_WarnEx(PyExc_DeprecationWarning,
+                         "set_range() is deprecated; assign a (min, max) tuple to .range instead", 1);
+            self.set_range(mn, mx);
+        }, nb::arg("min"), nb::arg("max"),
+             "Deprecated alias for assigning a (min, max) tuple to .range.");
 
-    nb::class_<BoundCheckboxValue>(m, "BoundCheckbox", nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>)
+    nb::class_<BoundCheckboxValue>(m, "BoundCheckbox", nb::dynamic_attr(), nb::is_weak_referenceable(),
+                                   "Bound handle for a Model's checkbox field. Writes may be "
+                                   "made from any thread (posted to the logic thread); reads "
+                                   "dispatch synchronously.")
+        .def_prop_rw("value", &BoundCheckboxValue::get, &validated_set<BoundCheckboxValue, bool>,
+                     "Any thread. Current checked state.")
         .def("observe", [](nb::object self, nb::callable cb) {
             return keep_connection(self, nb::cast<BoundCheckboxValue&>(self).observe(cb), cb);
         }, nb::arg("callback"), kObserveDoc)
-        .def("get", &BoundCheckboxValue::get)
-        .def("set", &validated_set<BoundCheckboxValue, bool>);
+        .def("get", &BoundCheckboxValue::get, "Any thread; dispatched read. Same as .value.")
+        .def("set", &validated_set<BoundCheckboxValue, bool>, nb::arg("value"),
+             "Any thread; posted to the logic thread. Same as assigning .value.");
 
     bind_list<int>(m, "Int");
     bind_list<double>(m, "Float");
     bind_list<std::string>(m, "Str");
     // List<bool>/BoundList<bool> disabled — vector<bool> proxy incompatible with const T& Signal; use int list for bool data
 
-    nb::class_<BoundPlot>(m, "BoundPlot", nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def("add_series", &BoundPlot::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
-        .def("clear_series", &BoundPlot::clear_series)
-        .def("notify", &BoundPlot::notify)
+    nb::class_<BoundPlot>(m, "BoundPlot", nb::dynamic_attr(), nb::is_weak_referenceable(),
+                          "Bound handle for a Model's plot field. All mutation methods may "
+                          "be called from any thread — each is one posted operation on the "
+                          "logic thread (replace_series is a single post, so concurrent "
+                          "calls never leave the plot mid-update); series_count/series_len "
+                          "are dispatched reads that block until the logic thread answers.")
+        .def("add_series", &BoundPlot::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false,
+             "Append a series. color is '#rrggbb' (malformed strings raise ValueError at the call site).")
+        .def("clear_series", &BoundPlot::clear_series, "Remove all series.")
+        .def("notify", &BoundPlot::notify, "Retrigger a redraw after mutating series in place.")
         .def("replace_series", &BoundPlot::replace_series, nb::arg("xs"), nb::arg("ys") = nb::none(), nb::kw_only(),
-             nb::arg("color") = nb::none(), nb::arg("thickness") = 2.f, nb::arg("fill") = false)
-        .def("set_labels", &BoundPlot::set_labels, nb::kw_only(), nb::arg("x") = nb::none(), nb::arg("y") = nb::none())
-        .def("series_count", &BoundPlot::series_count)
-        .def("series_len", &BoundPlot::series_len, nb::arg("i"))
-        .def("reset_view", &BoundPlot::reset_view)
-        .def_prop_rw("x_label", &BoundPlot::get_x_label, &BoundPlot::set_x_label)
-        .def_prop_rw("y_label", &BoundPlot::get_y_label, &BoundPlot::set_y_label);
-    nb::class_<PlotHandle>(m, "PlotHandle", nb::dynamic_attr(), nb::is_weak_referenceable())
+             nb::arg("color") = nb::none(), nb::arg("thickness") = 2.f, nb::arg("fill") = false,
+             "Atomically replace all series: replace_series(xs, ys) for one series, or "
+             "replace_series([(xs, ys, color), ...]) for several.")
+        .def("set_labels", &BoundPlot::set_labels, nb::kw_only(), nb::arg("x") = nb::none(), nb::arg("y") = nb::none(),
+             "Set axis labels; None leaves the axis unchanged.")
+        .def("series_count", &BoundPlot::series_count, "Dispatched read. Number of series.")
+        .def("series_len", &BoundPlot::series_len, nb::arg("i"), "Dispatched read. Point count of series i.")
+        .def("reset_view", &BoundPlot::reset_view, "Reset the viewport to fit all series.")
+        .def_prop_rw("x_label", &BoundPlot::get_x_label, &BoundPlot::set_x_label, "X axis label.")
+        .def_prop_rw("y_label", &BoundPlot::get_y_label, &BoundPlot::set_y_label, "Y axis label.");
+    nb::class_<PlotHandle>(m, "PlotHandle", nb::dynamic_attr(), nb::is_weak_referenceable(),
+                           "Standalone plot (owns its state) — for quick tests and non-model "
+                           "usage. Same methods and thread rules as BoundPlot.")
         .def(nb::init<>())
-        .def("add_series", &PlotHandle::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false)
-        .def("clear_series", &PlotHandle::clear_series)
-        .def("notify", &PlotHandle::notify)
+        .def("add_series", &PlotHandle::add_series, nb::arg("xs"), nb::arg("ys"), nb::arg("color")="", nb::arg("thickness")=2.f, nb::arg("fill")=false,
+             "Append a series. color is '#rrggbb' (malformed strings raise ValueError at the call site).")
+        .def("clear_series", &PlotHandle::clear_series, "Remove all series.")
+        .def("notify", &PlotHandle::notify, "Retrigger a redraw after mutating series in place.")
         .def("replace_series", &PlotHandle::replace_series, nb::arg("xs"), nb::arg("ys") = nb::none(), nb::kw_only(),
-             nb::arg("color") = nb::none(), nb::arg("thickness") = 2.f, nb::arg("fill") = false)
-        .def("set_labels", &PlotHandle::set_labels, nb::kw_only(), nb::arg("x") = nb::none(), nb::arg("y") = nb::none())
-        .def("series_count", &PlotHandle::series_count)
-        .def("series_len", &PlotHandle::series_len, nb::arg("i"))
-        .def("reset_view", &PlotHandle::reset_view)
-        .def_prop_rw("x_label", &PlotHandle::get_x_label, &PlotHandle::set_x_label)
-        .def_prop_rw("y_label", &PlotHandle::get_y_label, &PlotHandle::set_y_label);
-    nb::class_<BoundTree>(m, "BoundTree", nb::dynamic_attr(), nb::is_weak_referenceable())
-        .def("refresh", &BoundTree::refresh)
-        .def("rows", &BoundTree::rows);
-    nb::class_<TreeHandle>(m, "TreeHandle", nb::dynamic_attr(), nb::is_weak_referenceable())
+             nb::arg("color") = nb::none(), nb::arg("thickness") = 2.f, nb::arg("fill") = false,
+             "Atomically replace all series: replace_series(xs, ys) for one series, or "
+             "replace_series([(xs, ys, color), ...]) for several.")
+        .def("set_labels", &PlotHandle::set_labels, nb::kw_only(), nb::arg("x") = nb::none(), nb::arg("y") = nb::none(),
+             "Set axis labels; None leaves the axis unchanged.")
+        .def("series_count", &PlotHandle::series_count, "Dispatched read. Number of series.")
+        .def("series_len", &PlotHandle::series_len, nb::arg("i"), "Dispatched read. Point count of series i.")
+        .def("reset_view", &PlotHandle::reset_view, "Reset the viewport to fit all series.")
+        .def_prop_rw("x_label", &PlotHandle::get_x_label, &PlotHandle::set_x_label, "X axis label.")
+        .def_prop_rw("y_label", &PlotHandle::get_y_label, &PlotHandle::set_y_label, "Y axis label.");
+    g_tree_row_type = new nb::object(
+        nb::module_::import_("collections").attr("namedtuple")(
+            "TreeRow",
+            nb::make_tuple("label", "depth", "has_children", "expanded", "selected")));
+    // namedtuple() infers __module__ from the calling frame — meaningless from
+    // C++; point it at the public package instead.
+    nb::setattr(*g_tree_row_type, "__module__", nb::str("prism"));
+    m.attr("TreeRow") = *g_tree_row_type;
+
+    nb::class_<BoundTree>(m, "BoundTree", nb::dynamic_attr(), nb::is_weak_referenceable(),
+                          "Bound handle for a Model's tree field. refresh() may be called "
+                          "from any thread (posted to the logic thread); rows() is a "
+                          "dispatched read that blocks until the logic thread answers.")
+        .def("refresh", &BoundTree::refresh,
+             "Any thread; posted to the logic thread. Re-pulls rows from the tree source.")
+        .def("rows", &BoundTree::rows,
+             "Any thread; dispatched read. Returns the visible rows as a list of TreeRow "
+             "namedtuples (label, depth, has_children, expanded, selected).");
+    nb::class_<TreeHandle>(m, "TreeHandle", nb::dynamic_attr(), nb::is_weak_referenceable(),
+                           "Standalone tree controller (owns its source) — for quick tests "
+                           "and non-model usage. Same thread rules as BoundTree.")
         .def(nb::init<nb::object>(), nb::arg("source"))
-        .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch(h.ctrl, [p](){ p->refresh(); }); })
+        .def("refresh", [](TreeHandle& h){ auto* p=h.ctrl.get(); list_op_dispatch(h.ctrl, [p](){ p->refresh(); }); },
+             "Any thread; posted to the logic thread. Re-pulls rows from the tree source.")
         .def("rows", [](TreeHandle& h){
             auto* p = h.ctrl.get();
             auto snapshot = dispatch_sync_read<std::vector<prism::ui::TreeRow>>([p](){ return snapshot_tree_rows(p); });
             return tree_rows_to_pylist(snapshot);
-         });
+         },
+         "Any thread; dispatched read. Returns the visible rows as a list of TreeRow "
+         "namedtuples (label, depth, has_children, expanded, selected).");
 
-    nb::class_<ViewBuilder>(m, "ViewBuilder")
-        .def("widget", [](ViewBuilder& vb, nb::object h){ py_widget_dispatch(vb, h); }, nb::arg("handle"))
-        .def("list", [](ViewBuilder& vb, nb::object h){ py_list_dispatch(vb, h); }, nb::arg("handle"))
-        .def("canvas", [](ViewBuilder& vb, nb::object h){ py_canvas_dispatch(vb, h); }, nb::arg("handle"))
-        .def("tree", [](ViewBuilder& vb, nb::object h){ py_tree_dispatch(vb, h); }, nb::arg("handle"))
+    nb::class_<ViewBuilder>(m, "ViewBuilder",
+                            "Passed to Model.view(self, vb); each call appends a widget to "
+                            "the view being built. All methods run on the logic thread "
+                            "during view (re)builds.")
+        .def("widget", [](ViewBuilder& vb, nb::object h){ py_widget_dispatch(vb, h); }, nb::arg("handle"),
+             "Add the widget for a bound scalar/shared/derived/slider/checkbox/list handle.")
+        .def("list", [](ViewBuilder& vb, nb::object h){ py_list_dispatch(vb, h); }, nb::arg("handle"),
+             "Add a list widget for a bound list handle (list_field()).")
+        .def("canvas", [](ViewBuilder& vb, nb::object h){ py_canvas_dispatch(vb, h); }, nb::arg("handle"),
+             "Add a canvas widget for a bound plot handle (plot_field()).")
+        .def("tree", [](ViewBuilder& vb, nb::object h){ py_tree_dispatch(vb, h); }, nb::arg("handle"),
+             "Add a tree widget for a bound tree handle (tree_field()).")
         .def("hstack", [](ViewBuilder& vb, nb::args args){
             // hstack(handle1, handle2, ...) -> Row container with those widgets
             // single callable arg -> container with callable body (for lambda capturing vb)
@@ -2366,7 +2428,9 @@ NB_MODULE(_prism_ext, m) {
             vb.hstack([&]{
                 for (auto a : args) py_widget_dispatch(vb, nb::cast<nb::object>(a));
             });
-        })
+        }, "Row container. hstack(h1, h2, ...) places those handles' widgets side by side; "
+           "hstack(fn) with a single callable runs fn() inside the row's scope instead — "
+           "for a lambda capturing vb that mixes in further vb.* calls.")
         .def("vstack", [](ViewBuilder& vb, nb::args args){
             if (args.size() == 1 && nb::isinstance<nb::callable>(args[0])) {
                 auto fn = nb::cast<nb::callable>(args[0]);
@@ -2376,7 +2440,8 @@ NB_MODULE(_prism_ext, m) {
             vb.vstack([&]{
                 for (auto a : args) py_widget_dispatch(vb, nb::cast<nb::object>(a));
             });
-        });
+        }, "Column container — same dual calling convention as hstack(): vstack(h1, h2, ...) "
+           "stacks the handles' widgets vertically, vstack(fn) runs fn() in the column's scope.");
 
     nb::class_<PyModel>(m, "Model", nb::type_slots(pymodel_type_slots))
         .def(nb::init<>())
