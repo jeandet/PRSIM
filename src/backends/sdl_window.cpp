@@ -103,6 +103,12 @@ void SdlWindow::create_sdl_window() {
         SDL_SetWindowHitTest(sdl_window_, sdl_hit_test_callback, nullptr);
 }
 
+void SdlWindow::enable_vsync() {
+    // Best-effort: renderers without vsync support just fail the call; the frame
+    // clock (SoftwareBackend's FramePacer) still paces presents regardless.
+    if (renderer_) SDL_SetRenderVSync(renderer_, 1);
+}
+
 void SdlWindow::destroy_sdl_window() {
     if (renderer_) { SDL_DestroyRenderer(renderer_); renderer_ = nullptr; }
     if (sdl_window_) { SDL_DestroyWindow(sdl_window_); sdl_window_ = nullptr; }

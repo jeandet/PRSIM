@@ -61,6 +61,9 @@ public:
 
     void render_snapshot(const SceneSnapshot& snap, TTF_Font* font, const Theme& theme = Theme{});
 
+    // Best-effort vsync (tear guard on top of the backend's frame clock).
+    void enable_vsync();
+
     // Manual resize tracking for custom chrome
     bool begin_resize(int mouse_x, int mouse_y);
     bool update_resize(int mouse_x, int mouse_y);

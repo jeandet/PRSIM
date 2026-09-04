@@ -31,6 +31,11 @@ struct WindowConfig {
 
 struct RenderConfig {
     const char* font_path = nullptr;
+    // Present pacing (SoftwareBackend): presents happen on frame boundaries instead
+    // of after every event batch. false = legacy event-rate-bound behavior.
+    bool frame_pacing = true;
+    // 0 = follow the display's refresh rate; >0 = fixed cap in frames per second.
+    float target_fps = 0;
 };
 
 class Window {
