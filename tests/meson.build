@@ -63,6 +63,7 @@ headless_tests = {
   'process_tree_source' : files('test_process_tree_source.cpp'),
   'snapshot_stats' : files('test_snapshot_stats.cpp'),
   'record_reuse' : files('test_record_reuse.cpp'),
+  'perf_lab' : files('test_perf_lab.cpp'),
   'frame_pacer' : files('test_frame_pacer.cpp'),
 }
 
