@@ -491,12 +491,9 @@ private:
                 wn.focus_policy = FocusPolicy::tab_and_click;
             } else if (node.layout_kind == LayoutKind::Tabs && node.tabs_state) {
                 wn.edit_state = node.tabs_state;
-                for (auto& child : node.children)
-                    wn.children.push_back(build_widget_node(child));
             }
             if (node.layout_kind != LayoutKind::VirtualList
-                && node.layout_kind != LayoutKind::Table
-                && node.layout_kind != LayoutKind::Tabs) {
+                && node.layout_kind != LayoutKind::Table) {
                 for (auto& child : node.children)
                     wn.children.push_back(build_widget_node(child));
             }

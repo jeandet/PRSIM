@@ -114,42 +114,42 @@ public:
         queue_->push(std::move(fn));
         bool expected = false;
         if (scheduled_->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-            auto q = queue_;
-            auto sched_flag = scheduled_;
-            auto tail = drain_publish_;
-            auto sch = sched_;
-            auto wrapper = logic_wrapper_;
-            exec::start_detached(stdexec::schedule(sch) | stdexec::then([q, sched_flag, tail, sch, wrapper] {
-                auto do_drain = [&]{
-                    do {
-                        detail_in_mutation_batch = true;
-                        while (auto f = q->pop()) {
-                            try {
-                                (*f)();
-                            } catch (...) {
-                                report_unhandled_error(std::current_exception());
-                            }
-                        }
-                        detail_in_mutation_batch = false;
-                        if (tail && *tail) {
-                            try {
-                                (*tail)();
-                            } catch (...) {
-                                report_unhandled_error(std::current_exception());
-                            }
-                        }
-                        sched_flag->store(false, std::memory_order_release);
-                        if (q->empty()) break;
-                        bool exp = false;
-                        if (!sched_flag->compare_exchange_strong(exp, true, std::memory_order_acq_rel)) break;
-                    } while (true);
-                };
-                apply_wrapper(wrapper, do_drain);
-            }));
+            exec::start_detached(stdexec::schedule(sched_)
+                                 | stdexec::then([this] { drain_queue(); }));
         }
     }
 
 private:
+    // CAS-reschedule drain: pop every queued mutation, run the publish tail,
+    // then either exit or re-arm if a producer pushed between the last pop
+    // and the flag reset.
+    void drain_queue() {
+        auto do_drain = [&]{
+            do {
+                detail_in_mutation_batch = true;
+                while (auto f = queue_->pop()) {
+                    try {
+                        (*f)();
+                    } catch (...) {
+                        report_unhandled_error(std::current_exception());
+                    }
+                }
+                detail_in_mutation_batch = false;
+                if (drain_publish_ && *drain_publish_) {
+                    try {
+                        (*drain_publish_)();
+                    } catch (...) {
+                        report_unhandled_error(std::current_exception());
+                    }
+                }
+                scheduled_->store(false, std::memory_order_release);
+                if (queue_->empty()) break;
+                bool expected = false;
+                if (!scheduled_->compare_exchange_strong(expected, true, std::memory_order_acq_rel)) break;
+            } while (true);
+        };
+        apply_wrapper(logic_wrapper_, do_drain);
+    }
     scheduler_type sched_;
     AnimationClock* clock_;
     Window* window_;
@@ -244,12 +244,9 @@ void model_app(Backend& backend, Window& window, Model& model,
                 auto do_tick = [&]{
                     tick_scheduled = false;
                     anim_clock.tick(AnimationClock::clock::now());
-                    registry.for_each([&](WindowId, WindowRegistry::Entry& entry) {
-                        entry.tree->drain_shared();
-                    });
-                    publish_dirty();
-                    if (anim_clock.active())
-                        schedule_tick();
+                    // schedule_tick() inside the shared tail no-ops when the
+                    // clock went inactive, matching the old guarded reschedule.
+                    (*mutation_drain_publish)();
                 };
                 AppContext::apply_wrapper(logic_wrapper_holder, do_tick);
             })
@@ -364,24 +361,15 @@ void model_app(Backend& backend, Window& window, Model& model,
                             entry->height = resize->height;
                             needs_publish = true;
                         }
-                        if (entry->current_snap) {
-                            if (auto* mm = std::get_if<MouseMove>(&ev))
-                                widget_detail::route_mouse_move(*entry->tree, *entry->current_snap, *mm);
-                            if (auto* mb = std::get_if<MouseButton>(&ev))
-                                widget_detail::route_mouse_button(*entry->tree, *entry->current_snap, ev, *mb);
-                            if (auto* ms = std::get_if<MouseScroll>(&ev))
-                                widget_detail::route_mouse_scroll(*entry->tree, *entry->current_snap, *ms);
-                            entry->window->set_cursor(entry->tree->desired_cursor());
-                        }
                         if (auto* kp = std::get_if<KeyPress>(&ev)) {
                             if (global_key_handler) global_key_handler(*kp);
                             // global_key_handler may have destroyed entry (e.g. debug inspector hotkey toggles window)
                             entry = registry.find(wid);
                             if (!entry) return;
-                            widget_detail::route_key_press(*entry->tree, ev, *kp);
                         }
-                        if (std::get_if<TextInput>(&ev))
-                            widget_detail::route_text_input(*entry->tree, ev);
+                        widget_detail::route_event(*entry->tree, entry->current_snap.get(), ev);
+                        if (entry->current_snap)
+                            entry->window->set_cursor(entry->tree->desired_cursor());
 
                         entry->tree->drain_shared();
                         if (post_dispatch_hook) post_dispatch_hook();

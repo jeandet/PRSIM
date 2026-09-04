@@ -96,4 +96,23 @@ inline void route_text_input(WidgetTree& tree, const InputEvent& ev) {
         tree.dispatch(tree.focused_id(), ev);
 }
 
+// Top-level dispatcher: switches on the event variant and routes to the
+// per-kind handlers above. `snap` may be null — mouse routing hit-tests
+// against a snapshot; key/text routing doesn't need one.
+inline void route_event(WidgetTree& tree, const SceneSnapshot* snap,
+                        const InputEvent& ev) {
+    if (snap) {
+        if (auto* mm = std::get_if<MouseMove>(&ev))
+            route_mouse_move(tree, *snap, *mm);
+        if (auto* mb = std::get_if<MouseButton>(&ev))
+            route_mouse_button(tree, *snap, ev, *mb);
+        if (auto* ms = std::get_if<MouseScroll>(&ev))
+            route_mouse_scroll(tree, *snap, *ms);
+    }
+    if (auto* kp = std::get_if<KeyPress>(&ev))
+        route_key_press(tree, ev, *kp);
+    if (std::get_if<TextInput>(&ev))
+        route_text_input(tree, ev);
+}
+
 } // namespace prism::app::widget_detail
