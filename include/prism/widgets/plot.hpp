@@ -184,7 +184,9 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
                        std::span<const Series> series,
                        const std::string& x_label, const std::string& y_label,
                        bool draw_x_axis,
-                       const std::function<std::string(double)>& x_tick_format = {})
+                       const std::function<std::string(double)>& x_tick_format = {},
+                       uint32_t data_revision = 0,
+                       std::span<SeriesDrawCache> draw_caches = {})
 {
     auto& t = *node.theme;
     auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
@@ -198,7 +200,7 @@ void render_plot_panel(DrawList& dl, Rect bounds, const WidgetNode& node,
 
     dl.clip_push(map.plot_area.origin, map.plot_area.extent);
     draw_grid_lines(dl, local_map, ticks, t);
-    draw_series(dl, local_map, series);
+    draw_series(dl, local_map, series, data_revision, draw_caches);
     if constexpr (requires (C c) { c.data_y; }) {
         draw_cursor(dl, local_map, cursor.get(), t);
     } else {
@@ -378,6 +380,7 @@ struct PlotModel {
     void add_series(S source, SeriesStyle style)
     {
         series_.emplace_back(std::move(source), style);
+        draw_caches_.clear();
     }
 
     void add_series(std::vector<double> xs, std::vector<double> ys, SeriesStyle style)
@@ -387,11 +390,13 @@ struct PlotModel {
 
     void remove_series(size_t index)
     {
-        if (index < series_.size())
+        if (index < series_.size()) {
             series_.erase(series_.begin() + static_cast<ptrdiff_t>(index));
+            draw_caches_.clear();
+        }
     }
 
-    void clear_series() { series_.clear(); }
+    void clear_series() { series_.clear(); draw_caches_.clear(); }
     size_t series_count() const { return series_.size(); }
     size_t series_len(size_t index) const { return index < series_.size() ? series_[index].size() : 0; }
 
@@ -414,15 +419,20 @@ struct PlotModel {
                                                 std::span<const Series>(series_), autofit_cache);
         Field<AxisRange> xr{resolved.x};
         Field<AxisRange> yr{resolved.y};
+        if (draw_caches_.size() != series_.size())
+            draw_caches_.assign(series_.size(), SeriesDrawCache{});
         render_plot_panel(dl, bounds, node, xr, yr, view, cursor,
                           std::span<const Series>(series_), x_label.get(), y_label.get(), true,
-                          x_tick_format);
+                          x_tick_format, revision.get(), std::span<SeriesDrawCache>(draw_caches_));
     }
 
     void handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds);
 
   private:
     std::vector<Series> series_;
+    // Per-series memoized polylines, slot-aligned with series_ (cleared on any
+    // series add/remove; keyed on revision + map inside draw_series).
+    std::vector<SeriesDrawCache> draw_caches_;
 };
 
 inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)
@@ -454,6 +464,7 @@ class PlotPanel {
     void add_series(S source, SeriesStyle style)
     {
         series_.emplace_back(std::move(source), style);
+        draw_caches_.clear();
     }
 
     void add_series(std::vector<double> xs, std::vector<double> ys, SeriesStyle style)
@@ -461,7 +472,7 @@ class PlotPanel {
         add_series(XYData{std::move(xs), std::move(ys)}, style);
     }
 
-    void clear_series() { series_.clear(); }
+    void clear_series() { series_.clear(); draw_caches_.clear(); }
     void notify() { revision.set(revision.get() + 1); }
 
     // Fixed 3-arg signatures -- vb.canvas(panel) requires exactly `canvas(dl, r, n)` /
@@ -476,6 +487,8 @@ class PlotPanel {
     PlotGroup* group_ = nullptr;   // set by PlotGroup::add_plot(); never null once added
     bool draw_x_axis_ = false;     // true only for the group's current last panel
     std::vector<Series> series_;
+    // Per-series memoized polylines, slot-aligned with series_ (see PlotModel).
+    std::vector<SeriesDrawCache> draw_caches_;
 
     // The group's shared x pan/zoom with this panel's own y pan/zoom merged in.
     // Defined after PlotGroup (incomplete type here).
@@ -556,10 +569,13 @@ inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
                                             std::span<const Series>(series_), autofit_cache);
     Field<AxisRange> xr{resolved.x};
     Field<AxisRange> yr{resolved.y};
+    if (draw_caches_.size() != series_.size())
+        draw_caches_.assign(series_.size(), SeriesDrawCache{});
     render_plot_panel(dl, bounds, node, xr, yr, merged_view,
                       group_->cursor, std::span<const Series>(series_),
                       group_->x_label.get(), y_label.get(), draw_x_axis_,
-                      group_->x_tick_format);
+                      group_->x_tick_format, revision.get(),
+                      std::span<SeriesDrawCache>(draw_caches_));
 }
 
 inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd, Rect bounds)

@@ -1399,3 +1399,137 @@ TEST_CASE("PlotPanel canvas reuses the auto-fit cache across renders")
     panel.canvas(dl, bounds, node);
     CHECK(panel.autofit_cache.frames_since_fit == 1);
 }
+
+static prism::plot::Series dense_counting_series(CountingSource::Calls& calls,
+                                                 size_t n = 10'000)
+{
+    std::vector<double> xs, ys;
+    xs.reserve(n);
+    ys.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        xs.push_back(static_cast<double>(i));
+        ys.push_back(std::sin(static_cast<double>(i) * 0.01));
+    }
+    return prism::plot::Series(CountingSource{std::move(xs), std::move(ys), &calls},
+                               prism::plot::SeriesStyle{});
+}
+
+TEST_CASE("draw_series reuses cached points while revision and map are unchanged")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{dense_counting_series(calls)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+    std::array<prism::plot::SeriesDrawCache, 1> caches;
+
+    prism::DrawList dl1;
+    prism::plot::draw_series(dl1, map, series, 7, caches);
+    REQUIRE(caches[0].valid);
+    CHECK(caches[0].decimated);
+    REQUIRE(dl1.commands.size() == 1);
+    const size_t n1 = std::get<prism::Polyline>(dl1.commands[0]).points.size();
+    CHECK(n1 <= 200);
+    const size_t scanned = calls.x + calls.y;
+    REQUIRE(scanned > 0);
+
+    prism::DrawList dl2;
+    prism::plot::draw_series(dl2, map, series, 7, caches);
+    CHECK(calls.x + calls.y == scanned); // gate + transform skipped
+    REQUIRE(dl2.commands.size() == 1);
+    CHECK(std::get<prism::Polyline>(dl2.commands[0]).points.size() == n1);
+}
+
+TEST_CASE("draw_series cache misses when the revision changes")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{dense_counting_series(calls)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+    std::array<prism::plot::SeriesDrawCache, 1> caches;
+
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, series, 7, caches);
+    const size_t scanned = calls.x + calls.y;
+
+    prism::plot::draw_series(dl, map, series, 8, caches);
+    CHECK(calls.x + calls.y > scanned);
+}
+
+TEST_CASE("draw_series cache misses when the map changes")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{dense_counting_series(calls)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+    std::array<prism::plot::SeriesDrawCache, 1> caches;
+
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, series, 7, caches);
+    const size_t scanned = calls.x + calls.y;
+
+    auto zoomed = make_test_map(100, 100, 0.0, 5000.0, -2.0, 2.0);
+    prism::plot::draw_series(dl, zoomed, series, 7, caches);
+    CHECK(calls.x + calls.y > scanned);
+}
+
+TEST_CASE("draw_series ignores a cache span whose size mismatches the series")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{dense_counting_series(calls)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+    std::array<prism::plot::SeriesDrawCache, 2> wrong;
+
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, series, 7, wrong);
+    REQUIRE(dl.commands.size() == 1);
+    CHECK(std::get<prism::Polyline>(dl.commands[0]).points.size() <= 200);
+    CHECK_FALSE(wrong[0].valid);
+    CHECK_FALSE(wrong[1].valid);
+}
+
+TEST_CASE("PlotModel canvas skips series rescans while the revision is unchanged")
+{
+    CountingSource::Calls calls;
+    prism::plot::PlotModel plot;
+    plot.add_series(dense_counting_series(calls), prism::plot::SeriesStyle{});
+
+    prism::DrawList dl;
+    canvas_into(plot, dl);
+    const size_t scanned = calls.x + calls.y;
+    REQUIRE(scanned > 0);
+
+    canvas_into(plot, dl);
+    CHECK(calls.x + calls.y == scanned); // auto-fit hit + decimation hit
+
+    plot.notify();
+    canvas_into(plot, dl);
+    CHECK(calls.x + calls.y > scanned); // new revision -> gate + decimate rerun
+}
+
+static void panel_canvas_into(prism::plot::PlotPanel& panel, prism::DrawList& dl)
+{
+    prism::Rect bounds{prism::Point{prism::X{0}, prism::Y{0}},
+                       prism::Size{prism::Width{400}, prism::Height{300}}};
+    prism::Theme t = prism::default_theme();
+    prism::app::WidgetNode node;
+    node.theme = &t;
+    node.canvas_bounds = bounds;
+    panel.canvas(dl, bounds, node);
+}
+
+TEST_CASE("PlotPanel canvas skips series rescans while the revision is unchanged")
+{
+    CountingSource::Calls calls;
+    prism::plot::PlotGroup group;
+    prism::plot::PlotPanel& panel = group.add_plot("y");
+    panel.add_series(dense_counting_series(calls), prism::plot::SeriesStyle{});
+
+    prism::DrawList dl;
+    panel_canvas_into(panel, dl);
+    const size_t scanned = calls.x + calls.y;
+    REQUIRE(scanned > 0);
+
+    panel_canvas_into(panel, dl);
+    CHECK(calls.x + calls.y == scanned);
+
+    panel.notify();
+    panel_canvas_into(panel, dl);
+    CHECK(calls.x + calls.y > scanned);
+}

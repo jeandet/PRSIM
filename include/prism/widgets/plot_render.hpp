@@ -29,6 +29,7 @@ struct PlotMapping {
     AxisRange x_range;
     AxisRange y_range;
     Rect plot_area;
+    bool operator==(const PlotMapping&) const = default;
 
     Point to_pixel(double data_x, double data_y) const
     {
@@ -275,30 +276,56 @@ std::vector<Point> decimated_series_points(const S& s, const PlotMapping& map)
     return out;
 }
 
+// Memoized per-series polyline points for one (data revision, mapping) pair. A hit
+// skips the monotonicity gate and the full transform pass -- the wins show up on
+// re-renders with unchanged data (cursor moves, hover, expose), not on streaming
+// ingest, where the revision bump correctly invalidates every frame.
+struct SeriesDrawCache {
+    std::vector<Point> pts;
+    PlotMapping map{};
+    uint32_t revision = 0;
+    size_t data_size = 0;
+    bool decimated = false;
+    bool valid = false;
+};
+
 template <typename SeriesRange>
-void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series)
+void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series,
+                 uint32_t data_revision = 0,
+                 std::span<SeriesDrawCache> caches = {})
 {
+    const bool caching = caches.size() == series.size();
+    size_t index = 0;
     for (auto& s : series) {
+        SeriesDrawCache* slot = caching ? &caches[index++] : nullptr;
         if (s.size() < 2) continue;
 
-        // A series much denser than the plot is wide pays O(N) transform + allocation
-        // here and O(N) per-segment rendering in the backend, for output no pixel can
-        // show (measured by the perf lab: ~260 ms/publish at 1M points). Min-max
-        // decimation is the exact visual envelope at <= 2 points per pixel column;
-        // non-monotonic-x series keep the full-fidelity path — their back-and-forth
-        // line shape IS the data.
-        const float plot_w = map.right().raw() - map.left().raw();
-        const bool decimate = plot_w > 0.f
-            && s.size() > static_cast<size_t>(plot_w) * 4
-            && series_is_monotonic_x(s);
-
         std::vector<Point> pts;
-        if (decimate) {
-            pts = decimated_series_points(s, map);
+        if (slot && slot->valid && slot->revision == data_revision
+            && slot->data_size == s.size() && slot->map == map) {
+            pts = slot->pts;
         } else {
-            pts.reserve(s.size());
-            for (size_t i = 0; i < s.size(); ++i)
-                pts.push_back(map.to_pixel(s.x(i), s.y(i)));
+            // A series much denser than the plot is wide pays O(N) transform + allocation
+            // here and O(N) per-segment rendering in the backend, for output no pixel can
+            // show (measured by the perf lab: ~260 ms/publish at 1M points). Min-max
+            // decimation is the exact visual envelope at <= 2 points per pixel column;
+            // non-monotonic-x series keep the full-fidelity path — their back-and-forth
+            // line shape IS the data.
+            const float plot_w = map.right().raw() - map.left().raw();
+            const bool decimate = plot_w > 0.f
+                && s.size() > static_cast<size_t>(plot_w) * 4
+                && series_is_monotonic_x(s);
+
+            if (decimate) {
+                pts = decimated_series_points(s, map);
+            } else {
+                pts.reserve(s.size());
+                for (size_t i = 0; i < s.size(); ++i)
+                    pts.push_back(map.to_pixel(s.x(i), s.y(i)));
+            }
+
+            if (slot)
+                *slot = SeriesDrawCache{pts, map, data_revision, s.size(), decimate, true};
         }
 
         if (s.style().fill) {
