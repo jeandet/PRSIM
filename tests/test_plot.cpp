@@ -1238,3 +1238,164 @@ TEST_CASE("draw_series does not decimate a dense non-monotonic series")
     auto& pl = std::get<prism::Polyline>(dl.commands[0]);
     CHECK(pl.points.size() == 10'000);
 }
+
+// A PlotSource that counts accessor calls, so tests can tell a full rescan from a
+// cache hit. Counters live outside (the Series moves its own copy of the source).
+struct CountingSource {
+    std::vector<double> xs;
+    std::vector<double> ys;
+    struct Calls { size_t x = 0, y = 0, size = 0; };
+    Calls* calls;
+    size_t size() const { ++calls->size; return xs.size(); }
+    double x(size_t i) const { ++calls->x; return xs[i]; }
+    double y(size_t i) const { ++calls->y; return ys[i]; }
+};
+
+static prism::plot::Series counting_series(CountingSource::Calls& calls)
+{
+    return prism::plot::Series(
+        CountingSource{{0.0, 1.0, 2.0}, {0.0, 2.0, 1.0}, &calls},
+        prism::plot::SeriesStyle{});
+}
+
+TEST_CASE("resolve_auto_fit_ranges returns manual ranges untouched and leaves the cache cold")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{counting_series(calls)};
+    prism::Field<prism::plot::AxisRange> xr{prism::plot::AxisRange{-5.0, 5.0, false}};
+    prism::Field<prism::plot::AxisRange> yr{prism::plot::AxisRange{-1.0, 3.0, false}};
+    prism::plot::AutoFitCache cache;
+
+    auto r = prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+
+    CHECK(r.x.min == doctest::Approx(-5.0));
+    CHECK(r.x.max == doctest::Approx(5.0));
+    CHECK(r.y.min == doctest::Approx(-1.0));
+    CHECK(r.y.max == doctest::Approx(3.0));
+    CHECK_FALSE(cache.valid);
+    CHECK(calls.x == 0);
+    CHECK(calls.y == 0);
+}
+
+TEST_CASE("resolve_auto_fit_ranges scans once, then reuses the cached fit")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{counting_series(calls)};
+    prism::Field<prism::plot::AxisRange> xr;
+    prism::Field<prism::plot::AxisRange> yr;
+    prism::plot::AutoFitCache cache;
+
+    auto r1 = prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+    REQUIRE(cache.valid);
+    // Data x in [0,2], y in [0,2], both padded 5%: [-0.1, 2.1].
+    CHECK(r1.x.min == doctest::Approx(-0.1));
+    CHECK(r1.x.max == doctest::Approx(2.1));
+    CHECK(r1.y.min == doctest::Approx(-0.1));
+    CHECK(r1.y.max == doctest::Approx(2.1));
+    CHECK_FALSE(r1.x.auto_fit);
+    CHECK_FALSE(r1.y.auto_fit);
+    const size_t scanned = calls.x + calls.y;
+    REQUIRE(scanned > 0);
+
+    auto r2 = prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+    CHECK(calls.x + calls.y == scanned); // no rescan on unchanged data
+    CHECK(r2.x.min == doctest::Approx(r1.x.min));
+    CHECK(r2.x.max == doctest::Approx(r1.x.max));
+    CHECK(r2.y.min == doctest::Approx(r1.y.min));
+    CHECK(r2.y.max == doctest::Approx(r1.y.max));
+}
+
+TEST_CASE("resolve_auto_fit_ranges refits immediately when the data grows")
+{
+    CountingSource::Calls calls;
+    std::vector<prism::plot::Series> series;
+    series.emplace_back(counting_series(calls));
+    prism::Field<prism::plot::AxisRange> xr;
+    prism::Field<prism::plot::AxisRange> yr;
+    prism::plot::AutoFitCache cache;
+
+    auto r1 = prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+    const size_t scanned = calls.x + calls.y;
+
+    series.emplace_back(prism::plot::Series(
+        CountingSource{{3.0}, {10.0}, &calls}, prism::plot::SeriesStyle{}));
+    auto r2 = prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+    CHECK(calls.x + calls.y > scanned); // size key changed -> full refit
+    CHECK(r2.y.max == doctest::Approx(10.0 + (10.0 - 0.0) * 0.05));
+    CHECK(r2.x.max > r1.x.max);
+}
+
+TEST_CASE("resolve_auto_fit_ranges refits once the throttle expires")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{counting_series(calls)};
+    prism::Field<prism::plot::AxisRange> xr;
+    prism::Field<prism::plot::AxisRange> yr;
+    prism::plot::AutoFitCache cache;
+
+    prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+    const size_t scanned = calls.x + calls.y;
+
+    for (int i = 0; i < prism::plot::auto_fit_throttle_frames; ++i)
+        prism::plot::resolve_auto_fit_ranges(
+            xr, yr, std::span<const prism::plot::Series>(series), cache);
+    CHECK(calls.x + calls.y == scanned); // every render inside the window is a hit
+
+    prism::plot::resolve_auto_fit_ranges(
+        xr, yr, std::span<const prism::plot::Series>(series), cache);
+    CHECK(calls.x + calls.y > scanned); // window expired -> one refit
+}
+
+static void canvas_into(prism::plot::PlotModel& plot, prism::DrawList& dl)
+{
+    prism::Rect bounds{prism::Point{prism::X{0}, prism::Y{0}},
+                       prism::Size{prism::Width{400}, prism::Height{300}}};
+    prism::Theme t = prism::default_theme();
+    prism::app::WidgetNode node;
+    node.theme = &t;
+    node.canvas_bounds = bounds;
+    plot.canvas(dl, bounds, node);
+}
+
+TEST_CASE("PlotModel canvas reuses the auto-fit cache across renders")
+{
+    CountingSource::Calls calls;
+    prism::plot::PlotModel plot;
+    plot.add_series(CountingSource{{0.0, 1.0, 2.0}, {0.0, 2.0, 1.0}, &calls},
+                    prism::plot::SeriesStyle{});
+
+    prism::DrawList dl;
+    canvas_into(plot, dl);
+    REQUIRE(plot.autofit_cache.valid);
+
+    canvas_into(plot, dl);
+    CHECK(plot.autofit_cache.frames_since_fit == 1);
+}
+
+TEST_CASE("PlotPanel canvas reuses the auto-fit cache across renders")
+{
+    CountingSource::Calls calls;
+    prism::plot::PlotGroup group;
+    prism::plot::PlotPanel& panel = group.add_plot("y");
+    panel.add_series(CountingSource{{0.0, 1.0, 2.0}, {0.0, 2.0, 1.0}, &calls},
+                     prism::plot::SeriesStyle{});
+
+    prism::DrawList dl;
+    prism::Rect bounds{prism::Point{prism::X{0}, prism::Y{0}},
+                       prism::Size{prism::Width{400}, prism::Height{300}}};
+    prism::Theme t = prism::default_theme();
+    prism::app::WidgetNode node;
+    node.theme = &t;
+    node.canvas_bounds = bounds;
+
+    panel.canvas(dl, bounds, node);
+    REQUIRE(panel.autofit_cache.valid);
+    panel.canvas(dl, bounds, node);
+    CHECK(panel.autofit_cache.frames_since_fit == 1);
+}

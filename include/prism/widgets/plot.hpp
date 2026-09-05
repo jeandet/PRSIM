@@ -78,6 +78,74 @@ enum class DragMode { None, Pan };
 
 constexpr double zoom_base = 1.1;
 
+// Refresh cadence for steady-size streaming data (e.g. a full ring buffer: every
+// frame carries new samples but the fitted range barely moves). Growing data refits
+// immediately (the size key changes); same-size data reuses the cached fit for this
+// many renders between full rescans, so the per-frame fit cost drops to ~zero and a
+// new extreme shows up at most this many frames late.
+// simplify: fixed frame count, not time- or epsilon-based; upgrade when a use case
+// needs fresher ranges (e.g. alarm thresholds that must appear instantly).
+// -> skipped: per-axis refit; a miss scans both axes so a later auto_fit flip on one
+//    axis reuses a true fit instead of a stale manual range. Add when asymmetric
+//    auto/manual configs show up in profiles.
+constexpr int auto_fit_throttle_frames = 30;
+
+struct AutoFitCache {
+    AxisRange x{};
+    AxisRange y{};
+    size_t data_key = 0;
+    int frames_since_fit = 0;
+    bool valid = false;
+};
+
+// Identity of the data a fit was computed from: series count plus total samples.
+// Any fixed-size key can collide in theory (a same-size series swap reuses the old
+// fit); a false hit only delays the correct range by at most the throttle window,
+// since the frame counter still advances and forces a refit on expiry.
+template <typename SeriesRange>
+size_t auto_fit_data_key(const SeriesRange& series)
+{
+    size_t key = 0;
+    for (auto& s : series) {
+        key ^= s.size() + 0x9e3779b97f4a7c15ULL + (key << 6) + (key >> 2);
+    }
+    return key;
+}
+
+struct ResolvedRanges {
+    AxisRange x;
+    AxisRange y;
+};
+
+// The effective ranges for one render: stored ranges when not auto-fitting, the
+// cached fit while the data is unchanged, or a fresh full rescan (updating the
+// cache) when the data grew or the throttle expired. Returned ranges always have
+// auto_fit == false, so compute_mapping applies the view without rescanning.
+template <typename SeriesRange>
+ResolvedRanges resolve_auto_fit_ranges(const Field<AxisRange>& xr, const Field<AxisRange>& yr,
+                                       const SeriesRange& series, AutoFitCache& cache)
+{
+    AxisRange ex = xr.get();
+    AxisRange ey = yr.get();
+    if (!ex.auto_fit && !ey.auto_fit) return {ex, ey};
+
+    const size_t key = auto_fit_data_key(series);
+    if (cache.valid && cache.data_key == key
+        && cache.frames_since_fit < auto_fit_throttle_frames) {
+        ++cache.frames_since_fit;
+        return {ex.auto_fit ? cache.x : ex, ey.auto_fit ? cache.y : ey};
+    }
+
+    cache.x = auto_fit_range(series, Axis::X);
+    cache.y = auto_fit_range(series, Axis::Y);
+    cache.x.auto_fit = false;
+    cache.y.auto_fit = false;
+    cache.data_key = key;
+    cache.frames_since_fit = 0;
+    cache.valid = true;
+    return {ex.auto_fit ? cache.x : ex, ey.auto_fit ? cache.y : ey};
+}
+
 inline PlotMapping compute_mapping(Rect bounds,
                                    const Field<AxisRange>& xr,
                                    const Field<AxisRange>& yr,
@@ -154,11 +222,19 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
                       Field<ViewTransform>& view, Field<C>& cursor,
                       DragMode& drag_mode, Point& drag_start_pixel,
                       ViewTransform& drag_start_view,
-                      std::span<const Series> series,
-                      bool draw_x_axis = true,
-                      const std::function<void()>& on_reset_view = {})
+                       std::span<const Series> series,
+                       bool draw_x_axis = true,
+                       const std::function<void()>& on_reset_view = {},
+                       AutoFitCache* fit_cache = nullptr)
 {
-    auto map = compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
+    auto map = [&] {
+        if (!fit_cache)
+            return compute_mapping(bounds, x_range, y_range, view, series, draw_x_axis);
+        auto resolved = resolve_auto_fit_ranges(x_range, y_range, series, *fit_cache);
+        Field<AxisRange> xr{resolved.x};
+        Field<AxisRange> yr{resolved.y};
+        return compute_mapping(bounds, xr, yr, view, series, draw_x_axis);
+    }();
 
     // A PlotPanel needs to reset every sibling panel in its PlotGroup (shared x-axis,
     // per-panel y-axes), not just the fields this call was handed -- on_reset_view lets
@@ -294,6 +370,8 @@ struct PlotModel {
     DragMode drag_mode = DragMode::None;
     Point drag_start_pixel{};
     ViewTransform drag_start_view{};
+    // Render-path memo: last auto-fit result (app-thread-local; canvas runs app-side).
+    AutoFitCache autofit_cache{};
 
     // Series management
     template <PlotSource S>
@@ -332,7 +410,11 @@ struct PlotModel {
     // Canvas interface
     void canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
     {
-        render_plot_panel(dl, bounds, node, x_range, y_range, view, cursor,
+        auto resolved = resolve_auto_fit_ranges(x_range, y_range,
+                                                std::span<const Series>(series_), autofit_cache);
+        Field<AxisRange> xr{resolved.x};
+        Field<AxisRange> yr{resolved.y};
+        render_plot_panel(dl, bounds, node, xr, yr, view, cursor,
                           std::span<const Series>(series_), x_label.get(), y_label.get(), true,
                           x_tick_format);
     }
@@ -347,7 +429,7 @@ inline void PlotModel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd,
 {
     route_plot_input(ev, nd, bounds, x_range, y_range, view, cursor,
                      drag_mode, drag_start_pixel, drag_start_view,
-                     std::span<const Series>(series_));
+                     std::span<const Series>(series_), true, {}, &autofit_cache);
 }
 
 class PlotGroup;
@@ -363,6 +445,8 @@ class PlotPanel {
     DragMode drag_mode = DragMode::None;
     Point drag_start_pixel{};
     ViewTransform drag_start_view{};
+    // Render-path memo: last auto-fit result (app-thread-local; canvas runs app-side).
+    AutoFitCache autofit_cache{};
 
     explicit PlotPanel(std::string label) : y_label(std::move(label)) {}
 
@@ -468,7 +552,11 @@ inline void PlotPanel::canvas(DrawList& dl, Rect bounds, const WidgetNode& node)
 {
     Field<ViewTransform> merged_view{merged_transform()};
 
-    render_plot_panel(dl, bounds, node, group_->x_range, y_range, merged_view,
+    auto resolved = resolve_auto_fit_ranges(group_->x_range, y_range,
+                                            std::span<const Series>(series_), autofit_cache);
+    Field<AxisRange> xr{resolved.x};
+    Field<AxisRange> yr{resolved.y};
+    render_plot_panel(dl, bounds, node, xr, yr, merged_view,
                       group_->cursor, std::span<const Series>(series_),
                       group_->x_label.get(), y_label.get(), draw_x_axis_,
                       group_->x_tick_format);
@@ -490,7 +578,8 @@ inline void PlotPanel::handle_canvas_input(const InputEvent& ev, WidgetNode& nd,
 
     route_plot_input(ev, nd, bounds, group_->x_range, y_range, merged_view,
                      group_->cursor, drag_mode, drag_start_pixel, drag_start_view,
-                     std::span<const Series>(series_), draw_x_axis_, reset_whole_group);
+                     std::span<const Series>(series_), draw_x_axis_, reset_whole_group,
+                     &autofit_cache);
 
     auto result = merged_view.get();
 
