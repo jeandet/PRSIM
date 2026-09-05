@@ -42,6 +42,13 @@ struct SeriesStyle {
 
 class Series {
   public:
+    // One erased pass over all samples: a single indirect call per scan instead
+    // of two std::function dispatches per sample. The loop lives in the
+    // constructor's lambda, so per-sample x()/y() on the concrete source inline
+    // there; the visitor stays a plain function pointer (a std::function visitor
+    // would just move the per-sample dispatch one level down).
+    using SampleVisit = void(void*, double, double);
+
     Series() = default;
 
     template <PlotSource S>
@@ -52,17 +59,27 @@ class Series {
         size_fn_ = [shared]() { return shared->size(); };
         x_fn_ = [shared](size_t i) { return shared->x(i); };
         y_fn_ = [shared](size_t i) { return shared->y(i); };
+        scan_fn_ = [shared](void* ctx, SampleVisit* visit) {
+            const size_t n = shared->size();
+            for (size_t i = 0; i < n; ++i) visit(ctx, shared->x(i), shared->y(i));
+        };
     }
 
     size_t size() const { return size_fn_ ? size_fn_() : 0; }
     double x(size_t i) const { return x_fn_(i); }
     double y(size_t i) const { return y_fn_(i); }
+    bool has_scan() const { return static_cast<bool>(scan_fn_); }
+    void scan(void* ctx, SampleVisit* visit) const
+    {
+        if (scan_fn_) scan_fn_(ctx, visit);
+    }
     const SeriesStyle& style() const { return style_; }
 
   private:
     std::function<size_t()> size_fn_;
     std::function<double(size_t)> x_fn_;
     std::function<double(size_t)> y_fn_;
+    std::function<void(void*, SampleVisit*)> scan_fn_;
     SeriesStyle style_;
 };
 
@@ -136,8 +153,9 @@ ResolvedRanges resolve_auto_fit_ranges(const Field<AxisRange>& xr, const Field<A
         return {ex.auto_fit ? cache.x : ex, ey.auto_fit ? cache.y : ey};
     }
 
-    cache.x = auto_fit_range(series, Axis::X);
-    cache.y = auto_fit_range(series, Axis::Y);
+    BothAxisFit fitted = auto_fit_ranges(series);
+    cache.x = fitted.x;
+    cache.y = fitted.y;
     cache.x.auto_fit = false;
     cache.y.auto_fit = false;
     cache.data_key = key;
@@ -156,8 +174,11 @@ inline PlotMapping compute_mapping(Rect bounds,
     AxisRange eff_x = xr.get();
     AxisRange eff_y = yr.get();
 
-    if (eff_x.auto_fit) eff_x = auto_fit_range(series, Axis::X);
-    if (eff_y.auto_fit) eff_y = auto_fit_range(series, Axis::Y);
+    if (eff_x.auto_fit || eff_y.auto_fit) {
+        BothAxisFit fitted = auto_fit_ranges(series);
+        if (eff_x.auto_fit) eff_x = fitted.x;
+        if (eff_y.auto_fit) eff_y = fitted.y;
+    }
 
     auto& v = vt.get();
     eff_x = PlotMapping::apply_view(eff_x, v.offset_x, v.scale_x);
@@ -252,15 +273,18 @@ void route_plot_input(const InputEvent& ev, WidgetNode& /*nd*/, Rect bounds,
     auto freeze_auto_fit = [&] {
         auto xr = x_range.get();
         auto yr = y_range.get();
-        if (xr.auto_fit) {
-            xr = auto_fit_range(series, Axis::X);
-            xr.auto_fit = false;
-            x_range.set(xr);
-        }
-        if (yr.auto_fit) {
-            yr = auto_fit_range(series, Axis::Y);
-            yr.auto_fit = false;
-            y_range.set(yr);
+        if (xr.auto_fit || yr.auto_fit) {
+            BothAxisFit fitted = auto_fit_ranges(series);
+            if (xr.auto_fit) {
+                xr = fitted.x;
+                xr.auto_fit = false;
+                x_range.set(xr);
+            }
+            if (yr.auto_fit) {
+                yr = fitted.y;
+                yr.auto_fit = false;
+                y_range.set(yr);
+            }
         }
     };
 

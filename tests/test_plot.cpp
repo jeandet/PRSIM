@@ -1533,3 +1533,92 @@ TEST_CASE("PlotPanel canvas skips series rescans while the revision is unchanged
     panel_canvas_into(panel, dl);
     CHECK(calls.x + calls.y > scanned);
 }
+
+TEST_CASE("Series scan visits every sample in order")
+{
+    prism::plot::XYData data{{0.0, 1.0, 2.0}, {5.0, 3.0, 4.0}};
+    prism::plot::Series s(std::move(data), prism::plot::SeriesStyle{});
+    REQUIRE(s.has_scan());
+
+    std::vector<std::pair<double, double>> visited;
+    auto visit = [](void* ctx, double x, double y) {
+        static_cast<std::vector<std::pair<double, double>>*>(ctx)->emplace_back(x, y);
+    };
+    s.scan(&visited, visit);
+    REQUIRE(visited.size() == 3);
+    CHECK(visited[0] == std::pair{0.0, 5.0});
+    CHECK(visited[1] == std::pair{1.0, 3.0});
+    CHECK(visited[2] == std::pair{2.0, 4.0});
+}
+
+TEST_CASE("Default-constructed Series exposes no scan")
+{
+    prism::plot::Series s;
+    CHECK(!s.has_scan());
+    bool called = false;
+    auto visit = [](void* ctx, double, double) {
+        *static_cast<bool*>(ctx) = true;
+    };
+    s.scan(&called, visit); // no-op, must not call back
+    CHECK(!called);
+}
+
+TEST_CASE("auto_fit_ranges fits both axes in one pass")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{counting_series(calls)};
+    auto fitted = prism::plot::auto_fit_ranges(series);
+    CHECK(fitted.x.min == doctest::Approx(-0.1));
+    CHECK(fitted.x.max == doctest::Approx(2.1));
+    CHECK(fitted.y.min == doctest::Approx(-0.1));
+    CHECK(fitted.y.max == doctest::Approx(2.1));
+    // The whole fit ran inside the erased scan boundary in a single pass: one
+    // internal size() for the loop bound (vs 2*(N+1) Series::size() calls for
+    // the old per-axis index loops), N x + N y delivered to one visitor.
+    CHECK(calls.size == 1);
+    CHECK(calls.x == 3);
+    CHECK(calls.y == 3);
+}
+
+TEST_CASE("series_is_monotonic_x scans without per-sample dispatch")
+{
+    CountingSource::Calls calls;
+    prism::plot::Series s(CountingSource{{0.0, 1.0, 1.0, 2.0}, {0.0, 0.0, 0.0, 0.0}, &calls},
+                          prism::plot::SeriesStyle{});
+    CHECK(prism::plot::series_is_monotonic_x(s));
+    // One internal pass delivering (x, y) pairs (y ignored by the gate):
+    // a single size() for the loop bound, not per-iteration bound checks.
+    CHECK(calls.size == 1);
+    CHECK(calls.x == 4);
+    CHECK(calls.y == 4);
+}
+
+TEST_CASE("decimated_series_points scans without per-sample dispatch")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{dense_counting_series(calls)};
+    auto map = make_test_map(100, 100, 0.0, 10000.0, -2.0, 2.0);
+    auto pts = prism::plot::decimated_series_points(series[0], map);
+    CHECK(!pts.empty());
+    CHECK(pts.size() <= 200);
+    // Single internal pass (old loop re-evaluated Series::size() per sample).
+    CHECK(calls.size == 1);
+    CHECK(calls.x == 10000);
+    CHECK(calls.y == 10000);
+}
+
+TEST_CASE("draw_series full-fidelity path scans without per-sample dispatch")
+{
+    CountingSource::Calls calls;
+    std::array<prism::plot::Series, 1> series{counting_series(calls)};
+    auto map = make_test_map(100, 100, -1.0, 3.0, -1.0, 3.0);
+    prism::DrawList dl;
+    prism::plot::draw_series(dl, map, series);
+    REQUIRE(dl.commands.size() == 1);
+    CHECK(std::get<prism::Polyline>(dl.commands[0]).points.size() == 3);
+    // size() < 2 guard + decimate-threshold check + reserve + one internal
+    // loop bound; the samples themselves arrive via one scan visitor.
+    CHECK(calls.size == 4);
+    CHECK(calls.x == 3);
+    CHECK(calls.y == 3);
+}

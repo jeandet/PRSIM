@@ -99,26 +99,66 @@ inline std::vector<double> nice_ticks(double min, double max, int target_count)
 
 enum class Axis { X, Y };
 
+template <typename S>
+concept ScannableSeries = requires(const S& s, void* ctx, void (*v)(void*, double, double)) {
+    { s.has_scan() } -> std::convertible_to<bool>;
+    { s.scan(ctx, v) } -> std::same_as<void>;
+};
+
+struct BothAxisFit {
+    AxisRange x{};
+    AxisRange y{};
+};
+
+// Both axes in a single pass: the previous per-axis scans visited every sample
+// twice (two std::function dispatches per sample each). Per-axis updates keep
+// their exact standalone order, so a combined scan returns bit-identical ranges.
 template <typename Range>
-AxisRange auto_fit_range(const Range& series, Axis axis)
+BothAxisFit auto_fit_ranges(const Range& series)
 {
-    double lo = std::numeric_limits<double>::max();
-    double hi = std::numeric_limits<double>::lowest();
-    bool any = false;
+    struct FitState {
+        double x_lo = std::numeric_limits<double>::max();
+        double x_hi = std::numeric_limits<double>::lowest();
+        double y_lo = std::numeric_limits<double>::max();
+        double y_hi = std::numeric_limits<double>::lowest();
+        bool any = false;
+    };
+    FitState state;
+    auto visit = [](void* ctx, double x, double y) {
+        auto& st = *static_cast<FitState*>(ctx);
+        st.x_lo = std::min(st.x_lo, x);
+        st.x_hi = std::max(st.x_hi, x);
+        st.y_lo = std::min(st.y_lo, y);
+        st.y_hi = std::max(st.y_hi, y);
+        st.any = true;
+    };
 
     for (auto& s : series) {
+        if constexpr (ScannableSeries<std::remove_cvref_t<decltype(s)>>) {
+            if (s.has_scan()) {
+                s.scan(&state, visit);
+                continue;
+            }
+        }
         for (size_t i = 0; i < s.size(); ++i) {
-            double v = (axis == Axis::X) ? s.x(i) : s.y(i);
-            lo = std::min(lo, v);
-            hi = std::max(hi, v);
-            any = true;
+            visit(&state, s.x(i), s.y(i));
         }
     }
 
-    if (!any) return {0.0, 1.0, true};
-    if (lo == hi) { lo -= 0.5; hi += 0.5; }
-    double pad = (hi - lo) * 0.05;
-    return {lo - pad, hi + pad, true};
+    auto finish = [](double lo, double hi) {
+        if (lo == hi) { lo -= 0.5; hi += 0.5; }
+        double pad = (hi - lo) * 0.05;
+        return AxisRange{lo - pad, hi + pad, true};
+    };
+    if (!state.any) return {{0.0, 1.0, true}, {0.0, 1.0, true}};
+    return {finish(state.x_lo, state.x_hi), finish(state.y_lo, state.y_hi)};
+}
+
+template <typename Range>
+AxisRange auto_fit_range(const Range& series, Axis axis)
+{
+    BothAxisFit fit = auto_fit_ranges(series);
+    return (axis == Axis::X) ? fit.x : fit.y;
 }
 
 constexpr Width margin_left{60.f};
@@ -224,6 +264,24 @@ inline void draw_tick_labels(DrawList& dl, const PlotMapping& map,
 template <typename S>
 bool series_is_monotonic_x(const S& s)
 {
+    struct MonoState {
+        double prev = 0.0;
+        bool first = true;
+        bool ok = true;
+    };
+    if constexpr (ScannableSeries<S>) {
+        if (s.has_scan()) {
+            MonoState state;
+            auto visit = [](void* ctx, double x, double) {
+                auto& st = *static_cast<MonoState*>(ctx);
+                if (!st.first && x < st.prev) st.ok = false;
+                st.prev = x;
+                st.first = false;
+            };
+            s.scan(&state, visit);
+            return state.ok;
+        }
+    }
     for (size_t i = 1; i < s.size(); ++i)
         if (s.x(i) < s.x(i - 1)) return false;
     return true;
@@ -247,16 +305,35 @@ std::vector<Point> decimated_series_points(const S& s, const PlotMapping& map)
     };
     std::vector<Bucket> buckets(static_cast<size_t>(columns));
 
-    for (size_t i = 0; i < s.size(); ++i) {
-        const Point p = map.to_pixel(s.x(i), s.y(i));
-        if (std::isnan(p.x.raw()) || std::isnan(p.y.raw())) continue;
+    struct DecimState {
+        const PlotMapping* map;
+        std::vector<Bucket>* buckets;
+        float left;
+        int columns;
+        size_t i = 0;
+    };
+    DecimState state{&map, &buckets, left, columns};
+    auto visit = [](void* ctx, double x, double y) {
+        auto& st = *static_cast<DecimState*>(ctx);
+        const Point p = st.map->to_pixel(x, y);
+        const size_t i = st.i++;
+        if (std::isnan(p.x.raw()) || std::isnan(p.y.raw())) return;
         // Points outside the visible x-range fold into the edge columns, keeping the
         // polyline continuous instead of opening a gap at the boundary.
-        const int col = std::clamp(static_cast<int>(p.x.raw() - left), 0, columns - 1);
-        auto& b = buckets[static_cast<size_t>(col)];
+        const int col = std::clamp(static_cast<int>(p.x.raw() - st.left), 0, st.columns - 1);
+        auto& b = (*st.buckets)[static_cast<size_t>(col)];
         if (!b.any || p.y.raw() < b.min_pt.y.raw()) { b.min_pt = p; b.min_i = i; }
         if (!b.any || p.y.raw() > b.max_pt.y.raw()) { b.max_pt = p; b.max_i = i; }
         b.any = true;
+    };
+    if constexpr (ScannableSeries<S>) {
+        if (s.has_scan()) {
+            s.scan(&state, visit);
+        } else {
+            for (size_t i = 0; i < s.size(); ++i) visit(&state, s.x(i), s.y(i));
+        }
+    } else {
+        for (size_t i = 0; i < s.size(); ++i) visit(&state, s.x(i), s.y(i));
     }
 
     std::vector<Point> out;
@@ -320,8 +397,27 @@ void draw_series(DrawList& dl, const PlotMapping& map, const SeriesRange& series
                 pts = decimated_series_points(s, map);
             } else {
                 pts.reserve(s.size());
-                for (size_t i = 0; i < s.size(); ++i)
-                    pts.push_back(map.to_pixel(s.x(i), s.y(i)));
+                struct PushState {
+                    const PlotMapping* map;
+                    std::vector<Point>* pts;
+                };
+                PushState state{&map, &pts};
+                auto visit = [](void* ctx, double x, double y) {
+                    auto& st = *static_cast<PushState*>(ctx);
+                    st.pts->push_back(st.map->to_pixel(x, y));
+                };
+                using Elem = std::remove_cvref_t<decltype(s)>;
+                if constexpr (ScannableSeries<Elem>) {
+                    if (s.has_scan()) {
+                        s.scan(&state, visit);
+                    } else {
+                        for (size_t i = 0; i < s.size(); ++i)
+                            visit(&state, s.x(i), s.y(i));
+                    }
+                } else {
+                    for (size_t i = 0; i < s.size(); ++i)
+                        visit(&state, s.x(i), s.y(i));
+                }
             }
 
             if (slot)
@@ -388,15 +484,37 @@ void draw_series_values_at_cursor(DrawList& dl, const PlotMapping& map,
     for (auto& s : series) {
         if (s.size() == 0) continue;
 
-        size_t nearest = 0;
-        double best_dist = std::abs(s.x(0) - data_x);
-        for (size_t i = 1; i < s.size(); ++i) {
-            double dist = std::abs(s.x(i) - data_x);
-            if (dist < best_dist) { best_dist = dist; nearest = i; }
+        struct NearestState {
+            double data_x;
+            double best_dist = 0.0;
+            double nearest_x = 0.0;
+            double nearest_y = 0.0;
+            bool first = true;
+        };
+        NearestState state{data_x};
+        auto visit = [](void* ctx, double x, double y) {
+            auto& st = *static_cast<NearestState*>(ctx);
+            double dist = std::abs(x - st.data_x);
+            if (st.first || dist < st.best_dist) {
+                st.best_dist = dist;
+                st.nearest_x = x;
+                st.nearest_y = y;
+                st.first = false;
+            }
+        };
+        using Elem = std::remove_cvref_t<decltype(s)>;
+        if constexpr (ScannableSeries<Elem>) {
+            if (s.has_scan()) {
+                s.scan(&state, visit);
+            } else {
+                for (size_t i = 0; i < s.size(); ++i) visit(&state, s.x(i), s.y(i));
+            }
+        } else {
+            for (size_t i = 0; i < s.size(); ++i) visit(&state, s.x(i), s.y(i));
         }
 
-        double value = s.y(nearest);
-        auto px = map.to_pixel(s.x(nearest), value);
+        double value = state.nearest_y;
+        auto px = map.to_pixel(state.nearest_x, value);
         if (px.y < map.top() || px.y > map.bottom()) continue;
 
         dl.circle(px, 3.f, s.style().color, 0.f);
